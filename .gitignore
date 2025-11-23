@@ -1,6 +1,6 @@
-
 BioMark_Code_Files/client/node_modules/
 BioMark_Code_Files/server/node_modules/
+node_modules/
 
 BioMark_Code_Files/client/package-lock.json
 BioMark_Code_Files/server/package-lock.json
@@ -9,10 +9,27 @@ package-lock.json
 BioMark_Code_Files/client/build/
 BioMark_Code_Files/server/uploads/
 BioMark_Code_Files/server/results/
+BioMark_Code_Files/server/env/
+BioMark_Code_Files/server/venv/
 
 BioMark_Code_Files/server/logs/
+*.log
 
-BioMark_Code_Files/server/modules/
+BioMark_Code_Files/server/modules/__pycache__/
+BioMark_Code_Files/server/**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
-BioMark_Code_Files/server/db
+BioMark_Code_Files/server/db/*.db
+BioMark_Code_Files/server/db/*.sqlite
+BioMark_Code_Files/server/db/*.sqlite3
 
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
