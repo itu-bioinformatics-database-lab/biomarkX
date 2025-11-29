@@ -1,12 +1,16 @@
 .analysis-results-page {
   min-height: 100vh;
   background: #f5f7fa;
-  padding: 80px 20px 40px;
+}
+
+.analysis-results-page .app-header {
+  margin-bottom: 0;
 }
 
 .analysis-container {
   max-width: 1000px;
   margin: 0 auto;
+  padding: 100px 20px 40px;
 }
 
 .analysis-header {

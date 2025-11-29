@@ -51,7 +51,10 @@ export default function LoginPage() {
       const response = await api.post('/auth/guest');
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
-        navigate('/');
+        // Small delay to ensure token is set before navigation
+        setTimeout(() => {
+          navigate('/');
+        }, 100);
       }
     } catch (err) {
       setError('Guest login failed');

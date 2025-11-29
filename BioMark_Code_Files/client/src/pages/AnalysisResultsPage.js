@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, buildUrl } from '../api';
+import UserMenu from '../components/UserMenu';
 import AnalysisReport from '../components/step9_AnalysisReport';
 import '../css/AnalysisResultsPage.css';
 
@@ -11,6 +12,7 @@ export default function AnalysisResultsPage() {
   const [error, setError] = useState('');
   const [reportData, setReportData] = useState(null);
   const reportTriggerRef = useRef(null);
+  const [username, setUsername] = useState('');
 
   // Function to fetch and parse CSV data for enrichment analyses
   const fetchEnrichmentResultTable = async (relativePath) => {
@@ -43,7 +45,22 @@ export default function AnalysisResultsPage() {
 
   useEffect(() => {
     fetchAnalyses();
+    fetchUsername();
   }, []);
+
+  const fetchUsername = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        setUsername(response.data.user.username || '');
+      }
+    } catch (err) {
+      console.error('Error fetching username:', err);
+    }
+  };
 
   useEffect(() => {
     // Trigger PDF generation when reportData is set
@@ -209,9 +226,44 @@ export default function AnalysisResultsPage() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
+
+  const isGuestUser = () => {
+    const token = localStorage.getItem('token');
+    if (!token) return true;
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return true;
+      const payload = JSON.parse(atob(parts[1]));
+      return payload.isGuest === true;
+    } catch (e) {
+      return true;
+    }
+  };
+
   if (loading) {
     return (
       <div className="analysis-results-page">
+        <header className="app-header">
+          <img 
+            src={process.env.PUBLIC_URL + "/logo192.png"} 
+            alt="Logo" 
+            onClick={() => navigate('/')}
+            style={{ cursor: 'pointer' }}
+          />
+          <span>BIOMARKER ANALYSIS TOOL</span>
+          <div className="header-buttons">
+            <UserMenu 
+              isGuest={isGuestUser()}
+              username={username}
+              onNavigateToLogin={() => navigate('/login')}
+              onLogout={handleLogout}
+            />
+          </div>
+        </header>
         <div className="analysis-container">
           <p>Loading analyses...</p>
         </div>
@@ -221,6 +273,23 @@ export default function AnalysisResultsPage() {
 
   return (
     <div className="analysis-results-page">
+      <header className="app-header">
+        <img 
+          src={process.env.PUBLIC_URL + "/logo192.png"} 
+          alt="Logo" 
+          onClick={() => navigate('/')}
+          style={{ cursor: 'pointer' }}
+        />
+        <span>BIOMARKER ANALYSIS TOOL</span>
+        <div className="header-buttons">
+          <UserMenu 
+            isGuest={isGuestUser()}
+            username={username}
+            onNavigateToLogin={() => navigate('/login')}
+            onLogout={handleLogout}
+          />
+        </div>
+      </header>
       <div className="analysis-container">
         <div className="analysis-header">
           <button className="back-button" onClick={() => navigate('/')}>

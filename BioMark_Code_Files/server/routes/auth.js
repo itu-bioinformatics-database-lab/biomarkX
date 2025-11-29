@@ -92,6 +92,25 @@ router.get('/me', (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ success: false, error: 'Missing token' });
   const token = auth.split(' ')[1];
+  
+  // Check if it's a guest token (UUID format, no dots)
+  if (!token.includes('.')) {
+    // Guest token - just verify it exists in the users table
+    const user = db.prepare('SELECT * FROM users WHERE session_id = ?').get(token);
+    if (user) {
+      return res.json({ 
+        success: true, 
+        user: { 
+          id: user.session_id,
+          username: 'Guest',
+          isGuest: true
+        } 
+      });
+    }
+    return res.status(401).json({ success: false, error: 'Invalid guest token' });
+  }
+  
+  // JWT token - verify and get account info
   try {
     const payload = jwt.verify(token, SECRET_KEY);
     const account = findAccountById(payload.userId);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import UserMenu from '../components/UserMenu';
 import '../css/ProfilePage.css';
 
 export default function ProfilePage() {
@@ -138,8 +139,43 @@ export default function ProfilePage() {
     );
   }
 
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
+
+  const isGuestUser = () => {
+    const token = localStorage.getItem('token');
+    if (!token) return true;
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return true;
+      const payload = JSON.parse(atob(parts[1]));
+      return payload.isGuest === true;
+    } catch (e) {
+      return true;
+    }
+  };
+
   return (
     <div className="profile-page">
+      <header className="app-header">
+        <img 
+          src={process.env.PUBLIC_URL + "/logo192.png"} 
+          alt="Logo" 
+          onClick={() => navigate('/')}
+          style={{ cursor: 'pointer' }}
+        />
+        <span>BIOMARKER ANALYSIS TOOL</span>
+        <div className="header-buttons">
+          <UserMenu 
+            isGuest={isGuestUser()}
+            username={userInfo.username}
+            onNavigateToLogin={() => navigate('/login')}
+            onLogout={handleLogout}
+          />
+        </div>
+      </header>
       <div className="profile-container">
         <div className="profile-header">
           <button className="back-button" onClick={() => navigate('/')}>

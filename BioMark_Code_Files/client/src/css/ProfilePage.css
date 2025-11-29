@@ -1,12 +1,16 @@
 .profile-page {
   min-height: 100vh;
   background: #f5f7fa;
-  padding: 80px 20px 40px;
+}
+
+.profile-page .app-header {
+  margin-bottom: 0;
 }
 
 .profile-container {
   max-width: 900px;
   margin: 0 auto;
+  padding: 100px 20px 40px;
 }
 
 .profile-header {

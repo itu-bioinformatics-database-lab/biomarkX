@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../css/UserMenu.css';
 
-export default function UserMenu({ isGuest, onNavigateToLogin, onLogout }) {
+export default function UserMenu({ isGuest, username, onNavigateToLogin, onLogout }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
   const navigate = useNavigate();
@@ -73,7 +73,7 @@ export default function UserMenu({ isGuest, onNavigateToLogin, onLogout }) {
           ) : (
             <>
               <div className="user-menu-header">
-                <span className="user-menu-title">My Account</span>
+                <span className="user-menu-title">{username || 'My Account'}</span>
               </div>
               <button 
                 className="user-menu-item"

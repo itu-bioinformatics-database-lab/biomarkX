@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, buildUrl } from '../api';
+import UserMenu from '../components/UserMenu';
 import AnalysisReport from '../components/step9_AnalysisReport';
 import '../css/AnalysisDetailPage.css';
 
@@ -8,6 +9,7 @@ export default function AnalysisDetailPage() {
   const { analysisId } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState('');
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState('');
   const [analysisResults, setAnalysisResults] = useState([]);
@@ -39,6 +41,25 @@ export default function AnalysisDetailPage() {
     } catch (err) {
       console.warn('Failed to load enrichment table:', err);
       return null;
+    }
+  };
+
+  useEffect(() => {
+    fetchAnalysisDetail();
+    fetchUsername();
+  }, [analysisId]);
+
+  const fetchUsername = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        setUsername(response.data.user.username || '');
+      }
+    } catch (err) {
+      console.error('Error fetching username:', err);
     }
   };
 
@@ -135,9 +156,44 @@ export default function AnalysisDetailPage() {
     return date.toLocaleString();
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
+
+  const isGuestUser = () => {
+    const token = localStorage.getItem('token');
+    if (!token) return true;
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return true;
+      const payload = JSON.parse(atob(parts[1]));
+      return payload.isGuest === true;
+    } catch (e) {
+      return true;
+    }
+  };
+
   if (loading) {
     return (
       <div className="analysis-detail-page">
+        <header className="app-header">
+          <img 
+            src={process.env.PUBLIC_URL + "/logo192.png"} 
+            alt="Logo" 
+            onClick={() => navigate('/')}
+            style={{ cursor: 'pointer' }}
+          />
+          <span>BIOMARKER ANALYSIS TOOL</span>
+          <div className="header-buttons">
+            <UserMenu 
+              isGuest={isGuestUser()}
+              username={username}
+              onNavigateToLogin={() => navigate('/login')}
+              onLogout={handleLogout}
+            />
+          </div>
+        </header>
         <div className="detail-container">
           <p>Loading analysis details...</p>
         </div>
@@ -148,6 +204,23 @@ export default function AnalysisDetailPage() {
   if (error || !analysis) {
     return (
       <div className="analysis-detail-page">
+        <header className="app-header">
+          <img 
+            src={process.env.PUBLIC_URL + "/logo192.png"} 
+            alt="Logo" 
+            onClick={() => navigate('/')}
+            style={{ cursor: 'pointer' }}
+          />
+          <span>BIOMARKER ANALYSIS TOOL</span>
+          <div className="header-buttons">
+            <UserMenu 
+              isGuest={isGuestUser()}
+              username={username}
+              onNavigateToLogin={() => navigate('/login')}
+              onLogout={handleLogout}
+            />
+          </div>
+        </header>
         <div className="detail-container">
           <div className="error-message">{error || 'Analysis not found'}</div>
           <button className="back-button" onClick={() => navigate('/my-analyses')}>
@@ -160,6 +233,23 @@ export default function AnalysisDetailPage() {
 
   return (
     <div className="analysis-detail-page">
+      <header className="app-header">
+        <img 
+          src={process.env.PUBLIC_URL + "/logo192.png"} 
+          alt="Logo" 
+          onClick={() => navigate('/')}
+          style={{ cursor: 'pointer' }}
+        />
+        <span>BIOMARKER ANALYSIS TOOL</span>
+        <div className="header-buttons">
+          <UserMenu 
+            isGuest={isGuestUser()}
+            username={username}
+            onNavigateToLogin={() => navigate('/login')}
+            onLogout={handleLogout}
+          />
+        </div>
+      </header>
       <div className="detail-container">
         <button className="back-button" onClick={() => navigate('/my-analyses')}>
           &#11013; Back to My Analyses

@@ -165,6 +165,27 @@ function App() {
   
   // Authentication state
   const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [username, setUsername] = useState('');
+
+  // Fetch username on load
+  useEffect(() => {
+    const fetchUsername = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (token) {
+          const response = await api.get('/auth/me', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (response.data.success) {
+            setUsername(response.data.user.username || '');
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching username:', err);
+      }
+    };
+    fetchUsername();
+  }, []);
 
   // Validate token on app load
   useEffect(() => {
@@ -2622,6 +2643,7 @@ function App() {
         <div className="header-buttons">
           <UserMenu 
             isGuest={isGuestUser()}
+            username={username}
             onNavigateToLogin={() => navigate('/login')}
             onLogout={handleLogout}
           />
