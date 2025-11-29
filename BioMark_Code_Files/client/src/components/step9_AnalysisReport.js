@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import '../css/step9-generateAnalysisReport.css';
 import { buildUrl } from '../api';
@@ -149,7 +149,6 @@ const AnalysisReport = ({
 
   const hasSummariesSection = Array.isArray(summarizeAnalyses) && summarizeAnalyses.length > 0;
   const hasEnrichmentAnalyses = Array.isArray(enrichmentAnalyses) && enrichmentAnalyses.length > 0;
-  const hasValidationSection = Boolean(biomarkerValidationResult?.results?.length);
 
   let nextSectionNumber = 2;
   const statisticalSectionNumber = hasSummariesSection ? nextSectionNumber++ : null;
@@ -169,6 +168,66 @@ const AnalysisReport = ({
   };
   const validationClassPairLabel = biomarkerValidationResult?.classPair ? friendlyClassPair(biomarkerValidationResult.classPair) : null;
   const validationTimestamp = biomarkerValidationResult?.timestamp ? new Date(biomarkerValidationResult.timestamp).toLocaleString() : null;
+  const validationTable = biomarkerValidationResult?.table;
+  const validationTableColumns = useMemo(() => (
+    Array.isArray(validationTable?.columns) && validationTable.columns.length > 0
+      ? validationTable.columns
+      : [
+          { key: 'geneSymbol', label: 'Gene' },
+          { key: 'geneName', label: 'Gene Name' },
+          { key: 'disease', label: 'Disease / Condition' },
+          { key: 'score', label: 'Association Score' },
+          { key: 'link', label: 'Link' }
+        ]
+  ), [validationTable?.columns]);
+
+  const validationTableRows = useMemo(() => {
+    if (!validationTable || !Array.isArray(validationTable.rows)) {
+      return [];
+    }
+    return validationTable.rows.map((row, index) => ({
+      __rowId: `${row.geneSymbol || 'gene'}-${index}`,
+      ...row,
+    }));
+  }, [validationTable]);
+
+  const hasValidationSection = validationTableRows.length > 0;
+
+  const handleDownloadValidationCsv = useCallback(() => {
+    if (!validationTableRows.length) {
+      return;
+    }
+    const headers = validationTableColumns.map((col) => col.label || col.key);
+    const columnKeys = validationTableColumns.map((col) => col.key);
+    const toCsvValue = (value) => {
+      const stringValue = value == null ? '' : String(value);
+      if (/[",\n]/.test(stringValue)) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+    const rows = validationTableRows.map((row) => (
+      columnKeys.map((key) => {
+        if (key === 'link' && row[key]) {
+          return toCsvValue(row[key]);
+        }
+        if (key === 'score' && row[key] != null) {
+          return toCsvValue(row[key]);
+        }
+        return toCsvValue(row[key]);
+      }).join(',')
+    ));
+    const csvContent = [headers.map(toCsvValue).join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `external_biomarker_validation_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [validationTableRows, validationTableColumns]);
   
   // Load logo as DataURL for PDF
   useEffect(() => {
@@ -991,7 +1050,7 @@ const AnalysisReport = ({
         </div>
       )}
 
-      {hasValidationSection && biomarkerValidationResult?.results && (
+      {hasValidationSection && (
         <div className="validation-results-panel">
           <div className="validation-results-header">
             <div>
@@ -1010,72 +1069,63 @@ const AnalysisReport = ({
               {biomarkerValidationResult?.maxGenes && (
                 <span>Limit: {biomarkerValidationResult.maxGenes}</span>
               )}
+              {validationTableRows.length > 0 && (
+                <button className="validation-download-button" onClick={handleDownloadValidationCsv}>
+                  Download CSV
+                </button>
+              )}
             </div>
           </div>
-          <div className="validation-gene-grid">
-            {biomarkerValidationResult.results.map((entry) => {
-              const hasSources = Array.isArray(entry.sources) && entry.sources.length > 0;
-              return (
-                <div key={entry.gene} className="validation-gene-card">
-                  <div className="validation-gene-title">
-                    <strong>{entry.matchedSymbol || entry.gene}</strong>
-                    {entry.name && <span className="validation-gene-name">{entry.name}</span>}
-                  </div>
-                  {entry.summary && (
-                    <p className="validation-gene-summary">{truncateText(entry.summary, 320)}</p>
-                  )}
-                  {hasSources ? (
-                    <div className="validation-source-grid">
-                      {entry.sources.map((source, sourceIdx) => (
-                        <div key={`${entry.gene}-${source.source || sourceIdx}`} className="validation-source-card">
-                          <div className="validation-source-title">
-                            <span>{source.source || 'Evidence'}</span>
-                            {source.link && (
-                              <a href={source.link} target="_blank" rel="noreferrer">Open</a>
-                            )}
-                          </div>
-                          <ul>
-                            {(source.items || []).map((item, itemIdx) => {
-                              const evidenceIds = Array.isArray(item.evidence) ? item.evidence : [];
-                              const scoreLabel = formatScore(item.score);
-                              return (
-                                <li key={`${entry.gene}-${sourceIdx}-${itemIdx}`}>
-                                  <div className="validation-evidence-label">
-                                    {item.url ? (
-                                      <a href={item.url} target="_blank" rel="noreferrer">{item.label || item.url}</a>
-                                    ) : (
-                                      item.label || 'Evidence item'
-                                    )}
-                                  </div>
-                                  <div className="validation-evidence-meta">
-                                    {item.detail && <span>{item.detail}</span>}
-                                    {scoreLabel && <span>Score: {scoreLabel}</span>}
-                                    {item.pubmed && (
-                                      <a href={`https://pubmed.ncbi.nlm.nih.gov/${item.pubmed}/`} target="_blank" rel="noreferrer">
-                                        PubMed {item.pubmed}
-                                      </a>
-                                    )}
-                                  </div>
-                                  {item.snippet && (
-                                    <p className="validation-evidence-snippet">{truncateText(item.snippet, 220)}</p>
-                                  )}
-                                  {evidenceIds.length > 0 && (
-                                    <p className="validation-evidence-snippet">PMIDs: {evidenceIds.join(', ')}</p>
-                                  )}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="validation-gene-summary">No external evidence found for this gene yet.</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <p className="validation-score-note">
+            Association score (0-1) comes from Open Targets and reflects the aggregated strength of evidence that each gene is linked to the listed disease. Higher values indicate stronger support.
+          </p>
+          {validationTableRows.length > 0 ? (
+            <div className="validation-table-wrapper">
+              <table className="validation-table">
+                <thead>
+                  <tr>
+                    {validationTableColumns.map((column) => (
+                      <th key={column.key}>{column.label || column.key}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {validationTableRows.map((row) => (
+                    <tr key={row.__rowId}>
+                      {validationTableColumns.map((column) => {
+                        const value = row[column.key];
+                        if (column.key === 'link') {
+                          return (
+                            <td key={`${row.__rowId}-${column.key}`}>
+                              {value ? (
+                                <a href={value} target="_blank" rel="noreferrer">Open</a>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                          );
+                        }
+                        if (column.key === 'score') {
+                          return (
+                            <td key={`${row.__rowId}-${column.key}`}>
+                              {typeof value === 'number' ? formatScore(value) : '—'}
+                            </td>
+                          );
+                        }
+                        return (
+                          <td key={`${row.__rowId}-${column.key}`}>
+                            {value || '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="validation-empty-state">No disease matches were returned for the validated biomarkers.</p>
+          )}
         </div>
       )}
 

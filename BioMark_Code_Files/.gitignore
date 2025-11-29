@@ -28,6 +28,8 @@ server/logs/
 server/uploads/
 server/results/
 
+server/artifacts/biomarker_validation_cache.json
+
 # Database file (contains user data)
 server/db/app.sqlite
 server/db/*.sqlite

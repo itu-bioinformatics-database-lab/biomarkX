@@ -24,6 +24,7 @@ BioMark_Code_Files/server/**/__pycache__/
 BioMark_Code_Files/server/db/*.db
 BioMark_Code_Files/server/db/*.sqlite
 BioMark_Code_Files/server/db/*.sqlite3
+BioMark_Code_Files/server/artifacts/biomarker_validation_cache.json
 
 .DS_Store
 Thumbs.db
