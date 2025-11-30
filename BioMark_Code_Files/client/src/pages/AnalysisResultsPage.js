@@ -111,7 +111,7 @@ export default function AnalysisResultsPage() {
     if (!dateString) return 'N/A';
     // The database stores UTC time, convert to user's local timezone
     const date = new Date(dateString + 'Z'); // Add 'Z' to indicate UTC
-    return date.toLocaleString();
+    return date.toLocaleString('en-GB');
   };
 
   const handleViewResults = (analysis) => {
@@ -318,7 +318,6 @@ export default function AnalysisResultsPage() {
                   <div className="analysis-main-info">
                     <h3>{analysis.filename || 'Unknown File'}</h3>
                     <div className="analysis-meta">
-                      <span className="analysis-id">ID: {analysis.id.substring(0, 8)}...</span>
                       <span className="analysis-date">{formatDate(analysis.created_at)}</span>
                     </div>
                   </div>

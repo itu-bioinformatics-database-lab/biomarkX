@@ -203,7 +203,7 @@ export default function ProfilePage() {
           <div className="stat-card">
             <div className="stat-icon">&#128197;</div>
             <div className="stat-info">
-              <div className="stat-value">{stats.accountCreated ? new Date(stats.accountCreated).toLocaleDateString() : 'N/A'}</div>
+              <div className="stat-value">{stats.accountCreated ? new Date(stats.accountCreated).toLocaleDateString('en-GB') : 'N/A'}</div>
               <div className="stat-label">Member Since</div>
             </div>
           </div>
