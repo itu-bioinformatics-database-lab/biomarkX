@@ -126,8 +126,8 @@ app.get('/get-demo-data', (req, res) => {
 
   // Save metadata just like a normal upload
   try {
-    db.prepare('INSERT INTO uploads (id, session_id, original_name, server_path) VALUES (?,?,?,?)')
-      .run(uploadId, req.sessionId, 'GSE120584_serum_norm_demo.csv', demoFilePath);
+        db.prepare('INSERT INTO uploads (id, session_id, original_name, server_path) VALUES (?,?,?,?)')
+            .run(uploadId, req.sessionId, 'GSE120584_serum_norm_demo.csv', demoFilePath);
   } catch (dbErr) {
     console.error('DB insert failed for demo upload:', dbErr);
   }
@@ -193,13 +193,14 @@ app.get('/download-demo-file', (req, res) => {
 // step2 - Upload endpoint
 app.post('/upload', upload.single('file'), (req, res) => {
     console.log("At upload endpoint.");
+    console.log("Upload - req.sessionId:", req.sessionId, "| req.userId:", req.userId);
     const filePath = req.file.path;
     const uploadId = req.uploadId;
 
     // Persist upload metadata with user_id if authenticated
     try {
         db.prepare('INSERT INTO uploads (id, session_id, user_id, original_name, server_path) VALUES (?,?,?,?,?)')
-          .run(uploadId, req.sessionId, req.userId || null, req.file.originalname, filePath);
+            .run(uploadId, req.sessionId, req.userId || null, req.file.originalname, filePath);
     } catch (err) {
         console.error('Failed to insert upload record:', err);
     }
@@ -321,8 +322,8 @@ app.post('/merge-files', async (req, res) => {
 
                 // Persist merged artifact so ownership checks succeed
                 try {
-                    db.prepare('INSERT INTO uploads (id, session_id, user_id, original_name, server_path) VALUES (?,?,?,?,?)')
-                      .run(mergedUploadId, req.sessionId, req.userId || null, originalName, mergedFilePath);
+                                db.prepare('INSERT INTO uploads (id, session_id, user_id, original_name, server_path) VALUES (?,?,?,?,?)')
+                                    .run(mergedUploadId, req.sessionId, req.userId || null, originalName, mergedFilePath);
                 } catch (dbErr) {
                     console.error('Failed to insert merged upload record:', dbErr);
                 }
@@ -361,12 +362,20 @@ app.post('/get_all_columns', (req, res) => {
     console.log("At get all columns endpoint.");
     const { filePath } = req.body;
 
-    // Check if the file is owned by the current session
+    // Check if the file is owned by the current user (either by user_id or session_id)
     try {
         const derivedUploadId = path.basename(filePath).split('_')[0];
-        const uploadOwner = db.prepare('SELECT session_id FROM uploads WHERE id = ?').get(derivedUploadId);
+        const uploadOwner = db.prepare('SELECT user_id, session_id FROM uploads WHERE id = ?').get(derivedUploadId);
         
-        if (!uploadOwner || uploadOwner.session_id !== req.sessionId) {
+        if (!uploadOwner) {
+            return res.status(403).json({ success: false, error: 'File not found' });
+        }
+        
+        // Check ownership: either by user_id (logged-in) or session_id (guest)
+        const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
+        const ownedBySession = req.sessionId && uploadOwner.session_id === req.sessionId;
+        
+        if (!ownedByUser && !ownedBySession) {
             return res.status(403).json({ success: false, error: 'Access denied for this file' });
         }
     } catch (e) {
@@ -412,12 +421,20 @@ app.post('/get_classes', (req, res) => {
     const {filePath, columnName} = req.body; // Get the file path and column name from the request body
     console.log("columnName: ", columnName);
 
-    // Check if the file is owned by the current session
+    // Check if the file is owned by the current user (either by user_id or session_id)
     try {
         const derivedUploadId = path.basename(filePath).split('_')[0];
-        const uploadOwner = db.prepare('SELECT session_id FROM uploads WHERE id = ?').get(derivedUploadId);
+        const uploadOwner = db.prepare('SELECT user_id, session_id FROM uploads WHERE id = ?').get(derivedUploadId);
         
-        if (!uploadOwner || uploadOwner.session_id !== req.sessionId) {
+        if (!uploadOwner) {
+            return res.status(403).json({ success: false, error: 'File not found' });
+        }
+        
+        // Check ownership: either by user_id (logged-in) or session_id (guest)
+        const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
+        const ownedBySession = req.sessionId && uploadOwner.session_id === req.sessionId;
+        
+        if (!ownedByUser && !ownedBySession) {
             return res.status(403).json({ success: false, error: 'Access denied for this file' });
         }
     } catch (e) {
@@ -512,13 +529,15 @@ app.post('/analyze', (req, res) => {
         const derivedUploadId = path.basename(filePath).split('_')[0];
         const uploadOwner = db.prepare('SELECT session_id, user_id FROM uploads WHERE id = ?').get(derivedUploadId);
         
-        // Check ownership: either session_id matches OR user_id matches
-        const hasAccess = uploadOwner && (
-            uploadOwner.session_id === req.sessionId || 
-            (req.userId && uploadOwner.user_id === req.userId)
-        );
+        if (!uploadOwner) {
+            return res.status(403).json({ success: false, error: 'File not found' });
+        }
         
-        if (!hasAccess) {
+        // Check ownership: either by user_id (logged-in) or session_id (guest)
+        const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
+        const ownedBySession = req.sessionId && uploadOwner.session_id === req.sessionId;
+        
+        if (!ownedByUser && !ownedBySession) {
             return res.status(403).json({ success: false, error: 'Access denied for this file' });
         }
     }
@@ -556,8 +575,8 @@ app.post('/analyze', (req, res) => {
             executionTime: 'N/A' // Will be updated when analysis completes
         };
         
-        db.prepare('INSERT INTO analyses (id, upload_id, merged_file_id, session_id, user_id, status, analysis_metadata) VALUES (?,?,?,?,?,?,?)')
-          .run(analysisId, derivedUploadIdForInsert, mergedFileId, req.sessionId, req.userId || null, 'running', JSON.stringify(metadata));
+                db.prepare('INSERT INTO analyses (id, upload_id, merged_file_id, session_id, user_id, status, analysis_metadata) VALUES (?,?,?,?,?,?,?)')
+                    .run(analysisId, derivedUploadIdForInsert, mergedFileId, req.sessionId, req.userId || null, 'running', JSON.stringify(metadata));
     } catch (err) {
         console.error('Failed to insert analysis record:', err);
     }
@@ -835,11 +854,20 @@ app.post('/summarize_statistical_methods', (req, res) => {
     const selectedClassPair = req.body.selectedClassPair; // User-selected class pair (optional)
     const analysisId = req.body.analysisId; // Analysis ID to associate summary with
     
-    // Ownership check: ensure the request's session owns this file
+    // Ownership check: ensure the request's user owns this file
     try {
         const derivedUploadId = path.basename(filePath).split('_')[0];
-        const uploadOwner = db.prepare('SELECT session_id FROM uploads WHERE id = ?').get(derivedUploadId);
-        if (!uploadOwner || uploadOwner.session_id !== req.sessionId) {
+        const uploadOwner = db.prepare('SELECT user_id, session_id FROM uploads WHERE id = ?').get(derivedUploadId);
+        
+        if (!uploadOwner) {
+            return res.status(403).json({ success: false, message: 'File not found' });
+        }
+        
+        // Check ownership: either by user_id (logged-in) or session_id (guest)
+        const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
+        const ownedBySession = req.sessionId && uploadOwner.session_id === req.sessionId;
+        
+        if (!ownedByUser && !ownedBySession) {
             return res.status(403).json({ success: false, message: 'Access denied for this file' });
         }
     } catch (e) {

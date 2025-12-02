@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import UserMenu from './UserMenu';
 import '../css/Header.css';
 
-export default function Header({ onOpenUserGuide, onLogout, username }) {
+export default function Header({ onOpenUserGuide, onLogout, username, onViewGuestAnalysis }) {
   const navigate = useNavigate();
 
   const isGuestUser = () => {
@@ -30,6 +30,12 @@ export default function Header({ onOpenUserGuide, onLogout, username }) {
     }
   };
 
+  const handleViewGuestAnalysis = () => {
+    if (onViewGuestAnalysis) {
+      onViewGuestAnalysis();
+    }
+  };
+
   return (
     <header className="app-header">
       <img src={process.env.PUBLIC_URL + "/logo192.png"} alt="Logo" />
@@ -41,6 +47,7 @@ export default function Header({ onOpenUserGuide, onLogout, username }) {
           username={username}
           onNavigateToLogin={() => navigate('/login')}
           onLogout={handleLogout}
+          onViewGuestAnalysis={handleViewGuestAnalysis}
         />
 
         {onOpenUserGuide && (

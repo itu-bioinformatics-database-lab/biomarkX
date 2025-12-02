@@ -10,16 +10,16 @@ export const api = axios.create({
   baseURL: API_BASE
 });
 
-// Attach auth token and session ID to each request
+// Attach auth token to each request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
+  
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  const sessionId = getSessionId(); // session for anonymous users
-  if (sessionId) {
-    config.headers['x-session-id'] = sessionId;
-  }
+  
+  // No need to send x-session-id anymore - guest UUID token in Authorization is the session identifier
+  
   return config;
 });
 
@@ -53,8 +53,19 @@ export const buildUrl = (path) => `${API_BASE}${path.startsWith('/') ? '' : '/'}
 // Thin wrapper around the browser fetch API that automatically
 // attaches the session header so non-axios calls stay in the same session.
 export async function apiFetch(input, init = {}) {
-  const sessionId = getSessionId();
-  const headers = { ...(init.headers || {}), 'x-session-id': sessionId };
+  const token = localStorage.getItem('token');
+  let headers = { ...(init.headers || {}) };
+  
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+    // Don't send x-session-id if we have a token
+  } else {
+    const sessionId = getSessionId();
+    if (sessionId) {
+      headers['x-session-id'] = sessionId;
+    }
+  }
+  
   const response = await fetch(input, { ...init, headers });
   // Persist potential updated session id from the server
   const newId = response.headers.get('x-session-id');

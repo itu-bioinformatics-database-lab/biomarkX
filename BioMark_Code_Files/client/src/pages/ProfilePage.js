@@ -144,6 +144,24 @@ export default function ProfilePage() {
     navigate('/login');
   };
 
+  const handleViewGuestAnalysis = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get('/api/user/guest/last-analysis', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data.success && response.data.analysis) {
+        navigate(`/analysis/${response.data.analysis.id}`);
+      } else {
+        alert('No analysis found. Please run an analysis first.');
+      }
+    } catch (error) {
+      console.error('Error fetching guest analysis:', error);
+      alert('No analysis found or error occurred. Please run an analysis first.');
+    }
+  };
+
   const isGuestUser = () => {
     const token = localStorage.getItem('token');
     if (!token) return true;
@@ -173,6 +191,7 @@ export default function ProfilePage() {
             username={userInfo.username}
             onNavigateToLogin={() => navigate('/login')}
             onLogout={handleLogout}
+            onViewGuestAnalysis={handleViewGuestAnalysis}
           />
         </div>
       </header>

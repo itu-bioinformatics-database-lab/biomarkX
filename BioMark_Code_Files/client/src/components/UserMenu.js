@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../css/UserMenu.css';
 
-export default function UserMenu({ isGuest, username, onNavigateToLogin, onLogout }) {
+export default function UserMenu({ isGuest, username, onNavigateToLogin, onLogout, onViewGuestAnalysis }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
   const navigate = useNavigate();
@@ -58,6 +58,16 @@ export default function UserMenu({ isGuest, username, onNavigateToLogin, onLogou
               <div className="user-menu-header">
                 <span className="user-menu-guest-text">Guest Mode</span>
               </div>
+              <button 
+                className="user-menu-item"
+                onClick={() => handleMenuClick(onViewGuestAnalysis)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                </svg>
+                Last Analysis Result
+              </button>
+              <div className="user-menu-divider"></div>
               <button 
                 className="user-menu-item"
                 onClick={() => handleMenuClick(onNavigateToLogin)}

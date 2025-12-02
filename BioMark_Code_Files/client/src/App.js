@@ -187,7 +187,27 @@ function App() {
     fetchUsername();
   }, []);
 
-  // Validate token on app load
+  // Initialize guest token on first visit
+  useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    if (!storedToken) {
+      // Generate a guest UUID token
+      let guestToken;
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        guestToken = crypto.randomUUID();
+      } else {
+        // Fallback
+        guestToken = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      }
+      localStorage.setItem('token', guestToken);
+      setToken(guestToken);
+      console.log('Generated guest token:', guestToken);
+    } else {
+      setToken(storedToken);
+    }
+  }, []);
+
+  // Validate JWT tokens on app load (skip guest UUIDs)
   useEffect(() => {
     const validateToken = async () => {
       const storedToken = localStorage.getItem('token');
@@ -903,8 +923,15 @@ function App() {
 
   useEffect(() => {
     if (!Array.isArray(uploadedInfos) || uploadedInfos.length === 0) return;
+    
+    // Prevent infinite retry loop - only fetch once per file
+    const fetchedFiles = new Set();
+    
     uploadedInfos.forEach((infoItem) => {
       if (!infoItem?.filePath) return;
+      if (fetchedFiles.has(infoItem.filePath)) return;
+      
+      fetchedFiles.add(infoItem.filePath);
       const isActive = uploadedInfo?.filePath === infoItem.filePath;
       fetchAllColumnsInBackground(infoItem.filePath, { silent: !isActive });
     });
@@ -2560,6 +2587,25 @@ function App() {
   const handleOpenUserGuide = () => setShowUserGuide(true);
   const handleCloseUserGuide = () => setShowUserGuide(false);
 
+  const handleViewGuestAnalysis = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get('/api/user/guest/last-analysis', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data.success && response.data.analysis) {
+        // Navigate to the analysis detail page
+        navigate(`/analysis/${response.data.analysis.id}`);
+      } else {
+        alert('No analysis found. Please run an analysis first.');
+      }
+    } catch (error) {
+      console.error('Error fetching guest analysis:', error);
+      alert('No analysis found or error occurred. Please run an analysis first.');
+    }
+  };
+
   const handleLogout = () => {
     // Clear auth token from state and storage
     setToken(null);
@@ -2646,6 +2692,7 @@ function App() {
             username={username}
             onNavigateToLogin={() => navigate('/login')}
             onLogout={handleLogout}
+            onViewGuestAnalysis={handleViewGuestAnalysis}
           />
 
           <button className="user-guide-link" onClick={handleOpenUserGuide}>

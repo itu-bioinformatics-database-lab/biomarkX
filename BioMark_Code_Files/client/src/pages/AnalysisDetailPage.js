@@ -161,6 +161,24 @@ export default function AnalysisDetailPage() {
     navigate('/login');
   };
 
+  const handleViewGuestAnalysis = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get('/api/user/guest/last-analysis', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data.success && response.data.analysis) {
+        navigate(`/analysis/${response.data.analysis.id}`);
+      } else {
+        alert('No analysis found. Please run an analysis first.');
+      }
+    } catch (error) {
+      console.error('Error fetching guest analysis:', error);
+      alert('No analysis found or error occurred. Please run an analysis first.');
+    }
+  };
+
   const isGuestUser = () => {
     const token = localStorage.getItem('token');
     if (!token) return true;
@@ -191,6 +209,7 @@ export default function AnalysisDetailPage() {
               username={username}
               onNavigateToLogin={() => navigate('/login')}
               onLogout={handleLogout}
+              onViewGuestAnalysis={handleViewGuestAnalysis}
             />
           </div>
         </header>
@@ -218,6 +237,7 @@ export default function AnalysisDetailPage() {
               username={username}
               onNavigateToLogin={() => navigate('/login')}
               onLogout={handleLogout}
+              onViewGuestAnalysis={handleViewGuestAnalysis}
             />
           </div>
         </header>
@@ -247,12 +267,13 @@ export default function AnalysisDetailPage() {
             username={username}
             onNavigateToLogin={() => navigate('/login')}
             onLogout={handleLogout}
+            onViewGuestAnalysis={handleViewGuestAnalysis}
           />
         </div>
       </header>
       <div className="detail-container">
-        <button className="back-button" onClick={() => navigate('/my-analyses')}>
-          &#11013; Back to My Analyses
+        <button className="back-button" onClick={() => navigate(isGuestUser() ? '/' : '/my-analyses')}>
+          &#11013; {isGuestUser() ? 'Back to Home' : 'Back to My Analyses'}
         </button>
 
         <div className="detail-header">
