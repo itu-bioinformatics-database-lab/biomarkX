@@ -47,6 +47,7 @@ export default function AnalysisDetailPage() {
   useEffect(() => {
     fetchAnalysisDetail();
     fetchUsername();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysisId]);
 
   const fetchUsername = async () => {
