@@ -3,7 +3,7 @@ const db = require('../db/database');
 const SECRET_KEY = process.env.JWT_SECRET || 'change_this_secret_in_prod';
 
 // Middleware for all routes
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   // No authorization header → anonymous session not yet known
@@ -27,12 +27,19 @@ const authMiddleware = (req, res, next) => {
     req.session_id = null; // JWT users don't need a session ID
     return next();
   } catch (jwtError) {
-    // If JWT fails, check if it's a guest session UUID
-    const guest = db.prepare('SELECT session_id FROM users WHERE session_id = ?').get(token);
-    if (guest) {
-      req.userId = null;
-      req.session_id = guest.session_id;
-      return next();
+    // If JWT fails, check if it's a guest session integer ID
+    const parsedId = parseInt(token, 10);
+    if (!isNaN(parsedId)) {
+      try {
+        const result = await db.query('SELECT session_id FROM users WHERE session_id = $1', [parsedId]);
+        if (result.rows.length > 0) {
+          req.userId = null;
+          req.session_id = result.rows[0].session_id;
+          return next();
+        }
+      } catch (dbError) {
+        console.error('Database error checking guest session:', dbError);
+      }
     }
 
     console.warn('Invalid token provided:', token);

@@ -102,7 +102,7 @@ function formatElapsedTime(milliseconds) {
   }
 
 // step1 - Endpoint for demo data (session-safe)
-app.get('/get-demo-data', (req, res) => {
+app.get('/get-demo-data', async (req, res) => {
   console.log('Demo data endpoint called');
 
   // Path of immutable demo file shipped with the project
@@ -126,8 +126,8 @@ app.get('/get-demo-data', (req, res) => {
 
   // Save metadata just like a normal upload
   try {
-        db.prepare('INSERT INTO uploads (id, session_id, original_name, server_path) VALUES (?,?,?,?)')
-            .run(uploadId, req.sessionId, 'GSE120584_serum_norm_demo.csv', demoFilePath);
+        await db.query('INSERT INTO uploads (id, session_id, original_name, server_path) VALUES ($1, $2, $3, $4)',
+            [uploadId, req.sessionId, 'GSE120584_serum_norm_demo.csv', demoFilePath]);
   } catch (dbErr) {
     console.error('DB insert failed for demo upload:', dbErr);
   }
@@ -191,7 +191,7 @@ app.get('/download-demo-file', (req, res) => {
 });
 
 // step2 - Upload endpoint
-app.post('/upload', upload.single('file'), (req, res) => {
+app.post('/upload', upload.single('file'), async (req, res) => {
     console.log("At upload endpoint.");
     console.log("Upload - req.sessionId:", req.sessionId, "| req.userId:", req.userId);
     const filePath = req.file.path;
@@ -199,8 +199,8 @@ app.post('/upload', upload.single('file'), (req, res) => {
 
     // Persist upload metadata with user_id if authenticated
     try {
-        db.prepare('INSERT INTO uploads (id, session_id, user_id, original_name, server_path) VALUES (?,?,?,?,?)')
-            .run(uploadId, req.sessionId, req.userId || null, req.file.originalname, filePath);
+        await db.query('INSERT INTO uploads (id, session_id, user_id, original_name, server_path) VALUES ($1, $2, $3, $4, $5)',
+            [uploadId, req.sessionId, req.userId || null, req.file.originalname, filePath]);
     } catch (err) {
         console.error('Failed to insert upload record:', err);
     }
@@ -288,7 +288,7 @@ app.post('/merge-files', async (req, res) => {
     python.stdout.on('data', data => stdout += data.toString());
     python.stderr.on('data', data => stderr += data.toString());
 
-    python.on('close', code => {
+    python.on('close', async (code) => {
         if (code === 0) {
             try {
                 const parsed = JSON.parse(stdout.trim());
@@ -322,8 +322,8 @@ app.post('/merge-files', async (req, res) => {
 
                 // Persist merged artifact so ownership checks succeed
                 try {
-                                db.prepare('INSERT INTO uploads (id, session_id, user_id, original_name, server_path) VALUES (?,?,?,?,?)')
-                                    .run(mergedUploadId, req.sessionId, req.userId || null, originalName, mergedFilePath);
+                                await db.query('INSERT INTO uploads (id, session_id, user_id, original_name, server_path) VALUES ($1, $2, $3, $4, $5)',
+                                    [mergedUploadId, req.sessionId, req.userId || null, originalName, mergedFilePath]);
                 } catch (dbErr) {
                     console.error('Failed to insert merged upload record:', dbErr);
                 }
@@ -358,18 +358,20 @@ app.post('/merge-files', async (req, res) => {
 });
 
 // step3 - Get all columns
-app.post('/get_all_columns', (req, res) => {
+app.post('/get_all_columns', async (req, res) => {
     console.log("At get all columns endpoint.");
     const { filePath } = req.body;
 
     // Check if the file is owned by the current user (either by user_id or session_id)
     try {
         const derivedUploadId = path.basename(filePath).split('_')[0];
-        const uploadOwner = db.prepare('SELECT user_id, session_id FROM uploads WHERE id = ?').get(derivedUploadId);
+        const result = await db.query('SELECT user_id, session_id FROM uploads WHERE id = $1', [derivedUploadId]);
         
-        if (!uploadOwner) {
+        if (result.rows.length === 0) {
             return res.status(403).json({ success: false, error: 'File not found' });
         }
+        
+        const uploadOwner = result.rows[0];
         
         // Check ownership: either by user_id (logged-in) or session_id (guest)
         const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
@@ -416,7 +418,7 @@ app.post('/get_all_columns', (req, res) => {
 });
 
 // step3 - Get the classes of the selected column
-app.post('/get_classes', (req, res) => { 
+app.post('/get_classes', async (req, res) => { 
     console.log("At get classes endpoint.")
     const {filePath, columnName} = req.body; // Get the file path and column name from the request body
     console.log("columnName: ", columnName);
@@ -424,11 +426,13 @@ app.post('/get_classes', (req, res) => {
     // Check if the file is owned by the current user (either by user_id or session_id)
     try {
         const derivedUploadId = path.basename(filePath).split('_')[0];
-        const uploadOwner = db.prepare('SELECT user_id, session_id FROM uploads WHERE id = ?').get(derivedUploadId);
+        const result = await db.query('SELECT user_id, session_id FROM uploads WHERE id = $1', [derivedUploadId]);
         
-        if (!uploadOwner) {
+        if (result.rows.length === 0) {
             return res.status(403).json({ success: false, error: 'File not found' });
         }
+        
+        const uploadOwner = result.rows[0];
         
         // Check ownership: either by user_id (logged-in) or session_id (guest)
         const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
@@ -474,7 +478,7 @@ app.post('/get_classes', (req, res) => {
 });
 
 // step7 - Run the analysis
-app.post('/analyze', (req, res) => {
+app.post('/analyze', async (req, res) => {
     
     console.log("At analyze endpoint.")
     console.log("Request body: ", req.body);
@@ -527,11 +531,13 @@ app.post('/analyze', (req, res) => {
     // Ownership check — only apply to user uploads
     if (!isMergedFile) {
         const derivedUploadId = path.basename(filePath).split('_')[0];
-        const uploadOwner = db.prepare('SELECT session_id, user_id FROM uploads WHERE id = ?').get(derivedUploadId);
+        const result = await db.query('SELECT session_id, user_id FROM uploads WHERE id = $1', [derivedUploadId]);
         
-        if (!uploadOwner) {
+        if (result.rows.length === 0) {
             return res.status(403).json({ success: false, error: 'File not found' });
         }
+        
+        const uploadOwner = result.rows[0];
         
         // Check ownership: either by user_id (logged-in) or session_id (guest)
         const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
@@ -571,12 +577,10 @@ app.post('/analyze', (req, res) => {
             },
             nonFeatureColumns: nonFeatureColumns || [],
             isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
-            numTopFeatures: numTopFeatures || 20,
-            executionTime: 'N/A' // Will be updated when analysis completes
         };
         
-                db.prepare('INSERT INTO analyses (id, upload_id, merged_file_id, session_id, user_id, status, analysis_metadata) VALUES (?,?,?,?,?,?,?)')
-                    .run(analysisId, derivedUploadIdForInsert, mergedFileId, req.sessionId, req.userId || null, 'running', JSON.stringify(metadata));
+                await db.query('INSERT INTO analyses (id, upload_id, merged_file_id, session_id, user_id, status, analysis_metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+                    [analysisId, derivedUploadIdForInsert, mergedFileId, req.sessionId, req.userId || null, 'running', JSON.stringify(metadata)]);
     } catch (err) {
         console.error('Failed to insert analysis record:', err);
     }
@@ -694,7 +698,7 @@ app.post('/analyze', (req, res) => {
         errorOutput += data.toString();
     });
 
-    python.on('close', (code) => {
+    python.on('close', async (code) => {
         const endTime = Date.now(); // End time of the process
         const elapsedTime = formatElapsedTime(endTime - startTime); // Calculate elapsed time in a suitable format
 
@@ -703,12 +707,12 @@ app.post('/analyze', (req, res) => {
             
             // Mark analysis as finished in DB and update metadata with execution time
             try {
-                const existingAnalysis = db.prepare('SELECT analysis_metadata FROM analyses WHERE id = ?').get(analysisId);
+                const result = await db.query('SELECT analysis_metadata FROM analyses WHERE id = $1', [analysisId]);
                 let metadata = {};
                 
-                if (existingAnalysis?.analysis_metadata) {
+                if (result.rows[0]?.analysis_metadata) {
                     try {
-                        metadata = JSON.parse(existingAnalysis.analysis_metadata);
+                        metadata = JSON.parse(result.rows[0].analysis_metadata);
                     } catch (e) {
                         console.error('Failed to parse existing metadata:', e);
                     }
@@ -717,8 +721,8 @@ app.post('/analyze', (req, res) => {
                 // Add execution time to metadata
                 metadata.executionTime = elapsedTime;
                 
-                db.prepare('UPDATE analyses SET status = ?, result_path = ?, analysis_metadata = ? WHERE id = ?')
-                  .run('finished', outputData.join(','), JSON.stringify(metadata), analysisId);
+                await db.query('UPDATE analyses SET status = $1, result_path = $2, analysis_metadata = $3 WHERE id = $4',
+                  ['finished', outputData.join(','), JSON.stringify(metadata), analysisId]);
             } catch (err) {
                 console.error('Failed to update analysis record:', err);
             }
@@ -788,15 +792,15 @@ app.post('/analyze', (req, res) => {
                   + `<p>If the link does not work, copy and paste this URL into your browser:</p>`
                   + `<p>${viewUrl}</p>`
                   + `</div>`;
-                const pending = db.prepare('SELECT id, email FROM notification_subscriptions WHERE job_id = ? AND status = ?').all(analysisId, 'pending');
-                if (Array.isArray(pending) && pending.length > 0) {
-                    pending.forEach(async (row) => {
+                const result = await db.query('SELECT id, email FROM notification_subscriptions WHERE job_id = $1 AND status = $2', [analysisId, 'pending']);
+                if (result.rows.length > 0) {
+                    result.rows.forEach(async (row) => {
                         try {
                             await sendMail({ to: row.email, subject, html, text: `Your analysis is complete. View: ${viewUrl}` });
-                            db.prepare('UPDATE notification_subscriptions SET status = ?, sent_at = CURRENT_TIMESTAMP WHERE id = ?').run('sent', row.id);
+                            await db.query('UPDATE notification_subscriptions SET status = $1, sent_at = CURRENT_TIMESTAMP WHERE id = $2', ['sent', row.id]);
                         } catch (mailErr) {
                             console.error('Failed to send email notification:', mailErr);
-                            db.prepare('UPDATE notification_subscriptions SET status = ?, error_message = ? WHERE id = ?').run('failed', String(mailErr), row.id);
+                            await db.query('UPDATE notification_subscriptions SET status = $1, error_message = $2 WHERE id = $3', ['failed', String(mailErr), row.id]);
                         }
                     });
                 }
@@ -807,8 +811,8 @@ app.post('/analyze', (req, res) => {
             console.error(`Python script failed with code ${code}`);
             // Mark analysis as failed
             try {
-                db.prepare('UPDATE analyses SET status = ? WHERE id = ?')
-                  .run('failed', analysisId);
+                await db.query('UPDATE analyses SET status = $1 WHERE id = $2',
+                  ['failed', analysisId]);
             } catch (err) {
                 console.error('Failed to set analysis status to failed:', err);
             }
@@ -827,15 +831,15 @@ app.post('/analyze', (req, res) => {
                   + `<p>Unfortunately, your analysis failed. You may try again or check logs.</p>`
                   + `<p>You can still open the results viewer page: <a href="${viewUrl}">${viewUrl}</a></p>`
                   + `</div>`;
-                const pending = db.prepare('SELECT id, email FROM notification_subscriptions WHERE job_id = ? AND status = ?').all(analysisId, 'pending');
-                if (Array.isArray(pending) && pending.length > 0) {
-                    pending.forEach(async (row) => {
+                const result = await db.query('SELECT id, email FROM notification_subscriptions WHERE job_id = $1 AND status = $2', [analysisId, 'pending']);
+                if (result.rows.length > 0) {
+                    result.rows.forEach(async (row) => {
                         try {
                             await sendMail({ to: row.email, subject, html, text: `Your analysis failed. View: ${viewUrl}` });
-                            db.prepare('UPDATE notification_subscriptions SET status = ?, sent_at = CURRENT_TIMESTAMP WHERE id = ?').run('sent', row.id);
+                            await db.query('UPDATE notification_subscriptions SET status = $1, sent_at = CURRENT_TIMESTAMP WHERE id = $2', ['sent', row.id]);
                         } catch (mailErr) {
                             console.error('Failed to send failure email notification:', mailErr);
-                            db.prepare('UPDATE notification_subscriptions SET status = ?, error_message = ? WHERE id = ?').run('failed', String(mailErr), row.id);
+                            await db.query('UPDATE notification_subscriptions SET status = $1, error_message = $2 WHERE id = $3', ['failed', String(mailErr), row.id]);
                         }
                     });
                 }
@@ -847,7 +851,7 @@ app.post('/analyze', (req, res) => {
 });
 
 // step8 - Endpoint to summarize statistical methods
-app.post('/summarize_statistical_methods', (req, res) => {
+app.post('/summarize_statistical_methods', async (req, res) => {
     console.log("At summarize statistical methods endpoint.")
     const featureCount = req.body.featureCount || 10; // Default is 10
     const filePath = req.body.filePath;
@@ -857,11 +861,13 @@ app.post('/summarize_statistical_methods', (req, res) => {
     // Ownership check: ensure the request's user owns this file
     try {
         const derivedUploadId = path.basename(filePath).split('_')[0];
-        const uploadOwner = db.prepare('SELECT user_id, session_id FROM uploads WHERE id = ?').get(derivedUploadId);
+        const result = await db.query('SELECT user_id, session_id FROM uploads WHERE id = $1', [derivedUploadId]);
         
-        if (!uploadOwner) {
+        if (result.rows.length === 0) {
             return res.status(403).json({ success: false, message: 'File not found' });
         }
+        
+        const uploadOwner = result.rows[0];
         
         // Check ownership: either by user_id (logged-in) or session_id (guest)
         const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
@@ -924,7 +930,7 @@ app.post('/summarize_statistical_methods', (req, res) => {
                 console.error(`stderr: ${data}`);
             });
             
-            python.on('close', (code) => {
+            python.on('close', async (code) => {
                 if (code !== 0) {
                     console.error(`Python process exited with code ${code}`);
                     return res.status(500).json({ success: false, message: 'Process failed' });
@@ -940,12 +946,12 @@ app.post('/summarize_statistical_methods', (req, res) => {
                 // Save biomarker summary to database if analysisId provided
                 if (analysisId) {
                     try {
-                        const existingAnalysis = db.prepare('SELECT analysis_metadata FROM analyses WHERE id = ?').get(analysisId);
-                        if (existingAnalysis) {
+                        const result = await db.query('SELECT analysis_metadata FROM analyses WHERE id = $1', [analysisId]);
+                        if (result.rows.length > 0) {
                             let metadata = {};
-                            if (existingAnalysis.analysis_metadata) {
+                            if (result.rows[0].analysis_metadata) {
                                 try {
-                                    metadata = JSON.parse(existingAnalysis.analysis_metadata);
+                                    metadata = JSON.parse(result.rows[0].analysis_metadata);
                                 } catch (e) {
                                     console.error('Failed to parse existing metadata:', e);
                                 }
@@ -966,8 +972,8 @@ app.post('/summarize_statistical_methods', (req, res) => {
                             });
                             
                             // Update the analysis metadata
-                            db.prepare('UPDATE analyses SET analysis_metadata = ? WHERE id = ?')
-                              .run(JSON.stringify(metadata), analysisId);
+                            await db.query('UPDATE analyses SET analysis_metadata = $1 WHERE id = $2',
+                              [JSON.stringify(metadata), analysisId]);
                             
                             console.log(`Saved biomarker summary to analysis ${analysisId}`);
                         }
@@ -1138,7 +1144,7 @@ app.post('/summarize_statistical_methods', (req, res) => {
             const py = runSummary(aggLabel);
             py.stdout.on('data', (data) => { outputData += data.toString(); console.log(`Python stdout: ${data}`); });
             py.stderr.on('data', (data) => { console.error(`stderr: ${data}`); });
-            py.on('close', (code) => {
+            py.on('close', async (code) => {
                 if (code !== 0) {
                     console.error(`Python process exited with code ${code}`);
                     return res.status(500).json({ success: false, message: 'Process failed' });
@@ -1149,12 +1155,12 @@ app.post('/summarize_statistical_methods', (req, res) => {
                 // Save biomarker summary to database if analysisId provided
                 if (analysisId) {
                     try {
-                        const existingAnalysis = db.prepare('SELECT analysis_metadata FROM analyses WHERE id = ?').get(analysisId);
-                        if (existingAnalysis) {
+                        const result = await db.query('SELECT analysis_metadata FROM analyses WHERE id = $1', [analysisId]);
+                        if (result.rows.length > 0) {
                             let metadata = {};
-                            if (existingAnalysis.analysis_metadata) {
+                            if (result.rows[0].analysis_metadata) {
                                 try {
-                                    metadata = JSON.parse(existingAnalysis.analysis_metadata);
+                                    metadata = JSON.parse(result.rows[0].analysis_metadata);
                                 } catch (e) {
                                     console.error('Failed to parse existing metadata:', e);
                                 }
@@ -1181,8 +1187,8 @@ app.post('/summarize_statistical_methods', (req, res) => {
                             });
                             
                             // Update the analysis metadata AND append to result_path
-                            const currentAnalysis = db.prepare('SELECT result_path FROM analyses WHERE id = ?').get(analysisId);
-                            let updatedResultPath = currentAnalysis?.result_path || '';
+                            const currentResult = await db.query('SELECT result_path FROM analyses WHERE id = $1', [analysisId]);
+                            let updatedResultPath = currentResult.rows[0]?.result_path || '';
                             
                             // Append the biomarker summary image to result_path
                             if (cleanedOutput) {
@@ -1193,8 +1199,8 @@ app.post('/summarize_statistical_methods', (req, res) => {
                                 }
                             }
                             
-                            db.prepare('UPDATE analyses SET analysis_metadata = ?, result_path = ? WHERE id = ?')
-                              .run(JSON.stringify(metadata), updatedResultPath, analysisId);
+                            await db.query('UPDATE analyses SET analysis_metadata = $1, result_path = $2 WHERE id = $3',
+                              [JSON.stringify(metadata), updatedResultPath, analysisId]);
                             
                             console.log(`Saved biomarker summary to analysis ${analysisId} and added to result_path`);
                         }
@@ -1279,7 +1285,7 @@ function isValidEmail(email) {
 }
 
 // Save a notification subscription before or during analysis
-app.post('/api/analysis/notify', (req, res) => {
+app.post('/api/analysis/notify', async (req, res) => {
     try {
         const { jobId, email } = req.body || {};
         if (!jobId || !email) {
@@ -1289,8 +1295,8 @@ app.post('/api/analysis/notify', (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid email address' });
         }
         const id = uuidv4();
-        db.prepare('INSERT INTO notification_subscriptions (id, job_id, email, status) VALUES (?,?,?,?)')
-          .run(id, jobId, email, 'pending');
+        await db.query('INSERT INTO notification_subscriptions (id, job_id, email, status) VALUES ($1, $2, $3, $4)',
+          [id, jobId, email, 'pending']);
         return res.json({ success: true, id });
     } catch (e) {
         console.error('Failed to save notification subscription:', e);
@@ -1299,10 +1305,11 @@ app.post('/api/analysis/notify', (req, res) => {
 });
 
 // Public endpoint for results viewer to fetch analysis state
-app.get('/api/analyses/:analysisId', (req, res) => {
+app.get('/api/analyses/:analysisId', async (req, res) => {
     try {
-        const row = db.prepare('SELECT id, result_path, status, created_at FROM analyses WHERE id = ?').get(req.params.analysisId);
-        if (!row) return res.status(404).json({ success: false, message: 'Analysis not found' });
+        const result = await db.query('SELECT id, result_path, status, created_at FROM analyses WHERE id = $1', [req.params.analysisId]);
+        if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Analysis not found' });
+        const row = result.rows[0];
         const resultImages = row.result_path ? row.result_path.split(',').map(s => s.trim()).filter(Boolean) : [];
 
         // Try to load best_params.json from results folder and include in API response

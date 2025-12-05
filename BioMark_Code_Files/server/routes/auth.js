@@ -16,17 +16,26 @@ const isValidEmail = (email) => {
 };
 
 // Helpers
-const findAccountByEmail = (email) => db.prepare('SELECT * FROM accounts WHERE email = ?').get(email);
-const findAccountByUsername = (username) => db.prepare('SELECT * FROM accounts WHERE username = ?').get(username);
-const findAccountByEmailOrUsername = (identifier) => {
-  const account = db.prepare('SELECT * FROM accounts WHERE email = ? OR username = ?').get(identifier, identifier);
-  return account;
+const findAccountByEmail = async (email) => {
+  const result = await db.query('SELECT * FROM accounts WHERE email = $1', [email]);
+  return result.rows[0];
 };
-const findAccountById = (id) => db.prepare('SELECT * FROM accounts WHERE id = ?').get(id);
-const createAccount = (email, passwordHash, username) => {
+const findAccountByUsername = async (username) => {
+  const result = await db.query('SELECT * FROM accounts WHERE username = $1', [username]);
+  return result.rows[0];
+};
+const findAccountByEmailOrUsername = async (identifier) => {
+  const result = await db.query('SELECT * FROM accounts WHERE email = $1 OR username = $1', [identifier]);
+  return result.rows[0];
+};
+const findAccountById = async (id) => {
+  const result = await db.query('SELECT * FROM accounts WHERE id = $1', [id]);
+  return result.rows[0];
+};
+const createAccount = async (email, passwordHash, username) => {
   const accountId = uuidv4();
-  const stmt = db.prepare('INSERT INTO accounts (id, email, password_hash, username) VALUES (?, ?, ?, ?)');
-  stmt.run(accountId, email, passwordHash, username);
+  await db.query('INSERT INTO accounts (id, email, password_hash, username) VALUES ($1, $2, $3, $4)', 
+    [accountId, email, passwordHash, username]);
   return accountId;
 };
 
@@ -51,17 +60,17 @@ router.post('/signup', async (req, res) => {
     });
   }
 
-  // Check if email already exists
-  const existingEmail = findAccountByEmail(email);
-  if (existingEmail) return res.status(400).json({ success: false, message: 'Email already in use' });
-  
-  // Check if username already exists
-  const existingUsername = findAccountByUsername(username);
-  if (existingUsername) return res.status(400).json({ success: false, message: 'Username already taken' });
-
   try {
+    // Check if email already exists
+    const existingEmail = await findAccountByEmail(email);
+    if (existingEmail) return res.status(400).json({ success: false, message: 'Email already in use' });
+    
+    // Check if username already exists
+    const existingUsername = await findAccountByUsername(username);
+    if (existingUsername) return res.status(400).json({ success: false, message: 'Username already taken' });
+
     const hash = await bcrypt.hash(password, 10);
-    const userId = createAccount(email, hash, username);
+    const userId = await createAccount(email, hash, username);
     const { rememberMe } = req.body;
     const tokenExpiry = rememberMe ? LONG_TOKEN_EXPIRY : SHORT_TOKEN_EXPIRY;
     const token = jwt.sign({ userId }, SECRET_KEY, { expiresIn: tokenExpiry });
@@ -75,37 +84,49 @@ router.post('/signup', async (req, res) => {
 router.post('/login', async (req, res) => {
   const { email, password, rememberMe } = req.body;
   
-  // Find account by email or username
-  const account = findAccountByEmailOrUsername(email);
-  if (!account) return res.status(400).json({ success: false, message: 'Invalid credentials' });
+  try {
+    // Find account by email or username
+    const account = await findAccountByEmailOrUsername(email);
+    if (!account) return res.status(400).json({ success: false, message: 'Invalid credentials' });
 
-  const match = await bcrypt.compare(password, account.password_hash);
-  if (!match) return res.status(400).json({ success: false, message: 'Invalid credentials' });
+    const match = await bcrypt.compare(password, account.password_hash);
+    if (!match) return res.status(400).json({ success: false, message: 'Invalid credentials' });
 
-  const tokenExpiry = rememberMe ? LONG_TOKEN_EXPIRY : SHORT_TOKEN_EXPIRY;
-  const token = jwt.sign({ userId: account.id }, SECRET_KEY, { expiresIn: tokenExpiry });
-  return res.json({ success: true, token });
+    const tokenExpiry = rememberMe ? LONG_TOKEN_EXPIRY : SHORT_TOKEN_EXPIRY;
+    const token = jwt.sign({ userId: account.id }, SECRET_KEY, { expiresIn: tokenExpiry });
+    return res.json({ success: true, token });
+  } catch (err) {
+    console.error('Login error', err);
+    return res.status(500).json({ success: false, message: 'Login failed' });
+  }
 });
 
 // Provide a "whoami" endpoint for the client to verify token and get basic info
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ success: false, error: 'Missing token' });
   const token = auth.split(' ')[1];
   
-  // Check if it's a guest token (UUID format, no dots)
+  // Check if it's a guest token (integer, no dots)
   if (!token.includes('.')) {
-    // Guest token - just verify it exists in the users table
-    const user = db.prepare('SELECT * FROM users WHERE session_id = ?').get(token);
-    if (user) {
-      return res.json({ 
-        success: true, 
-        user: { 
-          id: user.session_id,
-          username: 'Guest',
-          isGuest: true
-        } 
-      });
+    const parsedId = parseInt(token, 10);
+    if (!isNaN(parsedId)) {
+      try {
+        // Guest token - just verify it exists in the users table
+        const result = await db.query('SELECT * FROM users WHERE session_id = $1', [parsedId]);
+        if (result.rows.length > 0) {
+          return res.json({ 
+            success: true, 
+            user: { 
+              id: result.rows[0].session_id,
+              username: 'Guest',
+              isGuest: true
+            } 
+          });
+        }
+      } catch (err) {
+        console.error('Guest token verification error:', err);
+      }
     }
     return res.status(401).json({ success: false, error: 'Invalid guest token' });
   }
@@ -113,7 +134,7 @@ router.get('/me', (req, res) => {
   // JWT token - verify and get account info
   try {
     const payload = jwt.verify(token, SECRET_KEY);
-    const account = findAccountById(payload.userId);
+    const account = await findAccountById(payload.userId);
     if (!account) return res.status(404).json({ success: false, error: 'Account not found' });
     return res.json({ 
       success: true, 
@@ -121,7 +142,7 @@ router.get('/me', (req, res) => {
         id: account.id, 
         email: account.email,
         username: account.username 
-      } 
+      }
     });
   } catch (err) {
     return res.status(401).json({ success: false, error: 'Invalid token' });
@@ -129,29 +150,34 @@ router.get('/me', (req, res) => {
 });
 
 // Guest login
-router.post('/guest', (req, res) => {
-  const sessionId = uuidv4();
+router.post('/guest', async (req, res) => {
+  try {
+    // Create new session with auto-increment ID
+    const result = await db.query('INSERT INTO users DEFAULT VALUES RETURNING session_id');
+    const sessionId = result.rows[0].session_id;
 
-  // Save session in DB
-  db.prepare('INSERT INTO users (session_id) VALUES (?)').run(sessionId);
-
-  // Return a token (or just session ID)
-  res.json({ token: sessionId, guest: true });
+    // Return a token (session ID as string)
+    res.json({ token: String(sessionId), guest: true });
+  } catch (err) {
+    console.error('Guest login error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to create guest session' });
+  }
 });
 
-// Update profile
-router.put('/update-profile', async (req, res) => {
+// Profile update endpoint
+router.post('/profile', async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ success: false, message: 'Missing token' });
   
   const token = auth.split(' ')[1];
+  
   try {
     const payload = jwt.verify(token, SECRET_KEY);
     const userId = payload.userId;
     const { username, email, currentPassword, newPassword } = req.body;
     
     // Get current account
-    const account = findAccountById(userId);
+    const account = await findAccountById(userId);
     if (!account) return res.status(404).json({ success: false, message: 'Account not found' });
     
     // Validate username if changed
@@ -164,7 +190,7 @@ router.put('/update-profile', async (req, res) => {
         });
       }
       
-      const existingUsername = findAccountByUsername(username);
+      const existingUsername = await findAccountByUsername(username);
       if (existingUsername) {
         return res.status(400).json({ success: false, message: 'Username already taken' });
       }
@@ -176,7 +202,7 @@ router.put('/update-profile', async (req, res) => {
         return res.status(400).json({ success: false, message: 'Invalid email format' });
       }
       
-      const existingEmail = findAccountByEmail(email);
+      const existingEmail = await findAccountByEmail(email);
       if (existingEmail) {
         return res.status(400).json({ success: false, message: 'Email already in use' });
       }
@@ -198,8 +224,8 @@ router.put('/update-profile', async (req, res) => {
     }
     
     // Update account
-    db.prepare('UPDATE accounts SET username = ?, email = ?, password_hash = ? WHERE id = ?')
-      .run(username || account.username, email || account.email, newPasswordHash, userId);
+    await db.query('UPDATE accounts SET username = $1, email = $2, password_hash = $3 WHERE id = $4',
+      [username || account.username, email || account.email, newPasswordHash, userId]);
     
     return res.json({ success: true, message: 'Profile updated successfully' });
   } catch (err) {

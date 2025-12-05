@@ -156,10 +156,6 @@ const AnalysisReport = ({
   const analysisResultsSectionNumber = nextSectionNumber;
 
   const friendlyClassPair = (value) => (value ? value.split('_').join(' vs ') : 'All Classes');
-  const truncateText = (text, max = 220) => {
-    if (!text) return '';
-    return text.length > max ? `${text.slice(0, max - 3)}...` : text;
-  };
   const formatScore = (score) => {
     if (typeof score !== 'number' || Number.isNaN(score)) {
       return null;
@@ -1100,7 +1096,7 @@ const AnalysisReport = ({
                               {value ? (
                                 <a href={value} target="_blank" rel="noreferrer">Open</a>
                               ) : (
-                                '—'
+                                'ï¿½'
                               )}
                             </td>
                           );
@@ -1108,13 +1104,13 @@ const AnalysisReport = ({
                         if (column.key === 'score') {
                           return (
                             <td key={`${row.__rowId}-${column.key}`}>
-                              {typeof value === 'number' ? formatScore(value) : '—'}
+                              {typeof value === 'number' ? formatScore(value) : 'ï¿½'}
                             </td>
                           );
                         }
                         return (
                           <td key={`${row.__rowId}-${column.key}`}>
-                            {value || '—'}
+                            {value || 'ï¿½'}
                           </td>
                         );
                       })}

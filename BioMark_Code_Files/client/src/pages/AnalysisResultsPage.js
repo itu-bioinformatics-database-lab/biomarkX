@@ -109,9 +109,9 @@ export default function AnalysisResultsPage() {
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    // The database stores UTC time, convert to user's local timezone
-    const date = new Date(dateString + 'Z'); // Add 'Z' to indicate UTC
-    return date.toLocaleString('en-GB');
+    // PostgreSQL returns ISO timestamps, handle both with/without Z suffix
+    const date = new Date(dateString.endsWith('Z') ? dateString : dateString + 'Z');
+    return isNaN(date.getTime()) ? 'N/A' : date.toLocaleString('en-GB');
   };
 
   const handleViewResults = (analysis) => {

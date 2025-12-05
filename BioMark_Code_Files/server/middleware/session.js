@@ -1,20 +1,20 @@
-const { v4: uuidv4 } = require('uuid');
 const db = require('../db/database');
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-module.exports = (req, res, next) => {
+module.exports = async (req, res, next) => {
   let sessionId = null;
 
-  // Priority 1: Check Authorization header for guest UUID token
+  // Priority 1: Check Authorization header for guest integer token
   const authHeader = req.headers.authorization;
   if (authHeader) {
     const parts = authHeader.split(' ');
     if (parts.length === 2 && parts[0] === 'Bearer') {
       const token = parts[1];
-      // Check if it's a guest UUID (not a JWT)
-      if (!token.includes('.') && UUID_REGEX.test(token)) {
-        sessionId = token; // Use the guest token as session ID
+      // Check if it's a guest token (integer, not a JWT with dots)
+      if (!token.includes('.')) {
+        const parsedId = parseInt(token, 10);
+        if (!isNaN(parsedId)) {
+          sessionId = parsedId; // Use the guest token as session ID
+        }
       }
       // If it's a JWT, session stays null (logged-in users don't use session_id for ownership)
     }
@@ -22,24 +22,24 @@ module.exports = (req, res, next) => {
 
   // Priority 2: Fall back to x-session-id header (legacy support)
   if (!sessionId) {
-    sessionId = req.header('x-session-id');
-    // Validate if provided
-    if (sessionId && !UUID_REGEX.test(sessionId)) {
-      return res.status(400).json({ success: false, error: 'Invalid session id format' });
+    const headerSessionId = req.header('x-session-id');
+    if (headerSessionId) {
+      const parsedId = parseInt(headerSessionId, 10);
+      if (isNaN(parsedId)) {
+        return res.status(400).json({ success: false, error: 'Invalid session id format' });
+      }
+      sessionId = parsedId;
     }
   }
 
   // Priority 3: Generate new session only if no auth at all
   if (!sessionId && !authHeader) {
-    sessionId = uuidv4();
-  }
-
-  // Persist (or ensure) user row for session tracking
-  if (sessionId) {
     try {
-      db.prepare('INSERT OR IGNORE INTO users (session_id) VALUES (?)').run(sessionId);
+      const result = await db.query('INSERT INTO users DEFAULT VALUES RETURNING session_id');
+      sessionId = result.rows[0].session_id;
     } catch (err) {
-      console.error('DB error while inserting session', err);
+      console.error('DB error while creating session', err);
+      return res.status(500).json({ success: false, error: 'Failed to create session' });
     }
   }
 
@@ -47,7 +47,7 @@ module.exports = (req, res, next) => {
   req.sessionId = sessionId;
   // Echo it back to the client (for legacy support)
   if (sessionId) {
-    res.set('x-session-id', sessionId);
+    res.set('x-session-id', String(sessionId));
   }
 
   next();

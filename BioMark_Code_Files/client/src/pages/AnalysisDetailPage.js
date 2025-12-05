@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, buildUrl } from '../api';
 import UserMenu from '../components/UserMenu';
@@ -44,11 +44,6 @@ export default function AnalysisDetailPage() {
     }
   };
 
-  useEffect(() => {
-    fetchAnalysisDetail();
-    fetchUsername();
-  }, [analysisId]);
-
   const fetchUsername = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -63,7 +58,7 @@ export default function AnalysisDetailPage() {
     }
   };
 
-  const fetchAnalysisDetail = async () => {
+  const fetchAnalysisDetail = useCallback(async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
@@ -103,7 +98,7 @@ export default function AnalysisDetailPage() {
             title: `Analysis Results`,
             images: images,
             classPair: metadata.selectedClasses ? metadata.selectedClasses.join(' vs ') : 'N/A',
-            date: new Date(analysisData.created_at + 'Z').toLocaleString(),
+            date: formatDate(analysisData.created_at),
             time: metadata.executionTime || 'N/A',
             types: {
               differential: metadata.analysisMethods?.differential || [],
@@ -143,17 +138,18 @@ export default function AnalysisDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [analysisId]); // useCallback dependency
 
   useEffect(() => {
     fetchAnalysisDetail();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisId]);
+    fetchUsername();
+  }, [analysisId, fetchAnalysisDetail]);
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    const date = new Date(dateString + 'Z');
-    return date.toLocaleString();
+    // PostgreSQL returns ISO timestamps, handle both with/without Z suffix
+    const date = new Date(dateString.endsWith('Z') ? dateString : dateString + 'Z');
+    return isNaN(date.getTime()) ? 'N/A' : date.toLocaleString();
   };
 
   const handleLogout = () => {

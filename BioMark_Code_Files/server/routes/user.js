@@ -7,29 +7,29 @@ const authMiddleware = require('../middleware/auth');
 const router = express.Router();
 
 // Get user statistics
-router.get('/stats', verifyToken, (req, res) => {
+router.get('/stats', verifyToken, async (req, res) => {
   try {
     const userId = req.userId;
     
     // Get total uploads
-    const uploadsCount = db.prepare('SELECT COUNT(*) as count FROM uploads WHERE user_id = ?').get(userId);
+    const uploadsCount = await db.query('SELECT COUNT(*) as count FROM uploads WHERE user_id = $1', [userId]);
     
     // Get total analyses (both single-upload and merged-file analyses)
-    const analysesQuery = db.prepare(`
+    const analysesQuery = await db.query(`
       SELECT COUNT(*) as count 
       FROM analyses a
-      WHERE a.user_id = ?
-    `).get(userId);
+      WHERE a.user_id = $1
+    `, [userId]);
     
     // Get account creation date
-    const account = db.prepare('SELECT created_at FROM accounts WHERE id = ?').get(userId);
+    const account = await db.query('SELECT created_at FROM accounts WHERE id = $1', [userId]);
     
     return res.json({
       success: true,
       stats: {
-        totalUploads: uploadsCount.count,
-        totalAnalyses: analysesQuery.count,
-        accountCreated: account.created_at
+        totalUploads: uploadsCount.rows[0].count,
+        totalAnalyses: analysesQuery.rows[0].count,
+        accountCreated: account.rows[0].created_at
       }
     });
   } catch (err) {
@@ -39,7 +39,7 @@ router.get('/stats', verifyToken, (req, res) => {
 });
 
 // Get user's analyses
-router.get('/analyses', authMiddleware, (req, res) => {
+router.get('/analyses', authMiddleware, async (req, res) => {
   try {
     const userId = req.userId;
     const sessionId = req.session_id;
@@ -47,7 +47,7 @@ router.get('/analyses', authMiddleware, (req, res) => {
     let analyses;
     if (userId) {
       // Registered user - get all analyses
-      analyses = db.prepare(`
+      const result = await db.query(`
         SELECT 
           a.id,
           a.upload_id,
@@ -60,9 +60,10 @@ router.get('/analyses', authMiddleware, (req, res) => {
         FROM analyses a
         LEFT JOIN uploads u ON a.upload_id = u.id
         LEFT JOIN uploads mu ON a.merged_file_id = mu.id
-        WHERE a.user_id = ?
+        WHERE a.user_id = $1
         ORDER BY a.created_at DESC
-      `).all(userId);
+      `, [userId]);
+      analyses = result.rows;
     } else if (sessionId) {
       // Guest user - redirect to last analysis endpoint
       return res.status(403).json({ 
@@ -111,9 +112,8 @@ router.get('/analyses', authMiddleware, (req, res) => {
     return res.status(500).json({ success: false, message: 'Failed to fetch analyses' });
   }
 });
-
 // Get a single analysis by ID
-router.get('/analyses/:id', authMiddleware, (req, res) => {
+router.get('/analyses/:id', authMiddleware, async (req, res) => {
   try {
     const userId = req.userId;
     const sessionId = req.session_id;
@@ -123,7 +123,7 @@ router.get('/analyses/:id', authMiddleware, (req, res) => {
     let analysis;
     if (userId) {
       // Registered user
-      analysis = db.prepare(`
+      const result = await db.query(`
         SELECT 
           a.id,
           a.upload_id,
@@ -136,11 +136,12 @@ router.get('/analyses/:id', authMiddleware, (req, res) => {
         FROM analyses a
         LEFT JOIN uploads u ON a.upload_id = u.id
         LEFT JOIN uploads mu ON a.merged_file_id = mu.id
-        WHERE a.id = ? AND a.user_id = ?
-      `).get(analysisId, userId);
+        WHERE a.id = $1 AND a.user_id = $2
+      `, [analysisId, userId]);
+      analysis = result.rows[0];
     } else if (sessionId) {
       // Guest user - ensure user_id is NULL to distinguish from registered users
-      analysis = db.prepare(`
+      const result = await db.query(`
         SELECT 
           a.id,
           a.upload_id,
@@ -153,8 +154,9 @@ router.get('/analyses/:id', authMiddleware, (req, res) => {
         FROM analyses a
         LEFT JOIN uploads u ON a.upload_id = u.id
         LEFT JOIN uploads mu ON a.merged_file_id = mu.id
-        WHERE a.id = ? AND a.session_id = ? AND a.user_id IS NULL
-      `).get(analysisId, sessionId);
+        WHERE a.id = $1 AND a.session_id = $2 AND a.user_id IS NULL
+      `, [analysisId, sessionId]);
+      analysis = result.rows[0];
     } else {
       return res.status(401).json({ success: false, message: 'Authentication required' });
     }
@@ -199,7 +201,7 @@ router.get('/analyses/:id', authMiddleware, (req, res) => {
 });
 
 // Get last analysis for guest users
-router.get('/guest/last-analysis', authMiddleware, (req, res) => {
+router.get('/guest/last-analysis', authMiddleware, async (req, res) => {
   try {
     console.log('Guest last analysis - req.session_id:', req.session_id, '| req.userId:', req.userId);
     
@@ -213,7 +215,7 @@ router.get('/guest/last-analysis', authMiddleware, (req, res) => {
     console.log('Searching for analysis with session_id:', sessionId);
     
     // Get the most recent analysis for this guest session (where user_id is NULL)
-    const analysis = db.prepare(`
+    const result = await db.query(`
       SELECT 
         a.id,
         a.upload_id,
@@ -226,11 +228,16 @@ router.get('/guest/last-analysis', authMiddleware, (req, res) => {
       FROM analyses a
       LEFT JOIN uploads u ON a.upload_id = u.id
       LEFT JOIN uploads mu ON a.merged_file_id = mu.id
-      WHERE a.session_id = ? AND a.user_id IS NULL
+      WHERE a.session_id = $1 AND a.user_id IS NULL
       ORDER BY a.created_at DESC
       LIMIT 1
-    `).get(sessionId);
+    `, [sessionId]);
     
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'No analysis found' });
+    }
+    
+    const analysis = result.rows[0];
     if (!analysis) {
       return res.status(404).json({ success: false, message: 'No analysis found' });
     }

@@ -134,7 +134,7 @@ router.post('/pathway-analysis', async (req, res) => {
     stderr += data.toString();
   });
 
-  python.on('close', (code) => {
+  python.on('close', async (code) => {
     try {
       if (tempDir) {
         fs.rmSync(tempDir, { recursive: true, force: true });
@@ -166,12 +166,12 @@ router.post('/pathway-analysis', async (req, res) => {
       // Save pathway analysis results to database if analysisId is provided
       if (analysisId && parsed.success && parsed.data?.pathwayResults) {
         try {
-          const existingAnalysis = db.prepare('SELECT analysis_metadata FROM analyses WHERE id = ?').get(analysisId);
-          if (existingAnalysis) {
+          const result = await db.query('SELECT analysis_metadata FROM analyses WHERE id = $1', [analysisId]);
+          if (result.rows.length > 0) {
             let metadata = {};
-            if (existingAnalysis.analysis_metadata) {
+            if (result.rows[0].analysis_metadata) {
               try {
-                metadata = JSON.parse(existingAnalysis.analysis_metadata);
+                metadata = JSON.parse(result.rows[0].analysis_metadata);
               } catch (e) {
                 console.error('Failed to parse existing metadata:', e);
               }
@@ -197,8 +197,8 @@ router.post('/pathway-analysis', async (req, res) => {
             });
 
             // Update the analysis metadata AND append to result_path
-            const currentAnalysis = db.prepare('SELECT result_path FROM analyses WHERE id = ?').get(analysisId);
-            let updatedResultPath = currentAnalysis?.result_path || '';
+            const currentResult = await db.query('SELECT result_path FROM analyses WHERE id = $1', [analysisId]);
+            let updatedResultPath = currentResult.rows[0]?.result_path || '';
             
             // Append the pathway analysis result to result_path
             if (parsed.data.pathwayResults) {
@@ -210,8 +210,8 @@ router.post('/pathway-analysis', async (req, res) => {
                 }
             }
             
-            db.prepare('UPDATE analyses SET analysis_metadata = ?, result_path = ? WHERE id = ?')
-              .run(JSON.stringify(metadata), updatedResultPath, analysisId);
+            await db.query('UPDATE analyses SET analysis_metadata = $1, result_path = $2 WHERE id = $3',
+              [JSON.stringify(metadata), updatedResultPath, analysisId]);
             
             console.log(`Saved ${normalizedType} pathway analysis to analysis ${analysisId} and added to result_path`);
           }
