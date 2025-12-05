@@ -214,13 +214,8 @@ def _build_response_rows(genes: List[str]) -> Dict[str, Any]:
 				associations = _fetch_open_targets_rows(ensembl_id) if ensembl_id else []
 				rows = _build_table_rows(symbol, hit, associations)
 		except (requests.RequestException, ValueError) as exc:
-			rows = [{
-				"geneSymbol": symbol,
-				"geneName": "",
-				"disease": "Lookup failed",
-				"score": None,
-				"link": "",
-			}]
+			rows = []
+			sys.stderr.write(f"[biomarker_validation] Lookup failed for {symbol}: {exc}\n")
 
 		if not rows:
 			unmatched.append(symbol)
