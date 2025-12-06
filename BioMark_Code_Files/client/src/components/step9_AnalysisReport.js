@@ -350,9 +350,19 @@ const AnalysisReport = ({
           pdf.text(`Comparing: ${classPair}`, pageWidth / 2, yPosition, { align: 'center' });
           yPosition += 8;
         });
-      } else if (selectedClasses && selectedClasses.length >= 2) {
-        // Fallback to global selectedClasses if no groupedAnalyses
-        pdf.text(`Comparing: ${selectedClasses.join(' vs ')}`, pageWidth / 2, yPosition, { align: 'center' });
+      } else if (selectedClasses && Array.isArray(selectedClasses)) {
+        // If selectedClasses is an array of class pairs (for multiple analyses)
+        selectedClasses.forEach(classPair => {
+          if (yPosition > pageHeight - 50) {
+            pdf.addPage();
+            yPosition = topMargin - 20;
+          }
+          pdf.text(`Comparing: ${classPair}`, pageWidth / 2, yPosition, { align: 'center' });
+          yPosition += 8;
+        });
+      } else if (selectedClasses && typeof selectedClasses === 'string') {
+        // Fallback for single string
+        pdf.text(`Comparing: ${selectedClasses}`, pageWidth / 2, yPosition, { align: 'center' });
         yPosition += 8;
       }
       yPosition += 12;
@@ -406,7 +416,7 @@ const AnalysisReport = ({
       }
 
       if (Object.keys(groupedAnalyses).length > 0) {
-        let groupIndex = 0;
+        let globalAnalysisIndex = 1;
         for (const [classPair, analysesInGroup] of Object.entries(groupedAnalyses)) {
           if (yPosition > pageHeight - 70) { pdf.addPage(); yPosition = topMargin - 20; }
           
@@ -420,16 +430,14 @@ const AnalysisReport = ({
           pdf.line(leftColumnX, yPosition, pageWidth - marginRight, yPosition);
           yPosition += lineHeight + 2;
 
-          let analysisIndexInGroup = 0;
           for (const analysis of analysesInGroup) {
             if (yPosition > pageHeight - 60) { pdf.addPage(); yPosition = topMargin - 20; }
             
             pdf.setFontSize(11);
             pdf.setFont('helvetica', 'bold');
             pdf.setTextColor(70, 70, 70);
-            // analysis.title (e.g., "Analysis 1") should already include this.
-            // If analysis.title is missing: `Analysis ${analysisIndexInGroup + 1}`
-            pdf.text(analysis.title ? `${analysis.title.replace(/Analysis \d+/, `Analysis ${analysisIndexInGroup + 1}`)}` : `Analysis ${analysisIndexInGroup + 1}`, leftColumnX + 5, yPosition);
+            // Use global index that increments across all groups
+            pdf.text(`Analysis ${globalAnalysisIndex}`, leftColumnX + 5, yPosition);
             yPosition += lineHeight;
 
             pdf.setFontSize(10);
@@ -458,13 +466,10 @@ const AnalysisReport = ({
             pdf.setFont('helvetica', 'normal');
             pdf.text(analysis.time || 'N/A', leftColumnX + 40, yPosition);
             yPosition += lineHeight + 5;
-            analysisIndexInGroup++;
+            globalAnalysisIndex++;
           }
           
-          if (groupIndex < Object.keys(groupedAnalyses).length - 1) {
-             yPosition += 5;
-          }
-          groupIndex++;
+          yPosition += 5;
         }
       } else {
         // Fallback if no groupedAnalyses (old global info)
@@ -503,7 +508,8 @@ const AnalysisReport = ({
           pdf.setFontSize(12);
           pdf.setFont('helvetica', 'bold');
           pdf.setTextColor(70, 70, 70);
-          pdf.text(`Summary for: ${summaryAnalysis.classPair || 'All Classes'}`, marginLeft, yPosition);
+          const formattedClassPair = summaryAnalysis.classPair ? summaryAnalysis.classPair.split('_').join(' vs ') : 'All Classes';
+          pdf.text(`Summary for: ${formattedClassPair}`, marginLeft, yPosition);
           yPosition += 8;
 
           try {
@@ -546,7 +552,8 @@ const AnalysisReport = ({
               pdf.setFontSize(12);
               pdf.setFont('helvetica', 'bold');
               pdf.setTextColor(70, 70, 70);
-              pdf.text(`Summary for: ${summaryAnalysis.classPair || 'All Classes'} (Continued)`, marginLeft, yPosition);
+              const formattedClassPairContinued = summaryAnalysis.classPair ? summaryAnalysis.classPair.split('_').join(' vs ') : 'All Classes';
+              pdf.text(`Summary for: ${formattedClassPairContinued} (Continued)`, marginLeft, yPosition);
               yPosition += 8;
             }
 
@@ -1161,9 +1168,13 @@ const AnalysisReport = ({
               Object.keys(groupedAnalyses).map(classPair => (
                 <p key={classPair}>Comparing: {classPair}</p>
               ))
+            ) : selectedClasses && Array.isArray(selectedClasses) ? (
+              selectedClasses.map((classPair, idx) => (
+                <p key={idx}>Comparing: {classPair}</p>
+              ))
             ) : (
-              selectedClasses && selectedClasses.length >= 2 && (
-                <p>Comparing: {selectedClasses.join(' vs ')}</p>
+              selectedClasses && typeof selectedClasses === 'string' && (
+                <p>Comparing: {selectedClasses}</p>
               )
             )}
           </div>
@@ -1178,28 +1189,34 @@ const AnalysisReport = ({
               </div>
             )}
             {Object.keys(groupedAnalyses).length > 0 ? (
-              Object.entries(groupedAnalyses).map(([classPair, analysesInGroup]) => (
-                <div key={classPair} className="class-pair-summary-group">
-                  <h4>{classPair}</h4>
-                  {analysesInGroup.map((analysis, index) => (
-                    <div key={analysis.title || index} className="analysis-summary-item">
-                      <h5>{analysis.title ? analysis.title.replace(/Analysis \d+/, `Analysis ${index + 1}`) : `Analysis ${index + 1}`}</h5>
-                      <div className="info-row">
-                        <span className="label">Analysis Date:</span>
-                        <span className="value">{analysis.date || 'N/A'}</span>
-                      </div>
-                      <div className="info-row">
-                        <span className="label">Analysis Types:</span>
-                        <span className="value">{summarizeAnalysisTypes(analysis.types)}</span>
-                      </div>
-                      <div className="info-row">
-                        <span className="label">Execution Time:</span>
-                        <span className="value">{analysis.time || 'N/A'}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))
+              (() => {
+                let globalIndex = 1;
+                return Object.entries(groupedAnalyses).map(([classPair, analysesInGroup]) => (
+                  <div key={classPair} className="class-pair-summary-group">
+                    <h4>{classPair}</h4>
+                    {analysesInGroup.map((analysis) => {
+                      const currentIndex = globalIndex++;
+                      return (
+                        <div key={analysis.title || currentIndex} className="analysis-summary-item">
+                          <h5>Analysis {currentIndex}</h5>
+                          <div className="info-row">
+                            <span className="label">Analysis Date:</span>
+                            <span className="value">{analysis.date || 'N/A'}</span>
+                          </div>
+                          <div className="info-row">
+                            <span className="label">Analysis Types:</span>
+                            <span className="value">{summarizeAnalysisTypes(analysis.types)}</span>
+                          </div>
+                          <div className="info-row">
+                            <span className="label">Execution Time:</span>
+                            <span className="value">{analysis.time || 'N/A'}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ));
+              })()
             ) : (
               <div className="summary-info"> {/* Fallback to old global summary if no grouped data */}
                  <div className="info-row">

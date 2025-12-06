@@ -125,7 +125,7 @@ export default function AnalysisResultsPage() {
     if (!analysis.result_path) return;
     
     try {
-      // Fetch full analysis data including metadata
+      // Fetch full analysis data including metadata and child analyses
       const token = localStorage.getItem('token');
       const response = await api.get(`/api/user/analyses/${analysis.id}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -134,59 +134,78 @@ export default function AnalysisResultsPage() {
       if (!response.data.success) return;
 
       const fullAnalysis = response.data.analysis;
-      const metadata = fullAnalysis.metadata || {};
-
-      // Prepare report data from the analysis with proper metadata
-      // For PDF generation, only include image files (not CSV files)
-      // Also filter out biomarker summary images (top10_biomarkers) to avoid duplication
-      const allPaths = fullAnalysis.result_path.split(',');
-      const images = allPaths
-        .filter(path => {
-          const trimmed = path.trim();
-          const isImage = trimmed.match(/\.(png|jpg|jpeg|gif|svg)$/i);
-          const isBiomarker = trimmed.includes('summary_of_statistical_methods');
-          // Include only image files that are NOT biomarker summaries
-          return isImage && !isBiomarker;
-        })
-        .map((path, index) => {
-          const trimmedPath = path.trim();
-          return {
-            id: `img-${index}`,
-            path: trimmedPath,
-            caption: trimmedPath.split('/').pop()
-          };
-        });
-
-      const analysisResults = [{
-        title: `Analysis Results`,
-        images: images,
-        classPair: metadata.selectedClasses ? metadata.selectedClasses.join(' vs ') : 'N/A',
-        date: formatDate(fullAnalysis.created_at),
-        time: metadata.executionTime || 'N/A',
-        types: {
-          differential: metadata.analysisMethods?.differential || [],
-          clustering: metadata.analysisMethods?.clustering || [],
-          classification: metadata.analysisMethods?.classification || []
-        },
-        parameters: metadata
-      }];
-
-      // Extract biomarker summaries and pathway analyses from metadata
-      const biomarkerSummaries = metadata.biomarkerSummaries || [];
-      const pathwayAnalyses = metadata.pathwayAnalyses || [];
       
-      // Transform biomarkerSummaries to summarizeAnalyses format expected by AnalysisReport
-      const summarizeAnalyses = biomarkerSummaries.map(summary => ({
-        classPair: summary.classPair,
-        imagePath: summary.imagePath,
-        timestamp: summary.timestamp,
-        featureCount: summary.featureCount,
-        aggregationLabel: summary.aggregationLabel || '',
-        csvPath: summary.csvPath
-      }));
+      // Collect all analyses (parent + children if any)
+      const allAnalyses = [fullAnalysis];
+      if (fullAnalysis.childAnalyses && fullAnalysis.childAnalyses.length > 0) {
+        allAnalyses.push(...fullAnalysis.childAnalyses);
+      }
+      
+      // Build separate analysisResults for each analysis
+      const analysisResults = [];
+      const allBiomarkerSummaries = [];
+      const allPathwayAnalyses = [];
+      
+      for (let i = 0; i < allAnalyses.length; i++) {
+        const singleAnalysis = allAnalyses[i];
+        const metadata = singleAnalysis.metadata || {};
+        
+        // Collect images from this analysis
+        let images = [];
+        if (singleAnalysis.result_path) {
+          const allPaths = singleAnalysis.result_path.split(',');
+          images = allPaths
+            .filter(path => {
+              const trimmed = path.trim();
+              const isImage = trimmed.match(/\.(png|jpg|jpeg|gif|svg)$/i);
+              const isBiomarker = trimmed.includes('summary_of_statistical_methods');
+              return isImage && !isBiomarker;
+            })
+            .map((path) => {
+              const trimmedPath = path.trim();
+              return {
+                id: `img-${singleAnalysis.id}-${trimmedPath}`,
+                path: trimmedPath,
+                caption: trimmedPath.split('/').pop()
+              };
+            });
+        }
+        
+        // Create a separate analysis result entry for each analysis
+        analysisResults.push({
+          title: `Analysis ${i + 1}`,
+          images: images,
+          classPair: metadata.selectedClasses ? metadata.selectedClasses.join(' vs ') : 'N/A',
+          date: formatDate(singleAnalysis.created_at),
+          time: metadata.executionTime || 'N/A',
+          types: {
+            differential: metadata.analysisMethods?.differential || [],
+            clustering: metadata.analysisMethods?.clustering || [],
+            classification: metadata.analysisMethods?.classification || []
+          },
+          parameters: metadata
+        });
+        
+        // Collect biomarker summaries
+        if (metadata.biomarkerSummaries && metadata.biomarkerSummaries.length > 0) {
+          allBiomarkerSummaries.push(...metadata.biomarkerSummaries.map(summary => ({
+            classPair: summary.classPair,
+            imagePath: summary.imagePath,
+            timestamp: summary.timestamp,
+            featureCount: summary.featureCount,
+            aggregationLabel: summary.aggregationLabel || '',
+            csvPath: summary.csvPath
+          })));
+        }
+        
+        // Collect pathway analyses
+        if (metadata.pathwayAnalyses && metadata.pathwayAnalyses.length > 0) {
+          allPathwayAnalyses.push(...metadata.pathwayAnalyses);
+        }
+      }
       
       // Transform pathwayAnalyses to enrichmentAnalyses format - load CSV data
-      const enrichmentPromises = pathwayAnalyses.map(async (pathway) => {
+      const enrichmentPromises = allPathwayAnalyses.map(async (pathway) => {
         const table = await fetchEnrichmentResultTable(pathway.resultPath);
         return {
           analysisType: pathway.type,
@@ -198,18 +217,27 @@ export default function AnalysisResultsPage() {
           inputGeneCount: pathway.inputGeneCount || 0,
           downloadUrl: `http://localhost:5003/${pathway.resultPath}`,
           rawPath: pathway.resultPath,
-          table: table, // Loaded CSV table data
+          table: table,
         };
       });
       
       const enrichmentAnalyses = await Promise.all(enrichmentPromises);
+      
+      // Use parent analysis metadata for main info
+      const metadata = fullAnalysis.metadata || {};
+      
+      // Collect all selected classes from all analyses for the first page
+      const allSelectedClasses = allAnalyses.map(a => {
+        const meta = a.metadata || {};
+        return meta.selectedClasses ? meta.selectedClasses.join(' vs ') : 'N/A';
+      });
       
       setReportData({
         analysisResults,
         analysisDate: formatDate(fullAnalysis.created_at),
         executionTime: metadata.executionTime || 'N/A',
         filename: fullAnalysis.filename || 'Unknown',
-        selectedClasses: metadata.selectedClasses || [],
+        selectedClasses: allSelectedClasses, // Array of all class pairs
         selectedIllnessColumn: metadata.illnessColumn || '',
         selectedAnalyzes: [
           ...(metadata.analysisMethods?.differential || []),
@@ -218,7 +246,7 @@ export default function AnalysisResultsPage() {
         ],
         featureCount: 20,
         nonFeatureColumns: metadata.nonFeatureColumns || [],
-        summarizeAnalyses,
+        summarizeAnalyses: allBiomarkerSummaries,
         enrichmentAnalyses
       });
     } catch (err) {
@@ -336,7 +364,14 @@ export default function AnalysisResultsPage() {
               <div key={analysis.id} className="analysis-card">
                 <div className="analysis-card-header">
                   <div className="analysis-main-info">
-                    <h3>{analysis.filename || 'Unknown File'}</h3>
+                    <h3>
+                      {analysis.filename || 'Unknown File'}
+                      {analysis.isGroup && (
+                        <span className="analysis-count-badge">
+                          {analysis.analysisCount} analyses
+                        </span>
+                      )}
+                    </h3>
                     <div className="analysis-meta">
                       <span className="analysis-date">{formatDate(analysis.created_at)}</span>
                     </div>

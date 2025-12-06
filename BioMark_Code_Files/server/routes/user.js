@@ -46,7 +46,7 @@ router.get('/analyses', authMiddleware, async (req, res) => {
     
     let analyses;
     if (userId) {
-      // Registered user - get all analyses
+      // Registered user - get all analyses including parent_analysis_id
       const result = await db.query(`
         SELECT 
           a.id,
@@ -56,6 +56,7 @@ router.get('/analyses', authMiddleware, async (req, res) => {
           a.status,
           a.created_at,
           a.analysis_metadata,
+          a.parent_analysis_id,
           COALESCE(u.original_name, mu.original_name) as filename
         FROM analyses a
         LEFT JOIN uploads u ON a.upload_id = u.id
@@ -103,9 +104,47 @@ router.get('/analyses', authMiddleware, async (req, res) => {
       return analysis;
     });
     
+    // Group analyses by parent-child relationships
+    const groupedAnalyses = [];
+    const processedIds = new Set();
+    
+    enhancedAnalyses.forEach(analysis => {
+      // Skip if already processed as a child
+      if (processedIds.has(analysis.id)) {
+        return;
+      }
+      
+      // If this analysis has no parent, it's either standalone or a parent
+      if (!analysis.parent_analysis_id) {
+        // Check if this analysis has children
+        const children = enhancedAnalyses.filter(a => a.parent_analysis_id === analysis.id);
+        
+        if (children.length > 0) {
+          // This is a parent with children - create a group
+          groupedAnalyses.push({
+            ...analysis,
+            isGroup: true,
+            childAnalyses: children,
+            analysisCount: children.length + 1
+          });
+          
+          // Mark children as processed
+          children.forEach(child => processedIds.add(child.id));
+        } else {
+          // This is a standalone analysis
+          groupedAnalyses.push({
+            ...analysis,
+            isGroup: false
+          });
+        }
+        
+        processedIds.add(analysis.id);
+      }
+    });
+    
     return res.json({
       success: true,
-      analyses: enhancedAnalyses
+      analyses: groupedAnalyses
     });
   } catch (err) {
     console.error('Error fetching analyses:', err);
@@ -121,6 +160,8 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
     
     // Support both registered users and guest sessions
     let analysis;
+    let childAnalyses = [];
+    
     if (userId) {
       // Registered user
       const result = await db.query(`
@@ -132,6 +173,7 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
           a.status,
           a.created_at,
           a.analysis_metadata,
+          a.parent_analysis_id,
           COALESCE(u.original_name, mu.original_name) as filename
         FROM analyses a
         LEFT JOIN uploads u ON a.upload_id = u.id
@@ -139,6 +181,28 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
         WHERE a.id = $1 AND a.user_id = $2
       `, [analysisId, userId]);
       analysis = result.rows[0];
+      
+      // Fetch child analyses if this is a parent
+      if (analysis && !analysis.parent_analysis_id) {
+        const childResult = await db.query(`
+          SELECT 
+            a.id,
+            a.upload_id,
+            a.merged_file_id,
+            a.result_path,
+            a.status,
+            a.created_at,
+            a.analysis_metadata,
+            a.parent_analysis_id,
+            COALESCE(u.original_name, mu.original_name) as filename
+          FROM analyses a
+          LEFT JOIN uploads u ON a.upload_id = u.id
+          LEFT JOIN uploads mu ON a.merged_file_id = mu.id
+          WHERE a.parent_analysis_id = $1 AND a.user_id = $2
+          ORDER BY a.created_at ASC
+        `, [analysisId, userId]);
+        childAnalyses = childResult.rows;
+      }
     } else if (sessionId) {
       // Guest user - ensure user_id is NULL to distinguish from registered users
       const result = await db.query(`
@@ -150,6 +214,7 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
           a.status,
           a.created_at,
           a.analysis_metadata,
+          a.parent_analysis_id,
           COALESCE(u.original_name, mu.original_name) as filename
         FROM analyses a
         LEFT JOIN uploads u ON a.upload_id = u.id
@@ -157,6 +222,28 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
         WHERE a.id = $1 AND a.session_id = $2 AND a.user_id IS NULL
       `, [analysisId, sessionId]);
       analysis = result.rows[0];
+      
+      // Fetch child analyses if this is a parent
+      if (analysis && !analysis.parent_analysis_id) {
+        const childResult = await db.query(`
+          SELECT 
+            a.id,
+            a.upload_id,
+            a.merged_file_id,
+            a.result_path,
+            a.status,
+            a.created_at,
+            a.analysis_metadata,
+            a.parent_analysis_id,
+            COALESCE(u.original_name, mu.original_name) as filename
+          FROM analyses a
+          LEFT JOIN uploads u ON a.upload_id = u.id
+          LEFT JOIN uploads mu ON a.merged_file_id = mu.id
+          WHERE a.parent_analysis_id = $1 AND a.session_id = $2 AND a.user_id IS NULL
+          ORDER BY a.created_at ASC
+        `, [analysisId, sessionId]);
+        childAnalyses = childResult.rows;
+      }
     } else {
       return res.status(401).json({ success: false, message: 'Authentication required' });
     }
@@ -165,7 +252,7 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Analysis not found' });
     }
     
-    // Parse analysis metadata
+    // Parse analysis metadata for main analysis
     if (analysis.analysis_metadata) {
       try {
         analysis.metadata = JSON.parse(analysis.analysis_metadata);
@@ -174,13 +261,25 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
         analysis.metadata = null;
       }
     }
-    delete analysis.analysis_metadata; // Remove raw JSON string
+    delete analysis.analysis_metadata;
+    
+    // Parse metadata for child analyses
+    childAnalyses = childAnalyses.map(child => {
+      if (child.analysis_metadata) {
+        try {
+          child.metadata = JSON.parse(child.analysis_metadata);
+        } catch (err) {
+          console.error('Error parsing child analysis metadata:', err);
+          child.metadata = null;
+        }
+      }
+      delete child.analysis_metadata;
+      return child;
+    });
     
     // Enhance with merged file information
     if (analysis.merged_file_id) {
       analysis.isMerged = true;
-      // Filename is already set from the uploads table join
-      // Wrap it with "Merged Files (...)" for display
       if (analysis.filename) {
         analysis.filename = `Merged Files (${analysis.filename})`;
       } else {
@@ -188,6 +287,13 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
       }
     } else {
       analysis.isMerged = false;
+    }
+    
+    // Add child analyses info
+    if (childAnalyses.length > 0) {
+      analysis.isGroup = true;
+      analysis.childAnalyses = childAnalyses;
+      analysis.analysisCount = childAnalyses.length + 1;
     }
     
     return res.json({

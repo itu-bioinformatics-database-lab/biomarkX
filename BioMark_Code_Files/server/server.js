@@ -563,6 +563,73 @@ app.post('/analyze', async (req, res) => {
         }
     }
 
+    // Check for existing analyses on the same dataset to establish parent-child relationship
+    let parentAnalysisId = null;
+    try {
+        let existingAnalysisQuery;
+        if (isMergedFile && mergedFileId) {
+            // For merged files, find the most recent analysis using this merged file ID
+            // Match by either user_id (for registered users) or session_id (for guests)
+            if (req.userId) {
+                existingAnalysisQuery = await db.query(
+                    `SELECT id, parent_analysis_id FROM analyses 
+                     WHERE merged_file_id = $1 
+                     AND user_id = $2 
+                     AND status IN ('finished', 'running')
+                     ORDER BY created_at DESC 
+                     LIMIT 1`,
+                    [mergedFileId, req.userId]
+                );
+            } else {
+                existingAnalysisQuery = await db.query(
+                    `SELECT id, parent_analysis_id FROM analyses 
+                     WHERE merged_file_id = $1 
+                     AND session_id = $2 
+                     AND user_id IS NULL
+                     AND status IN ('finished', 'running')
+                     ORDER BY created_at DESC 
+                     LIMIT 1`,
+                    [mergedFileId, req.sessionId]
+                );
+            }
+        } else if (derivedUploadIdForInsert) {
+            // For single files, find the most recent analysis using this upload ID
+            if (req.userId) {
+                existingAnalysisQuery = await db.query(
+                    `SELECT id, parent_analysis_id FROM analyses 
+                     WHERE upload_id = $1 
+                     AND user_id = $2 
+                     AND status IN ('finished', 'running')
+                     ORDER BY created_at DESC 
+                     LIMIT 1`,
+                    [derivedUploadIdForInsert, req.userId]
+                );
+            } else {
+                existingAnalysisQuery = await db.query(
+                    `SELECT id, parent_analysis_id FROM analyses 
+                     WHERE upload_id = $1 
+                     AND session_id = $2 
+                     AND user_id IS NULL
+                     AND status IN ('finished', 'running')
+                     ORDER BY created_at DESC 
+                     LIMIT 1`,
+                    [derivedUploadIdForInsert, req.sessionId]
+                );
+            }
+        }
+
+        // If we found an existing analysis, either use it as parent or find its root parent
+        if (existingAnalysisQuery && existingAnalysisQuery.rows.length > 0) {
+            const existingAnalysis = existingAnalysisQuery.rows[0];
+            
+            // If existing analysis has a parent, use that parent; otherwise use the existing analysis as parent
+            parentAnalysisId = existingAnalysis.parent_analysis_id || existingAnalysis.id;
+            console.log(`Linking new analysis ${analysisId} to parent ${parentAnalysisId}`);
+        }
+    } catch (err) {
+        console.error('Error checking for parent analysis:', err);
+    }
+
     // Record analysis start with metadata
     try {
         const metadata = {
@@ -579,8 +646,8 @@ app.post('/analyze', async (req, res) => {
             isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
         };
         
-                await db.query('INSERT INTO analyses (id, upload_id, merged_file_id, session_id, user_id, status, analysis_metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-                    [analysisId, derivedUploadIdForInsert, mergedFileId, req.sessionId, req.userId || null, 'running', JSON.stringify(metadata)]);
+                await db.query('INSERT INTO analyses (id, upload_id, merged_file_id, session_id, user_id, status, analysis_metadata, parent_analysis_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+                    [analysisId, derivedUploadIdForInsert, mergedFileId, req.sessionId, req.userId || null, 'running', JSON.stringify(metadata), parentAnalysisId]);
     } catch (err) {
         console.error('Failed to insert analysis record:', err);
     }

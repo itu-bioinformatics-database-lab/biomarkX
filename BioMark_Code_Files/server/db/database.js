@@ -56,9 +56,21 @@ const initializeDatabase = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- Add parent_analysis_id column if it doesn't exist
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'analyses' AND column_name = 'parent_analysis_id'
+        ) THEN
+          ALTER TABLE analyses ADD COLUMN parent_analysis_id TEXT REFERENCES analyses(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+
       CREATE INDEX IF NOT EXISTS idx_analyses_session_id ON analyses(session_id);
       CREATE INDEX IF NOT EXISTS idx_analyses_user_id ON analyses(user_id);
       CREATE INDEX IF NOT EXISTS idx_analyses_upload_id ON analyses(upload_id);
+      CREATE INDEX IF NOT EXISTS idx_analyses_parent_analysis_id ON analyses(parent_analysis_id);
 
       CREATE TABLE IF NOT EXISTS notification_subscriptions (
         id TEXT PRIMARY KEY,
