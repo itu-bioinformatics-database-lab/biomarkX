@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, buildUrl } from '../api';
+import { buildBackendUrl } from '../CHANGE_AFTER_DEPLOYMENT';
 import UserMenu from '../components/UserMenu';
 import AnalysisReport from '../components/step9_AnalysisReport';
 import '../css/AnalysisDetailPage.css';
@@ -119,7 +120,7 @@ export default function AnalysisDetailPage() {
                 significantPathwayCount: pathway.significantPathwayCount || 0,
                 totalPathways: pathway.totalPathways || 0,
                 inputGeneCount: pathway.inputGeneCount || 0,
-                downloadUrl: `http://localhost:5003/${pathway.resultPath}`,
+                downloadUrl: buildBackendUrl(pathway.resultPath),
                 rawPath: pathway.resultPath,
                 table: table,
                 timestamp: pathway.timestamp,
@@ -463,7 +464,7 @@ export default function AnalysisDetailPage() {
                       <div key={`biomarker-${index}`} className="result-card">
                         <div className="result-image-wrapper">
                           <img 
-                            src={`http://localhost:5003/${path}`} 
+                            src={buildBackendUrl(path)} 
                             alt={`Biomarker Summary ${index + 1}`}
                             className="result-image"
                           />
@@ -472,7 +473,7 @@ export default function AnalysisDetailPage() {
                           {path.split('/').pop()}
                         </div>
                         <a 
-                          href={`http://localhost:5003/${path}`} 
+                          href={buildBackendUrl(path)} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="view-full-link"
@@ -494,7 +495,7 @@ export default function AnalysisDetailPage() {
                       <div key={`pathway-${index}`} className="result-card">
                         <div className="result-file-link">
                           <a 
-                            href={`http://localhost:5003/${path}`} 
+                            href={buildBackendUrl(path)} // CHANGE AFTER DEPLOYMENT
                             target="_blank" 
                             rel="noopener noreferrer"
                             className="download-csv-link"
@@ -522,8 +523,8 @@ export default function AnalysisDetailPage() {
                           {isImage ? (
                             <>
                               <div className="result-image-wrapper">
-                                <img 
-                                  src={`http://localhost:5003/${path}`} 
+                                  <img 
+                                    src={buildBackendUrl(path)} 
                                   alt={`Result ${index + 1}`}
                                   className="result-image"
                                 />
@@ -532,7 +533,7 @@ export default function AnalysisDetailPage() {
                                 {path.split('/').pop()}
                               </div>
                               <a 
-                                href={`http://localhost:5003/${path}`} 
+                                href={buildBackendUrl(path)} 
                                 target="_blank" 
                                 rel="noopener noreferrer"
                                 className="view-full-link"
@@ -543,7 +544,7 @@ export default function AnalysisDetailPage() {
                           ) : (
                             <div className="result-file-link">
                               <a 
-                                href={`http://localhost:5003/${path}`} 
+                                href={buildBackendUrl(path)} 
                                 target="_blank" 
                                 rel="noopener noreferrer"
                                 className="download-csv-link"

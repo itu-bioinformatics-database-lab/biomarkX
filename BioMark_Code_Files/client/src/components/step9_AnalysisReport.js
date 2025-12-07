@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import '../css/step9-generateAnalysisReport.css';
 import { buildUrl } from '../api';
+import { buildBackendUrl } from '../CHANGE_AFTER_DEPLOYMENT';
 import { buildKeggColumns, sanitizeKeggCell } from '../utils/keggTable';
 
 const ENRICHMENT_REPORT_PREVIEW_LIMIT = 10; // limit report tables to top 10 pathways
@@ -877,7 +878,7 @@ const AnalysisReport = ({
               if (entry.downloadUrl) {
                 pdf.setFont('helvetica', 'bold');
                 pdf.setTextColor(47, 79, 181);
-                const downloadLink = entry.downloadUrl || `http://localhost:5003/${entry.rawPath}`;
+                const downloadLink = entry.downloadUrl || buildBackendUrl(entry.rawPath); // CHANGE AFTER DEPLOYMENT
                 pdf.textWithLink('Download CSV', marginLeft, yPosition, { url: downloadLink });
                 yPosition += lineHeight;
                 pdf.setFont('helvetica', 'italic');

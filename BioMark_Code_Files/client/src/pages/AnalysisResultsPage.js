@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, buildUrl } from '../api';
+import { buildBackendUrl } from '../CHANGE_AFTER_DEPLOYMENT';
 import UserMenu from '../components/UserMenu';
 import AnalysisReport from '../components/step9_AnalysisReport';
 import '../css/AnalysisResultsPage.css';
@@ -216,7 +217,7 @@ export default function AnalysisResultsPage() {
           significantPathwayCount: pathway.significantPathwayCount || 0,
           totalPathways: pathway.totalPathways || 0,
           inputGeneCount: pathway.inputGeneCount || 0,
-          downloadUrl: `http://localhost:5003/${pathway.resultPath}`,
+          downloadUrl: buildBackendUrl(pathway.resultPath),
           rawPath: pathway.resultPath,
           table: table,
         };

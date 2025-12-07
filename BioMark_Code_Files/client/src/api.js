@@ -2,9 +2,10 @@
 import axios from 'axios';
 import { getSessionId, setSessionId } from './utils/session';
 import { LOGIN_URL } from './constants/routes';
+import { BACKEND_BASE_URL } from './CHANGE_AFTER_DEPLOYMENT';
 
-// Base URL for API requests, uses environment variable or defaults to localhost
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5003';
+// Base URL for API requests, centralized for deployment changes
+const API_BASE = BACKEND_BASE_URL;
 
 // Axios instance for making API calls
 export const api = axios.create({
