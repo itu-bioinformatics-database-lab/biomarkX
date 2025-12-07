@@ -1,6 +1,7 @@
 // API utility functions for HTTP requests
 import axios from 'axios';
 import { getSessionId, setSessionId } from './utils/session';
+import { LOGIN_URL } from './constants/routes';
 
 // Base URL for API requests, uses environment variable or defaults to localhost
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5003';
@@ -40,7 +41,7 @@ api.interceptors.response.use(
       if (token && error.config.url !== '/auth/login' && error.config.url !== '/auth/signup') {
         localStorage.removeItem('token');
         // Redirect to login page
-        window.location.href = '/login';
+        window.location.href = LOGIN_URL;
       }
     }
     return Promise.reject(error);

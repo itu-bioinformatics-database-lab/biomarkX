@@ -1,22 +1,22 @@
 {
   "files": {
-    "main.css": "/biomark/static/css/main.f30a9223.css",
-    "main.js": "/biomark/static/js/main.7d15c80b.js",
+    "main.css": "/biomark/static/css/main.c3fb8ee1.css",
+    "main.js": "/biomark/static/js/main.58042380.js",
     "static/js/239.6860f43d.chunk.js": "/biomark/static/js/239.6860f43d.chunk.js",
     "static/js/977.70b9381c.chunk.js": "/biomark/static/js/977.70b9381c.chunk.js",
     "static/js/732.50853062.chunk.js": "/biomark/static/js/732.50853062.chunk.js",
     "static/js/453.195b869a.chunk.js": "/biomark/static/js/453.195b869a.chunk.js",
     "static/media/logo192.png": "/biomark/static/media/logo192.f8ee3c23103fc85c66a8.png",
     "index.html": "/biomark/index.html",
-    "main.f30a9223.css.map": "/biomark/static/css/main.f30a9223.css.map",
-    "main.7d15c80b.js.map": "/biomark/static/js/main.7d15c80b.js.map",
+    "main.c3fb8ee1.css.map": "/biomark/static/css/main.c3fb8ee1.css.map",
+    "main.58042380.js.map": "/biomark/static/js/main.58042380.js.map",
     "239.6860f43d.chunk.js.map": "/biomark/static/js/239.6860f43d.chunk.js.map",
     "977.70b9381c.chunk.js.map": "/biomark/static/js/977.70b9381c.chunk.js.map",
     "732.50853062.chunk.js.map": "/biomark/static/js/732.50853062.chunk.js.map",
     "453.195b869a.chunk.js.map": "/biomark/static/js/453.195b869a.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.f30a9223.css",
-    "static/js/main.7d15c80b.js"
+    "static/css/main.c3fb8ee1.css",
+    "static/js/main.58042380.js"
   ]
 }

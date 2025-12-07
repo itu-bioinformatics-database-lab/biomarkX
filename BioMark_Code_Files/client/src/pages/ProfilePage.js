@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import UserMenu from '../components/UserMenu';
 import '../css/ProfilePage.css';
+import { LOGIN_PATH } from '../constants/routes';
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -141,7 +142,7 @@ export default function ProfilePage() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    navigate('/login');
+    navigate(LOGIN_PATH);
   };
 
   const handleViewGuestAnalysis = async () => {
@@ -189,7 +190,7 @@ export default function ProfilePage() {
           <UserMenu 
             isGuest={isGuestUser()}
             username={userInfo.username}
-            onNavigateToLogin={() => navigate('/login')}
+            onNavigateToLogin={() => navigate(LOGIN_PATH)}
             onLogout={handleLogout}
             onViewGuestAnalysis={handleViewGuestAnalysis}
           />

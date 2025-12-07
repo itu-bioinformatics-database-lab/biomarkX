@@ -64,16 +64,23 @@ def _read_payload() -> Dict[str, Any]:
 
 
 def _unique_symbols(raw_genes: List[Any]) -> List[str]:
+	"""
+	Return input genes with original casing preserved while de-duplicating case-insensitively.
+	This lets us show the exact gene text the user provided in the results table.
+	"""
 	seen = set()
 	ordered: List[str] = []
 	for gene in raw_genes:
 		if not isinstance(gene, str):
 			continue
-		symbol = gene.strip().upper()
-		if not symbol or symbol in seen:
+		original = gene.strip()
+		if not original:
 			continue
-		seen.add(symbol)
-		ordered.append(symbol)
+		dedupe_key = original.upper()
+		if dedupe_key in seen:
+			continue
+		seen.add(dedupe_key)
+		ordered.append(original)
 	return ordered
 
 
@@ -156,11 +163,12 @@ def _fetch_open_targets_rows(ensembl_id: str, size: int = 10) -> List[Dict[str, 
 
 
 def _build_table_rows(
-	symbol: str,
+	input_symbol: str,
 	hit: Dict[str, Any],
 	associations: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-	gene_symbol = hit.get("symbol") or symbol
+	# Show the gene exactly as provided by the user; keep API-resolved name separately.
+	gene_symbol = input_symbol
 	gene_name = hit.get("name") or ""
 	ensembl = hit.get("ensembl") or {}
 	if isinstance(ensembl, dict):
@@ -197,7 +205,8 @@ def _build_response_rows(genes: List[str]) -> Dict[str, Any]:
 	cache_changed = False
 
 	for symbol in genes:
-		cached = cache.get(symbol)
+		cache_key = symbol.upper()
+		cached = cache.get(cache_key)
 		if cached:
 			table_rows.extend(cached["rows"])
 			continue
@@ -222,7 +231,7 @@ def _build_response_rows(genes: List[str]) -> Dict[str, Any]:
 		else:
 			table_rows.extend(rows)
 
-		cache[symbol] = {
+		cache[cache_key] = {
 			"rows": rows,
 			"expiry": now + CACHE_TTL_SECONDS,
 			"version": CACHE_VERSION,

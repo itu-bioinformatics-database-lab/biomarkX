@@ -4,6 +4,7 @@ import { api, buildUrl } from '../api';
 import UserMenu from '../components/UserMenu';
 import AnalysisReport from '../components/step9_AnalysisReport';
 import '../css/AnalysisResultsPage.css';
+import { LOGIN_PATH } from '../constants/routes';
 
 export default function AnalysisResultsPage() {
   const navigate = useNavigate();
@@ -256,7 +257,7 @@ export default function AnalysisResultsPage() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    navigate('/login');
+    navigate(LOGIN_PATH);
   };
 
   const handleViewGuestAnalysis = async () => {
@@ -305,7 +306,7 @@ export default function AnalysisResultsPage() {
             <UserMenu 
               isGuest={isGuestUser()}
               username={username}
-              onNavigateToLogin={() => navigate('/login')}
+              onNavigateToLogin={() => navigate(LOGIN_PATH)}
               onLogout={handleLogout}
               onViewGuestAnalysis={handleViewGuestAnalysis}
             />
@@ -332,7 +333,7 @@ export default function AnalysisResultsPage() {
           <UserMenu 
             isGuest={isGuestUser()}
             username={username}
-            onNavigateToLogin={() => navigate('/login')}
+            onNavigateToLogin={() => navigate(LOGIN_PATH)}
             onLogout={handleLogout}
             onViewGuestAnalysis={handleViewGuestAnalysis}
           />

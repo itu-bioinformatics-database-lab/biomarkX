@@ -10,20 +10,30 @@ function SearchableColumnList({
   listHeight = '200px', // Adjustable list height
   className = '', // For adding extra class
   disabled = false, // To disable the list
+  useAllColumnsAsDefault = false, // When true, show full list even before search (used in Step 6)
 }) {
   // State for the search input value
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Filter all columns according to the search term
+  // Decide which list to show by default
+  const sourceColumns = useMemo(() => {
+    if (useAllColumnsAsDefault) {
+      return allColumns.length > 0 ? allColumns : initialColumns;
+    }
+    // Original behavior: show a small subset until the user searches
+    return searchTerm ? allColumns : initialColumns;
+  }, [useAllColumnsAsDefault, allColumns, initialColumns, searchTerm]);
+
+  // Filter columns according to the search term
   const filteredColumns = useMemo(() => {
     if (!searchTerm) {
-      return initialColumns; // Show initial columns if there is no search
+      return sourceColumns;
     }
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
-    return allColumns.filter(col =>
+    return sourceColumns.filter(col =>
       col.toLowerCase().includes(lowerCaseSearchTerm)
     );
-  }, [searchTerm, initialColumns, allColumns]);
+  }, [searchTerm, sourceColumns]);
 
   // Handle click event for a column item
   const handleColumnClick = (column) => {

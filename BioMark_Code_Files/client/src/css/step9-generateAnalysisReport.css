@@ -364,6 +364,35 @@
   flex-wrap: wrap;
 }
 
+.validation-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+}
+
+.validation-tab-button {
+  border: 1px solid #d4ddf0;
+  background: #f4f7ff;
+  color: #2d3c5a;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.validation-tab-button:hover {
+  background: #e8edfb;
+}
+
+.validation-tab-button.active {
+  background: #3f72ff;
+  color: #fff;
+  border-color: #3f72ff;
+  box-shadow: 0 2px 6px rgba(63, 114, 255, 0.25);
+}
+
 .validation-score-note {
   margin: 0 0 12px;
   font-size: 12px;

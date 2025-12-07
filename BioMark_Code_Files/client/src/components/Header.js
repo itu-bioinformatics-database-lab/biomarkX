@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import UserMenu from './UserMenu';
 import '../css/Header.css';
+import { LOGIN_PATH } from '../constants/routes';
 
 export default function Header({ onOpenUserGuide, onLogout, username, onViewGuestAnalysis }) {
   const navigate = useNavigate();
@@ -26,7 +27,7 @@ export default function Header({ onOpenUserGuide, onLogout, username, onViewGues
       onLogout();
     } else {
       localStorage.removeItem('token');
-      navigate('/login');
+      navigate(LOGIN_PATH);
     }
   };
 
@@ -45,7 +46,7 @@ export default function Header({ onOpenUserGuide, onLogout, username, onViewGues
         <UserMenu 
           isGuest={isGuestUser()}
           username={username}
-          onNavigateToLogin={() => navigate('/login')}
+          onNavigateToLogin={() => navigate(LOGIN_PATH)}
           onLogout={handleLogout}
           onViewGuestAnalysis={handleViewGuestAnalysis}
         />

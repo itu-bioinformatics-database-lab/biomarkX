@@ -117,6 +117,7 @@ const AnalysisReport = ({
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [logoDataUrl, setLogoDataUrl] = useState(null);
+  const [activeValidationView, setActiveValidationView] = useState('biomarkers');
 
   const datasetNameList = useMemo(() => {
     if (Array.isArray(datasetFileName)) {
@@ -165,7 +166,7 @@ const AnalysisReport = ({
   const validationClassPairLabel = biomarkerValidationResult?.classPair ? friendlyClassPair(biomarkerValidationResult.classPair) : null;
   const validationTimestamp = biomarkerValidationResult?.timestamp ? new Date(biomarkerValidationResult.timestamp).toLocaleString() : null;
   const validationTable = biomarkerValidationResult?.table;
-  const validationTableColumns = useMemo(() => (
+  const detailedTableColumns = useMemo(() => (
     Array.isArray(validationTable?.columns) && validationTable.columns.length > 0
       ? validationTable.columns
       : [
@@ -177,7 +178,7 @@ const AnalysisReport = ({
         ]
   ), [validationTable?.columns]);
 
-  const validationTableRows = useMemo(() => {
+  const detailedTableRows = useMemo(() => {
     if (!validationTable || !Array.isArray(validationTable.rows)) {
       return [];
     }
@@ -186,23 +187,123 @@ const AnalysisReport = ({
       ...row,
     }));
   }, [validationTable]);
+  const diseasesView = useMemo(() => {
+    const diseaseMap = new Map();
+    detailedTableRows.forEach((row) => {
+      const diseaseName = row.disease || 'Unknown disease';
+      const biomarkerName = row.geneSymbol || row.geneName || 'Unknown biomarker';
+      if (!diseaseMap.has(diseaseName)) {
+        diseaseMap.set(diseaseName, new Set());
+      }
+      diseaseMap.get(diseaseName).add(biomarkerName);
+    });
 
-  const hasValidationSection = validationTableRows.length > 0;
+    const rows = Array.from(diseaseMap.entries()).map(([diseaseName, biomarkers], index) => ({
+      __rowId: `disease-${index}`,
+      disease: diseaseName,
+      biomarkers: Array.from(biomarkers).sort(),
+    }));
+
+    return {
+      columns: [
+        { key: 'disease', label: 'Disease / Condition' },
+        { key: 'biomarkers', label: 'Biomarkers' },
+      ],
+      rows,
+    };
+  }, [detailedTableRows]);
+
+  const biomarkerView = useMemo(() => {
+    const biomarkerMap = new Map();
+    detailedTableRows.forEach((row) => {
+      const biomarkerKey = row.geneSymbol || row.geneName || 'Unknown biomarker';
+      if (!biomarkerMap.has(biomarkerKey)) {
+        biomarkerMap.set(biomarkerKey, {
+          geneSymbol: row.geneSymbol || biomarkerKey,
+          geneName: row.geneName || '',
+          diseases: new Set(),
+          link: row.link || '',
+        });
+      }
+      const current = biomarkerMap.get(biomarkerKey);
+      current.diseases.add(row.disease || 'Unknown disease');
+      if (!current.link && row.link) {
+        current.link = row.link;
+      }
+    });
+
+    const rows = Array.from(biomarkerMap.values()).map((entry, index) => ({
+      __rowId: `biomarker-${index}`,
+      geneSymbol: entry.geneSymbol,
+      geneName: entry.geneName,
+      diseases: Array.from(entry.diseases).sort(),
+      link: entry.link,
+    }));
+
+    return {
+      columns: [
+        { key: 'geneSymbol', label: 'Biomarker' },
+        { key: 'geneName', label: 'Gene Name' },
+        { key: 'diseases', label: 'Diseases' },
+        { key: 'link', label: 'Link' },
+      ],
+      rows,
+    };
+  }, [detailedTableRows]);
+
+  const validationViews = useMemo(() => ({
+    biomarkers: {
+      label: 'Biomarker view',
+      columns: biomarkerView.columns,
+      rows: biomarkerView.rows,
+    },
+    diseases: {
+      label: 'Diseases view',
+      columns: diseasesView.columns,
+      rows: diseasesView.rows,
+    },
+    detailed: {
+      label: 'Detailed view',
+      columns: detailedTableColumns,
+      rows: detailedTableRows,
+    },
+  }), [detailedTableColumns, detailedTableRows, diseasesView, biomarkerView]);
+
+  const validationTabOrder = useMemo(() => ([
+    { key: 'biomarkers', label: 'Biomarker view' },
+    { key: 'diseases', label: 'Diseases view' },
+    { key: 'detailed', label: 'Detailed view' },
+  ]), []);
+
+  const currentValidationView = useMemo(
+    () => validationViews[activeValidationView] || validationViews.detailed,
+    [validationViews, activeValidationView]
+  );
+
+  const hasRowsInActiveView = currentValidationView.rows.length > 0;
+  const hasValidationResult = Boolean(biomarkerValidationResult);
+  const showValidationSection = hasValidationResult;
+
+  useEffect(() => {
+    setActiveValidationView('biomarkers');
+  }, [biomarkerValidationResult]);
 
   const handleDownloadValidationCsv = useCallback(() => {
-    if (!validationTableRows.length) {
+    const view = validationViews[activeValidationView] || validationViews.detailed;
+    if (!view.rows.length) {
       return;
     }
-    const headers = validationTableColumns.map((col) => col.label || col.key);
-    const columnKeys = validationTableColumns.map((col) => col.key);
+    const headers = view.columns.map((col) => col.label || col.key);
+    const columnKeys = view.columns.map((col) => col.key);
     const toCsvValue = (value) => {
-      const stringValue = value == null ? '' : String(value);
+      const normalizedValue = Array.isArray(value) ? value.join('; ') : value;
+      const stringValue = normalizedValue == null ? '' : String(normalizedValue);
       if (/[",\n]/.test(stringValue)) {
         return `"${stringValue.replace(/"/g, '""')}"`;
       }
       return stringValue;
     };
-    const rows = validationTableRows.map((row) => (
+    const rows = view.rows.map((row) => (
       columnKeys.map((key) => {
         if (key === 'link' && row[key]) {
           return toCsvValue(row[key]);
@@ -223,7 +324,7 @@ const AnalysisReport = ({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }, [validationTableRows, validationTableColumns]);
+  }, [activeValidationView, validationViews]);
   
   // Load logo as DataURL for PDF
   useEffect(() => {
@@ -976,6 +1077,123 @@ const AnalysisReport = ({
 
         sectionNumber += 1;
       }
+
+      // ----- EXTERNAL BIOMARKER VALIDATION TABLES -----
+      const ensureSpace = (minHeight = 0) => {
+        if (yPosition + minHeight > pageHeight - 20) {
+          pdf.addPage();
+          yPosition = topMargin - 20;
+        }
+      };
+
+      const renderTableSection = (title, columns, rows) => {
+        const safeColumns = Array.isArray(columns) && columns.length > 0 ? columns : [];
+        const safeRows = Array.isArray(rows) ? rows : [];
+        ensureSpace(12);
+        pdf.setFontSize(12);
+        pdf.setTextColor(60, 60, 60);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(title, marginLeft, yPosition);
+        yPosition += 7;
+
+        if (safeRows.length === 0 || safeColumns.length === 0) {
+          pdf.setFontSize(10);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(100, 100, 100);
+          pdf.text('No results available.', marginLeft, yPosition);
+          yPosition += 8;
+          return;
+        }
+
+        const colWidth = contentWidth / safeColumns.length;
+        const baseRowHeight = 6;
+
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(50, 50, 50);
+        safeColumns.forEach((col, idx) => {
+          const headerText = col.label || col.key;
+          pdf.text(headerText, marginLeft + idx * colWidth, yPosition, { maxWidth: colWidth - 2 });
+        });
+        yPosition += baseRowHeight;
+
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(70, 70, 70);
+
+        safeRows.forEach((row) => {
+          const cellLines = safeColumns.map((col) => {
+            const value = row[col.key];
+            if (col.key === 'link' && value) {
+              return ['Open'];
+            }
+            const normalized = Array.isArray(value)
+              ? value.join(', ')
+              : (col.key === 'score' && typeof value === 'number'
+                ? formatScore(value)
+                : (value || '-'));
+            return pdf.splitTextToSize(String(normalized), colWidth - 2);
+          });
+
+          const rowHeight = Math.max(...cellLines.map((lines) => lines.length)) * 5.2;
+          ensureSpace(rowHeight);
+          cellLines.forEach((lines, idx) => {
+            const col = safeColumns[idx];
+            const value = row[col.key];
+            const x = marginLeft + idx * colWidth;
+            if (col.key === 'link' && value) {
+              const url = String(value);
+              const linkLabel = 'Open';
+              pdf.text(linkLabel, x, yPosition, { maxWidth: colWidth - 2 });
+              pdf.setTextColor(47, 79, 181);
+              pdf.text(linkLabel, x, yPosition, { maxWidth: colWidth - 2 });
+              pdf.setTextColor(70, 70, 70);
+              const linkWidth = Math.min(pdf.getTextWidth(linkLabel) + 2, colWidth - 2);
+              pdf.link(x, yPosition - 4, linkWidth, 6, { url, target: '_blank' });
+            } else {
+              pdf.text(lines, x, yPosition, { maxWidth: colWidth - 2 });
+            }
+          });
+          yPosition += rowHeight;
+        });
+
+        yPosition += 6;
+      };
+
+      if (hasValidationResult) {
+        ensureSpace(18);
+        pdf.setFontSize(16);
+        pdf.setTextColor(60, 60, 60);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`${sectionNumber}. External Biomarker Validation`, marginLeft, yPosition);
+        yPosition += 10;
+
+        pdf.setDrawColor(74, 109, 167);
+        pdf.setLineWidth(0.5);
+        pdf.line(marginLeft, yPosition, marginLeft + 95, yPosition);
+        yPosition += 10;
+
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(80, 80, 80);
+        if (validationClassPairLabel) {
+          pdf.text(`Class pair: ${validationClassPairLabel}`, marginLeft, yPosition);
+          yPosition += 6;
+        }
+        if (validationTimestamp) {
+          pdf.text(`Validated on: ${validationTimestamp}`, marginLeft, yPosition);
+          yPosition += 6;
+        }
+        pdf.text(`Genes checked: ${biomarkerValidationResult?.geneCount || '-'}`, marginLeft, yPosition);
+        yPosition += 6;
+        pdf.text(`Limit: ${biomarkerValidationResult?.maxGenes || '-'}`, marginLeft, yPosition);
+        yPosition += 10;
+
+        renderTableSection('Biomarker view', validationViews.biomarkers.columns, validationViews.biomarkers.rows);
+        renderTableSection('Diseases view', validationViews.diseases.columns, validationViews.diseases.rows);
+        renderTableSection('Detailed view', validationViews.detailed.columns, validationViews.detailed.rows);
+
+        sectionNumber += 1;
+      }
       
       // Footer
       pdf.setFontSize(8);
@@ -1053,7 +1271,7 @@ const AnalysisReport = ({
         </div>
       )}
 
-      {hasValidationSection && (
+      {showValidationSection && (
         <div className="validation-results-panel">
           <div className="validation-results-header">
             <div>
@@ -1072,30 +1290,45 @@ const AnalysisReport = ({
               {biomarkerValidationResult?.maxGenes && (
                 <span>Limit: {biomarkerValidationResult.maxGenes}</span>
               )}
-              {validationTableRows.length > 0 && (
+              {hasRowsInActiveView && (
                 <button className="validation-download-button" onClick={handleDownloadValidationCsv}>
                   Download CSV
                 </button>
               )}
             </div>
           </div>
+          <div className="validation-tabs" role="tablist" aria-label="Validation views">
+            {validationTabOrder.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={`validation-tab-button${activeValidationView === tab.key ? ' active' : ''}`}
+                onClick={() => setActiveValidationView(tab.key)}
+                role="tab"
+                aria-selected={activeValidationView === tab.key}
+                tabIndex={activeValidationView === tab.key ? 0 : -1}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
           <p className="validation-score-note">
             Association score (0-1) comes from Open Targets and reflects the aggregated strength of evidence that each gene is linked to the listed disease. Higher values indicate stronger support.
           </p>
-          {validationTableRows.length > 0 ? (
+          {hasRowsInActiveView ? (
             <div className="validation-table-wrapper">
               <table className="validation-table">
                 <thead>
                   <tr>
-                    {validationTableColumns.map((column) => (
+                    {currentValidationView.columns.map((column) => (
                       <th key={column.key}>{column.label || column.key}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {validationTableRows.map((row) => (
+                  {currentValidationView.rows.map((row) => (
                     <tr key={row.__rowId}>
-                      {validationTableColumns.map((column) => {
+                      {currentValidationView.columns.map((column) => {
                         const value = row[column.key];
                         if (column.key === 'link') {
                           return (
@@ -1103,7 +1336,7 @@ const AnalysisReport = ({
                               {value ? (
                                 <a href={value} target="_blank" rel="noreferrer">Open</a>
                               ) : (
-                                '�'
+                                '-'
                               )}
                             </td>
                           );
@@ -1111,13 +1344,20 @@ const AnalysisReport = ({
                         if (column.key === 'score') {
                           return (
                             <td key={`${row.__rowId}-${column.key}`}>
-                              {typeof value === 'number' ? formatScore(value) : '�'}
+                              {typeof value === 'number' ? formatScore(value) : '-'}
+                            </td>
+                          );
+                        }
+                        if (Array.isArray(value)) {
+                          return (
+                            <td key={`${row.__rowId}-${column.key}`}>
+                              {value.length ? value.join(', ') : '-'}
                             </td>
                           );
                         }
                         return (
                           <td key={`${row.__rowId}-${column.key}`}>
-                            {value || '�'}
+                            {value || '-'}
                           </td>
                         );
                       })}
@@ -1127,7 +1367,7 @@ const AnalysisReport = ({
               </table>
             </div>
           ) : (
-            <p className="validation-empty-state">No disease matches were returned for the validated biomarkers.</p>
+            <p className="validation-empty-state">No results are available for this view.</p>
           )}
         </div>
       )}

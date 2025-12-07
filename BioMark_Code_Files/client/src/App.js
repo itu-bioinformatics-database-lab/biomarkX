@@ -15,6 +15,7 @@ import AggregationHelpContent from './components/common/AggregationHelpContent';
 import { helpTexts } from './content/helpTexts';
 import LongRunNotificationModal from './components/common/LongRunNotificationModal';
 import { buildKeggColumns, KEGG_PREVIEW_LIMIT } from './utils/keggTable';
+import { LOGIN_PATH } from './constants/routes';
 
 const ENRICHMENT_OPTIONS = {
   KEGG: {
@@ -278,7 +279,8 @@ function App() {
   const [selectedFeatureCount, setSelectedFeatureCount] = useState(10); // Default: 10 miRNAs selected
   const [showFormatPopup, setShowFormatPopup] = useState(false); // Controls file format popup
   const [availableClassPairs, setAvailableClassPairs] = useState([]);
-  const [allColumns, setAllColumns] = useState([]); // Stores all columns
+  const [allColumns, setAllColumns] = useState([]); // Stores columns for current file (step 3)
+  const [analysisAllColumns, setAnalysisAllColumns] = useState([]); // Stores columns for merged/analysis file (step 6)
   const [loadingAllColumns, setLoadingAllColumns] = useState(false); // Loading state for all columns
   const [summarizeAnalyses, setSummarizeAnalyses] = useState([]); // Stores multiple summarize analyses
   const [info, setInfo] = useState('');
@@ -500,6 +502,11 @@ function App() {
     return uploadContexts[uploadedInfo.filePath] || null;
   }, [uploadedInfo?.filePath, uploadContexts]);
 
+  const analysisUploadContext = useMemo(() => {
+    if (!analysisFilePath) return null;
+    return uploadContexts[analysisFilePath] || null;
+  }, [analysisFilePath, uploadContexts]);
+
   const datasetNamesForReport = useMemo(() => {
     if (mergeMetadata?.name) {
       return [mergeMetadata.name];
@@ -520,15 +527,24 @@ function App() {
     () => ENRICHMENT_ORDER.filter((key) => !completedEnrichmentTypes[key]),
     [completedEnrichmentTypes]
   );
-   // Memoize the first 10 columns - prevents recalculation on every render
+   // Memoize the first 10 columns for the current file (Step 3)
    const firstTenColumns = useMemo(() => {
-    // If allColumns is filled and columns is empty, use the first 10 of allColumns
     if (allColumns.length > 0 && columns.length === 0) {
         return allColumns.slice(0, 10);
     }
-    // Otherwise, use the first 10 of the current columns state
     return columns.slice(0, 10);
-   }, [columns, allColumns]); // Add allColumns as a dependency
+   }, [columns, allColumns]);
+
+   // First 10 columns for the analysis/merged file (Step 6)
+   const analysisFirstTenColumns = useMemo(() => {
+    if (analysisAllColumns.length > 0) {
+      return analysisAllColumns.slice(0, 10);
+    }
+    if (analysisUploadContext?.columns?.length) {
+      return analysisUploadContext.columns.slice(0, 10);
+    }
+    return [];
+   }, [analysisAllColumns, analysisUploadContext?.columns]);
 
   // Load last used email from localStorage
   useEffect(() => {
@@ -588,6 +604,18 @@ function App() {
       setClassTable(activeUploadContext.classTable || { class: [] });
     }
   }, [uploadedInfo?.filePath, activeUploadContext, analysisFilePath, requiresMerge]);
+
+  // Keep analysis (merged) column list in sync for Step 6
+  useEffect(() => {
+    if (!analysisUploadContext) {
+      setAnalysisAllColumns([]);
+      return;
+    }
+    const candidateColumns = analysisUploadContext.allColumns?.length
+      ? analysisUploadContext.allColumns
+      : analysisUploadContext.columns || [];
+    setAnalysisAllColumns(candidateColumns);
+  }, [analysisUploadContext]);
 
   const generateClientJobId = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -893,6 +921,9 @@ function App() {
       if (!silent && uploadedInfo?.filePath === filePath) {
         setAllColumns(existing);
       }
+      if (analysisFilePath === filePath) {
+        setAnalysisAllColumns(existing);
+      }
       return;
     }
 
@@ -912,6 +943,9 @@ function App() {
       if (uploadedInfo?.filePath === filePath) {
         setAllColumns(fetchedColumns);
       }
+      if (analysisFilePath === filePath) {
+        setAnalysisAllColumns(fetchedColumns);
+      }
       console.log("Fetched all columns in background:", fetchedColumns.length);
     } finally {
       if (!silent) {
@@ -919,7 +953,7 @@ function App() {
       }
       columnFetchInFlightRef.current.delete(filePath);
     }
-  }, [uploadContexts, uploadedInfo?.filePath, fetchAllColumnsGeneric, updateUploadContext, beginVisibleColumnFetch, endVisibleColumnFetch, setError]);
+  }, [uploadContexts, uploadedInfo?.filePath, fetchAllColumnsGeneric, updateUploadContext, beginVisibleColumnFetch, endVisibleColumnFetch, setError, analysisFilePath]);
 
   useEffect(() => {
     if (!Array.isArray(uploadedInfos) || uploadedInfos.length === 0) return;
@@ -2639,7 +2673,7 @@ function App() {
     setCanRunPathwayAnalysis(false);
 
     // Navigate to login page
-    navigate('/login');
+    navigate(LOGIN_PATH);
   };
 
   // Scroll to the selected step
@@ -2690,7 +2724,7 @@ function App() {
           <UserMenu 
             isGuest={isGuestUser()}
             username={username}
-            onNavigateToLogin={() => navigate('/login')}
+            onNavigateToLogin={() => navigate(LOGIN_PATH)}
             onLogout={handleLogout}
             onViewGuestAnalysis={handleViewGuestAnalysis}
           />
@@ -3106,14 +3140,15 @@ function App() {
                     {/* Column Selection List */}
                     <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Select columns to exclude:</label>
                     <SearchableColumnList
-                        initialColumns={firstTenColumns}
-                        allColumns={allColumns}
+                      initialColumns={analysisFirstTenColumns}
+                      allColumns={analysisAllColumns}
                         onSelect={handleAddNonFeatureColumn}
                         selectedColumns={nonFeatureColumns}
                         placeholder="Search columns to exclude..."
                         listHeight="200px"
                         isLoading={loadingAllColumns}
                         disabled={loadingAllColumns || loadingClasses}
+                      useAllColumnsAsDefault
                     />
                   </div>
                   {error && <div className="error-message step-error">{error}</div>}
