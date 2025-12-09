@@ -164,6 +164,16 @@ const AnalysisReport = ({
     }
     return score >= 1 ? score.toFixed(2) : score.toPrecision(2);
   };
+  const normalizeScoreValue = (value) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return null;
+    return Math.max(0, Math.min(1, value));
+  };
+  const getScoreColor = (score) => {
+    const normalized = normalizeScoreValue(score);
+    // Use a blue hue with darker shade as score approaches 1.0
+    const lightness = normalized == null ? 60 : 78 - normalized * 35;
+    return `hsl(205, 60%, ${lightness}%)`;
+  };
   const validationClassPairLabel = biomarkerValidationResult?.classPair ? friendlyClassPair(biomarkerValidationResult.classPair) : null;
   const validationTimestamp = biomarkerValidationResult?.timestamp ? new Date(biomarkerValidationResult.timestamp).toLocaleString() : null;
   const validationTable = biomarkerValidationResult?.table;
@@ -193,16 +203,22 @@ const AnalysisReport = ({
     detailedTableRows.forEach((row) => {
       const diseaseName = row.disease || 'Unknown disease';
       const biomarkerName = row.geneSymbol || row.geneName || 'Unknown biomarker';
+      const score = normalizeScoreValue(row.score);
       if (!diseaseMap.has(diseaseName)) {
-        diseaseMap.set(diseaseName, new Set());
+        diseaseMap.set(diseaseName, new Map());
       }
-      diseaseMap.get(diseaseName).add(biomarkerName);
+      const biomarkerScores = diseaseMap.get(diseaseName);
+      const existing = biomarkerScores.get(biomarkerName);
+      const bestScore = existing == null ? score : (score == null ? existing : Math.max(existing, score));
+      biomarkerScores.set(biomarkerName, bestScore);
     });
 
-    const rows = Array.from(diseaseMap.entries()).map(([diseaseName, biomarkers], index) => ({
+    const rows = Array.from(diseaseMap.entries()).map(([diseaseName, biomarkersMap], index) => ({
       __rowId: `disease-${index}`,
       disease: diseaseName,
-      biomarkers: Array.from(biomarkers).sort(),
+      biomarkers: Array.from(biomarkersMap.entries())
+        .map(([biomarker, score]) => ({ label: biomarker, score }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
     }));
 
     return {
@@ -222,12 +238,16 @@ const AnalysisReport = ({
         biomarkerMap.set(biomarkerKey, {
           geneSymbol: row.geneSymbol || biomarkerKey,
           geneName: row.geneName || '',
-          diseases: new Set(),
+          diseases: new Map(),
           link: row.link || '',
         });
       }
       const current = biomarkerMap.get(biomarkerKey);
-      current.diseases.add(row.disease || 'Unknown disease');
+      const diseaseName = row.disease || 'Unknown disease';
+      const score = normalizeScoreValue(row.score);
+      const existing = current.diseases.get(diseaseName);
+      const bestScore = existing == null ? score : (score == null ? existing : Math.max(existing, score));
+      current.diseases.set(diseaseName, bestScore);
       if (!current.link && row.link) {
         current.link = row.link;
       }
@@ -237,7 +257,9 @@ const AnalysisReport = ({
       __rowId: `biomarker-${index}`,
       geneSymbol: entry.geneSymbol,
       geneName: entry.geneName,
-      diseases: Array.from(entry.diseases).sort(),
+      diseases: Array.from(entry.diseases.entries())
+        .map(([disease, score]) => ({ label: disease, score }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
       link: entry.link,
     }));
 
@@ -297,7 +319,18 @@ const AnalysisReport = ({
     const headers = view.columns.map((col) => col.label || col.key);
     const columnKeys = view.columns.map((col) => col.key);
     const toCsvValue = (value) => {
-      const normalizedValue = Array.isArray(value) ? value.join('; ') : value;
+      if (Array.isArray(value)) {
+        const normalizedItems = value.map((item) => {
+          if (item && typeof item === 'object') {
+            const label = item.label ?? String(item ?? '');
+            const scoreText = item.score != null && typeof item.score === 'number' ? formatScore(item.score) : '';
+            return scoreText ? `${label} (${scoreText})` : label;
+          }
+          return String(item ?? '');
+        });
+        return normalizedItems.join('; ');
+      }
+      const normalizedValue = value;
       const stringValue = normalizedValue == null ? '' : String(normalizedValue);
       if (/[",\n]/.test(stringValue)) {
         return `"${stringValue.replace(/"/g, '""')}"`;
@@ -1127,11 +1160,25 @@ const AnalysisReport = ({
             if (col.key === 'link' && value) {
               return ['Open'];
             }
-            const normalized = Array.isArray(value)
-              ? value.join(', ')
-              : (col.key === 'score' && typeof value === 'number'
-                ? formatScore(value)
-                : (value || '-'));
+            if (Array.isArray(value)) {
+              // sort values by score descending if possible
+              if (value.length > 0 && value[0] && typeof value[0] === 'object' && typeof value[0].score === 'number') {
+                value.sort((a, b) => b.score - a.score);
+              }
+
+              const normalizedItems = value.map((item) => {
+                if (item && typeof item === 'object') {
+                  const label = item.label ?? String(item ?? '');
+                  const scoreText = item.score != null && typeof item.score === 'number' ? formatScore(item.score) : '';
+                  return scoreText ? `${label} (${scoreText})` : label;
+                }
+                return String(item ?? '');
+              });
+              return pdf.splitTextToSize(normalizedItems.join(', '), colWidth - 2);
+            }
+            const normalized = (col.key === 'score' && typeof value === 'number'
+              ? formatScore(value)
+              : (value || '-'));
             return pdf.splitTextToSize(String(normalized), colWidth - 2);
           });
 
@@ -1242,7 +1289,7 @@ const AnalysisReport = ({
   );
 
   return (
-    <div>
+    <div className="validation-panel">
       {showValidationControls && (
         <div className="validation-action-bar">
           <label className="validation-select-label">
@@ -1314,7 +1361,7 @@ const AnalysisReport = ({
             ))}
           </div>
           <p className="validation-score-note">
-            Association score (0-1) comes from Open Targets and reflects the aggregated strength of evidence that each gene is linked to the listed disease. Higher values indicate stronger support.
+            Association score comes from Open Targets and reflects the strength of evidence linking a biomarker to a disease. Higher scores indicate stronger evidence.  
           </p>
           {hasRowsInActiveView ? (
             <div className="validation-table-wrapper">
@@ -1330,7 +1377,25 @@ const AnalysisReport = ({
                   {currentValidationView.rows.map((row) => (
                     <tr key={row.__rowId}>
                       {currentValidationView.columns.map((column) => {
-                        const value = row[column.key];
+                        let value = row[column.key];
+                        if (column.key === 'diseases' && Array.isArray(value)) {
+                          // sort diseases by score descending
+                          const sortedDiseases = [...value].sort((a, b) => {
+                            const scoreA = a?.score ?? 0;
+                            const scoreB = b?.score ?? 0;
+                            return scoreB - scoreA;
+                          });
+                          value = sortedDiseases;
+                        }
+                        if (column.key === 'biomarkers' && Array.isArray(value)) {
+                          // sort biomarkers by score descending
+                          const sortedBiomarkers = [...value].sort((a, b) => {
+                            const scoreA = a?.score ?? 0;
+                            const scoreB = b?.score ?? 0;
+                            return scoreB - scoreA;
+                          });
+                          value = sortedBiomarkers;
+                        }
                         if (column.key === 'link') {
                           return (
                             <td key={`${row.__rowId}-${column.key}`}>
@@ -1344,12 +1409,36 @@ const AnalysisReport = ({
                         }
                         if (column.key === 'score') {
                           return (
-                            <td key={`${row.__rowId}-${column.key}`}>
+                            <td
+                              key={`${row.__rowId}-${column.key}`}
+                              style={{ color: getScoreColor(value) }}
+                            >
                               {typeof value === 'number' ? formatScore(value) : '-'}
                             </td>
                           );
                         }
                         if (Array.isArray(value)) {
+                          const hasScoredObjects = value.some((item) => item && typeof item === 'object');
+                          if (hasScoredObjects) {
+                            return (
+                              <td key={`${row.__rowId}-${column.key}`}>
+                                {value.length ? value.map((item, idx) => {
+                                  const label = item?.label ?? String(item ?? '');
+                                  const score = item?.score;
+                                  const displayScore = score != null ? formatScore(score) : null;
+                                  return (
+                                    <React.Fragment key={`${row.__rowId}-${column.key}-${idx}`}>
+                                      <span>{label}</span>
+                                      {displayScore ? (
+                                        <span style={{ color: getScoreColor(score) }}>{` (${displayScore})`}</span>
+                                      ) : null}
+                                      {idx < value.length - 1 ? ', ' : ''}
+                                    </React.Fragment>
+                                  );
+                                }) : '-'}
+                              </td>
+                            );
+                          }
                           return (
                             <td key={`${row.__rowId}-${column.key}`}>
                               {value.length ? value.join(', ') : '-'}
