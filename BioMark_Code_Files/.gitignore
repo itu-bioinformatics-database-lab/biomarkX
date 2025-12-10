@@ -1,0 +1,33 @@
+# Node.js Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+
+# Python virtual environments and #Pycache
+server/venv/
+server/mehmet_ali_balikci/
+*.pyc
+__pycache__/
+
+# Local Database & Logs
+server/db/app.sqlite
+*.log
+
+# Output and Temporary Files
+client/build/
+server/artifacts/
+server/catboost_info/
+server/results/
+server/sample_report/
+
+
+# System Files
+.DS_Store
+=3.1.0/
+
+# server/uploads klasöründeki tüm dosyaları ve alt klasörleri yoksay.
+server/uploads/*
+
+# Ancak, yoksayma kuralını tersine çevirerek sadece bu dosyayı izlemeye devam et.
+!server/uploads/GSE120584_serum_norm_demo.csv

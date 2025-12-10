@@ -1,4 +1,8 @@
+import matplotlib
+# Ensure headless rendering on servers without a display
+matplotlib.use("Agg")
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sys
@@ -101,6 +105,9 @@ if os.path.exists(ranked_features_path):
 else:
     # Final fallback: try legacy path if class_pair default was missing
     legacy_path = os.path.join("results", file_name, "ranked_features_df.csv")
+    if not os.path.exists(legacy_path):
+        print(f"Ranked features CSV not found at '{ranked_features_path}' or legacy '{legacy_path}'", file=sys.stderr)
+        sys.exit(1)
     df = _read_ranked_csv(legacy_path)
 
 # Some ranked CSVs may not include this column; ignore if missing
@@ -109,14 +116,18 @@ df.drop(columns=["overall score"], inplace=True, errors="ignore")
 # Calculate mean rank robustly (coerce non-numeric, tolerate missing values)
 numeric_part = df.iloc[:, 1:].apply(pd.to_numeric, errors='coerce')
 mean_rank = numeric_part.mean(axis=1, skipna=True)
-global_max = numeric_part.max().max()
+global_max = pd.to_numeric(numeric_part.max().max(), errors='coerce')
 if pd.isna(global_max):
     global_max = 1e9  # fallback if all values are NaN
-# Fill NaNs with a large value to push them to the bottom, then round and cast
-df["Mean Rank"] = mean_rank.fillna(global_max + 1000).round().astype(int)
+# Fill NaNs with a large value to push them to the bottom, then round and cast safely
+safe_mean = pd.to_numeric(mean_rank, errors='coerce').fillna(float(global_max) + 1000.0)
+df["Mean Rank"] = np.rint(safe_mean.astype(float)).astype(int)
 
 # Select and sort the top N (feature_count) biomarkers with the smallest (most effective) mean rank
 df_top = df.nsmallest(feature_count, "Mean Rank")
+
+# Find the appropriate feature column name (feature type)
+feature_column = df_top.columns[0]  # First column is feature type (microRNA, gene, etc)
 
 # Visualization settings - adjust for larger size
 column_count = df.shape[1] - 1
@@ -126,33 +137,21 @@ min_width = max(12, column_count * 1.5)
 height = min(15, feature_count/3 + 5)  
 plt.figure(figsize=(min_width, height))
 
-# Custom annotation function for heatmap
-# Annotates each cell with integer value and increases font size
-
-def annotate_heatmap(data, annot, fmt=".2f", **textkw):
-    for i in range(data.shape[0]):
-        for j in range(data.shape[1]):
-            if j == data.shape[1] - 1:  # Last column (Mean Rank)
-                text = format(int(data[i, j]), "d")  # Format as integer
-            else:
-                text = format(int(data[i, j]), "d")
-            # Increase font size for cell text
-            annot[i * data.shape[1] + j].set_text(text)
-            annot[i * data.shape[1] + j].set_fontsize(20)  # Increased cell font size
-
-# Find the appropriate feature column name (feature type)
-feature_column = df_top.columns[0]  # First column is feature type (microRNA, gene, etc)
+# Prepare data for heatmap (numeric values, integer formatting)
+plot_df = df_top.set_index(feature_column)
+# Convert all cells to numeric where possible and round for display
+plot_df = plot_df.apply(pd.to_numeric, errors='coerce').round()
 
 # Use a more readable and high-contrast color palette ("magma")
 ax = sns.heatmap(
-    df_top.set_index(feature_column),  # Do not include last column
-    annot=True,  # Annotate cells with numbers
-    cmap="magma_r",  # Reversed magma colormap for dark background, light text
-    fmt="",  # Custom format
-    linewidths=0.7,  # Add more visible lines between cells
-    linecolor="gray",  # Gray lines between cells
-    square=False,  # Use rectangular cells
-    annot_kws={"size": 14}  # Increase annotation font size
+    plot_df,
+    annot=True,
+    cmap="magma_r",
+    fmt="g",  # generic; with rounded numbers this shows integers
+    linewidths=0.7,
+    linecolor="gray",
+    square=False,
+    annot_kws={"size": 14}
 )
 
 # Output directory (labeled per aggregation if provided)
@@ -169,8 +168,7 @@ if agg_label:
 os.makedirs(os.path.join(outdir, "png"), exist_ok=True)
 os.makedirs(os.path.join(outdir, "pdf"), exist_ok=True)
 
-# Apply custom annotation to heatmap
-annotate_heatmap(ax.collections[0].get_array(), ax.texts)
+# No custom annotation needed; seaborn handles it via fmt/annot
 
 # Adjust title font size based on length
 # Use a more generic heading and include aggregation label for clarity
@@ -214,3 +212,4 @@ print(png_output_path)
 # Save as PDF
 pdf_output_path = os.path.join(outdir, "pdf", "summary_of_statistical_methods_plot.pdf")
 plt.savefig(pdf_output_path, dpi=400, bbox_inches='tight')
+plt.close()

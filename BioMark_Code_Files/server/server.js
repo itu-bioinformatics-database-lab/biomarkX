@@ -1,9 +1,10 @@
-require('dotenv').config();
+const path = require('path');
+// Load environment from the server/.env file regardless of working directory
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
 const fs = require('fs');
-const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const db = require('./db/database');
 const sessionMiddleware = require('./middleware/session');
@@ -13,8 +14,18 @@ const { spawn } = require('child_process');
 
 const app = express();
 
+// Derive a safe CORS origin (scheme+host+port) from PUBLIC_BASE_URL which may include a path prefix
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'http://localhost:3000';
+let PUBLIC_ORIGIN = PUBLIC_BASE_URL;
+try {
+    const u = new URL(PUBLIC_BASE_URL);
+    PUBLIC_ORIGIN = u.origin;
+} catch (e) {
+    // keep as-is if not a valid URL
+}
+
 app.use(cors({
-    origin: process.env.PUBLIC_BASE_URL || 'http://localhost:3000',
+    origin: PUBLIC_ORIGIN,
     exposedHeaders: ['x-session-id'] // Allow client to read the session header
 }));
 app.use(sessionMiddleware);
@@ -728,14 +739,16 @@ app.post('/summarize_statistical_methods', (req, res) => {
                 outputData += data.toString();
             });
             
+            let sumErr = '';
             python.stderr.on('data', (data) => {
                 console.error(`stderr: ${data}`);
+                sumErr += data.toString();
             });
             
             python.on('close', (code) => {
                 if (code !== 0) {
                     console.error(`Python process exited with code ${code}`);
-                    return res.status(500).json({ success: false, message: 'Process failed' });
+                    return res.status(500).json({ success: false, message: 'Process failed', error: sumErr });
                 }
                 
                 // Clean up line endings
@@ -778,13 +791,27 @@ app.post('/summarize_statistical_methods', (req, res) => {
         
         console.log("Found class pairs:", classPairs);
         
-        // If no class pairs are found, return an error
+        // If no class pairs are found under feature_ranking, try to derive from feature_importances.json
         if (classPairs.length === 0) {
-            console.log("No class pairs found with ranked_features_df.csv");
-            return res.status(400).json({ 
-                success: false, 
-                message: 'No class pairs found with ranked_features_df.csv files' 
-            });
+            try {
+                const aggJsonPath = path.join('results', fileName, 'feature_importances.json');
+                if (fs.existsSync(aggJsonPath)) {
+                    const raw = fs.readFileSync(aggJsonPath, 'utf8');
+                    const parsed = JSON.parse(raw);
+                    if (parsed && typeof parsed === 'object') {
+                        classPairs = Object.keys(parsed).filter(k => typeof parsed[k] === 'object');
+                    }
+                }
+            } catch (e) {
+                // ignore and fall through
+            }
+            if (classPairs.length === 0) {
+                console.log("No class pairs found with ranked_features_df.csv and none derivable from feature_importances.json");
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'No class pairs found with ranked_features_df.csv files' 
+                });
+            }
         }
         
         // If there is no selected class pair and there are multiple class pairs, return them for user selection
@@ -818,6 +845,49 @@ app.post('/summarize_statistical_methods', (req, res) => {
             console.error(`Error deleting existing image: ${err}`);
         }
         
+        // Before proceeding, ensure there are at least two biomarker-producing analyses for this class pair.
+        // We check aggregated feature_importances.json for the selected class pair.
+        try {
+            const aggJsonPath = path.join('results', fileName, 'feature_importances.json');
+            if (fs.existsSync(aggJsonPath)) {
+                const raw = fs.readFileSync(aggJsonPath, 'utf8');
+                try {
+                    const parsed = JSON.parse(raw);
+                    const cpData = parsed && parsed[classToUse];
+                    let sourceCount = 0;
+                    if (cpData && typeof cpData === 'object') {
+                        Object.values(cpData).forEach((val) => {
+                            if (val && typeof val === 'object') {
+                                // Leaf dict (e.g., anova, t_test, xgb_feature_importance)
+                                const looksLikeFeatureMap = Object.values(val).some(v => typeof v === 'number');
+                                if (looksLikeFeatureMap) {
+                                    sourceCount += 1;
+                                } else {
+                                    // Nested (e.g., by model key -> { shap: {...}, lime: {...} })
+                                    Object.values(val).forEach((inner) => {
+                                        if (inner && typeof inner === 'object') {
+                                            const innerIsFeatMap = Object.values(inner).some(v => typeof v === 'number');
+                                            if (innerIsFeatMap) sourceCount += 1;
+                                        }
+                                    });
+                                }
+                            }
+                        });
+                    }
+                    if (sourceCount < 2) {
+                        return res.status(400).json({
+                            success: false,
+                            message: 'There is only one analysis for this class pair. To combine, please run more analyses.'
+                        });
+                    }
+                } catch (e) {
+                    // If the JSON is unreadable, continue without blocking
+                }
+            }
+        } catch (e) {
+            // Non-fatal; continue
+        }
+
         // Resolve CSV path for the selected class pair (prefer canonical; fallback to labeled subdir)
         const classDir = path.join(featureRankingPath, classToUse);
         let csvPath = path.join(classDir, 'ranked_features_df.csv');
@@ -844,15 +914,7 @@ app.post('/summarize_statistical_methods', (req, res) => {
             }
         }
         console.log("Using CSV path:", csvPath);
-        
-        // Check if the CSV path exists (after fallback)
-        if (!fs.existsSync(csvPath)) {
-            console.error(`CSV file not found at path: ${csvPath}`);
-            return res.status(400).json({ 
-                success: false, 
-                message: `CSV file not found for class pair: ${classToUse}` 
-            });
-        }
+        // Do not fail early if CSV missing; attempt re-ranking to generate it
         
         // Optional on-the-fly re-ranking based on query params
         const aggregationMethod = (req.body && req.body.aggregationMethod) ? String(req.body.aggregationMethod).toLowerCase() : null;
@@ -885,30 +947,29 @@ app.post('/summarize_statistical_methods', (req, res) => {
         const aggLabelOverride = buildAggLabel();
         const aggLabel = aggLabelOverride || selectedSubdirLabel;
 
-        const runRerankIfNeeded = () => {
-            if (!aggregationMethod && !aggregationWeights && !rrfK) return null; // no override
-            return spawn(pythonCommand, [
-                '-Xfrozen_modules=off',
-                rerankScript,
-                filePath,
-                classToUse,
-                aggregationMethod || '',
-                aggregationWeights || '',
-                rrfK || '',
-                aggLabel || ''
-            ]);
-        };
+        // Always rerank to ensure combination across all analyses is up-to-date
+        const runRerank = () => spawn(pythonCommand, [
+            '-Xfrozen_modules=off',
+            rerankScript,
+            filePath,
+            classToUse,
+            aggregationMethod || '',
+            aggregationWeights || '',
+            rrfK || '',
+            aggLabel || ''
+        ]);
 
-        const maybeRerank = runRerankIfNeeded();
+        const maybeRerank = runRerank();
         let outputData = '';
         const finalize = () => {
             const py = runSummary(aggLabel);
+            let sumErr = '';
             py.stdout.on('data', (data) => { outputData += data.toString(); console.log(`Python stdout: ${data}`); });
-            py.stderr.on('data', (data) => { console.error(`stderr: ${data}`); });
+            py.stderr.on('data', (data) => { console.error(`stderr: ${data}`); sumErr += data.toString(); });
             py.on('close', (code) => {
                 if (code !== 0) {
                     console.error(`Python process exited with code ${code}`);
-                    return res.status(500).json({ success: false, message: 'Process failed' });
+                    return res.status(500).json({ success: false, message: 'Process failed', error: sumErr });
                 }
                 const cleanedOutput = outputData.trim();
                 console.log(`Python process output: ${cleanedOutput}`);
@@ -916,31 +977,28 @@ app.post('/summarize_statistical_methods', (req, res) => {
             });
         };
 
-        if (maybeRerank) {
-            let rerankOut = '';
-            maybeRerank.stdout.on('data', (d) => { rerankOut += d.toString(); });
-            maybeRerank.stderr.on('data', (d) => { console.error(`stderr: ${d}`); });
-            maybeRerank.on('close', (c) => {
-                if (c !== 0) {
-                    console.error(`Re-ranking process exited with code ${c}`);
-                } else {
-                    try {
-                        const text = (rerankOut || '').trim();
-                        const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-                        const lastLine = lines.length > 0 ? lines[lines.length - 1] : '';
-                        if (lastLine) {
-                            csvPath = lastLine; // prefer the freshly produced CSV path
-                            console.log('Using CSV path from re-ranking:', csvPath);
-                        }
-                    } catch (e) {
-                        console.error('Failed to parse re-ranking output path:', e);
+        let rerankOut = '';
+        maybeRerank.stdout.on('data', (d) => { rerankOut += d.toString(); });
+        maybeRerank.stderr.on('data', (d) => { console.error(`stderr: ${d}`); });
+        maybeRerank.on('close', (c) => {
+            if (c !== 0) {
+                console.error(`Re-ranking process exited with code ${c}`);
+                // Proceed with previous csvPath if rerank failed
+            } else {
+                try {
+                    const text = (rerankOut || '').trim();
+                    const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                    const lastLine = lines.length > 0 ? lines[lines.length - 1] : '';
+                    if (lastLine) {
+                        csvPath = lastLine; // prefer the freshly produced CSV path
+                        console.log('Using CSV path from re-ranking:', csvPath);
                     }
+                } catch (e) {
+                    console.error('Failed to parse re-ranking output path:', e);
                 }
-                finalize();
-            });
-        } else {
+            }
             finalize();
-        }
+        });
         
     } catch (error) {
         console.error("Error processing request:", error);

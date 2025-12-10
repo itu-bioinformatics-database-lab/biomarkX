@@ -116,7 +116,27 @@ def feature_rank(top_features: dict = None,
             if not isinstance(outer_dict, dict):
                 logging.error(f"Class pair '{class_pair}', analysis '{outer_key}': Expected dictionary but got {type(outer_dict).__name__}")
                 continue  # Skip this analysis
-                
+
+            # If values are numeric -> one column per outer_key
+            try:
+                if all(isinstance(v, (int, float, np.number)) for v in outer_dict.values()):
+                    ranked_data[outer_key] = rank_dict(outer_dict)
+                    continue
+            except Exception:
+                pass
+
+            # If nested dict (e.g., model -> { shap: {...}, lime: {...} }) -> separate columns per sub-method
+            any_nested = any(isinstance(v, dict) for v in outer_dict.values())
+            if any_nested:
+                for sub_method, feat_scores in outer_dict.items():
+                    if not isinstance(feat_scores, dict):
+                        continue
+                    # Rank per sub-method independently
+                    col_name = f"{outer_key} + {sub_method}"
+                    ranked_data[col_name] = rank_dict(feat_scores)
+                continue
+
+            # Fallback
             ranked_data[outer_key] = rank_dict(outer_dict)
             
         # Skip this class pair if no valid analysis
@@ -169,8 +189,18 @@ def feature_rank(top_features: dict = None,
                 ranked_for_output = ranked_data_df.assign(_score=rank_product).sort_values(by="_score", ascending=True).drop(columns=["_score"]) 
             elif agg == "weighted_borda":
                 # Lower is better (weighted sum of ranks)
-                weights = aggregation_weights or {}
-                w = np.array([weights.get(str(c).lower(), 1.0) for c in rank_cols], dtype=float)
+                # Support both exact column name weights and generic method tokens like 'shap', 'lime', 'anova', 't_test'
+                weights_map = {str(k).lower(): float(v) for k, v in (aggregation_weights or {}).items() if isinstance(v, (int, float, np.number))}
+                def weight_for(col: str) -> float:
+                    name = str(col).lower()
+                    if name in weights_map:
+                        return weights_map[name]
+                    # generic method tokens
+                    for token in ["shap", "lime", "anova", "t_test", "ttest", "t-test"]:
+                        if token in name and token in weights_map:
+                            return weights_map[token]
+                    return 1.0
+                w = np.array([weight_for(c) for c in rank_cols], dtype=float)
                 weighted_borda = (ranked_data_df[rank_cols] * w).sum(axis=1)
                 ranked_for_output = ranked_data_df.assign(_score=weighted_borda).sort_values(by="_score", ascending=True).drop(columns=["_score"]) 
             elif agg == "sum":

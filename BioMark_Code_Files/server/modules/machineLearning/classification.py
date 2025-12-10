@@ -26,6 +26,7 @@ from modules.exception import CustomException
 from modules.logger import logging
 from modules.utils import save_object, evaluate_models, load_json, save_json, getparams
 from modules.modelExplanation.feature_importance_analysis import plot_feature_importance
+import re
 
 class Classification:
     """
@@ -251,7 +252,7 @@ class Classification:
                 self.X,
                 self.y,
                 test_size=self.test_size,
-                random_state=32,
+                random_state=42,
                 stratify=self.y
             )
             # keep raw splits for CV inside Pipeline (to avoid leakage)
@@ -334,15 +335,15 @@ class Classification:
         try:
 
             models_base = {
-                "logistic regression": LogisticRegression(random_state = 32, solver = "lbfgs", penalty = "l2", max_iter = 2000),
+                "logistic regression": LogisticRegression(random_state = 42, solver = "lbfgs", penalty = "l2", max_iter = 2000),
                 "random forest": RandomForestClassifier(random_state = 42, n_jobs=-1),
                 "xgbclassifier": XGBClassifier(random_state = 42, n_jobs=-1),
-                "decision tree": DecisionTreeClassifier(random_state = 32), 
-                "gradient boosting": GradientBoostingClassifier(random_state = 32),
-                "catboosting classifier": CatBoostClassifier(random_state = 32,verbose=False),
-                "adaboost classifier": AdaBoostClassifier(random_state = 32),
-                "mlpclassifier": MLPClassifier(random_state = 32, verbose=False),
-                "svc": SVC(kernel="rbf",random_state = 32, probability=True)
+                "decision tree": DecisionTreeClassifier(random_state = 42), 
+                "gradient boosting": GradientBoostingClassifier(random_state = 42),
+                "catboosting classifier": CatBoostClassifier(random_state = 42,verbose=False),
+                "adaboost classifier": AdaBoostClassifier(random_state = 42),
+                "mlpclassifier": MLPClassifier(random_state = 42, verbose=False),
+                "svc": SVC(kernel="rbf",random_state = 42, probability=True)
                 }
             models = {model_name:models_base[model_name] for model_name in self.model_list}
             
@@ -372,7 +373,7 @@ class Classification:
             for model_name, model_instance in models.items():
 
                 # Compare in a case-insensitive way or with the standardized keys
-                if model_name.lower() in [xgb_key, rf_key] and hasattr(model_instance, 'feature_importances_'):
+                if hasattr(model_instance, 'feature_importances_'):
                     if self.verbose:
                         print(f"Generating feature importance plot for {model_name}...")
                     
@@ -420,7 +421,14 @@ class Classification:
                             existing_data[class_pair] = {}
 
                         # Save importances under model-specific keys
-                        model_key = "xgb_feature_importance" if model_name.lower() == xgb_key else "randomforest_feature_importance"
+                        # Preserve legacy keys for XGB/RF, generalize others
+                        if model_name.lower() == xgb_key:
+                            model_key = "xgb_feature_importance"
+                        elif model_name.lower() == rf_key:
+                            model_key = "randomforest_feature_importance"
+                        else:
+                            slug = re.sub(r'[^a-z0-9]+', '', model_name.lower())
+                            model_key = f"{slug}_feature_importance" if slug else "model_feature_importance"
                         if model_key not in existing_data[class_pair]:
                             existing_data[class_pair][model_key] = {}
 

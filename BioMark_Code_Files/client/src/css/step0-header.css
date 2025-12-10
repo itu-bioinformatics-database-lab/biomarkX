@@ -28,6 +28,22 @@
     letter-spacing: 0.5px;
 }
 
+/* App version badge (left corner) */
+.app-version {
+    position: absolute;
+    left: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    color: #2f4fb5;
+    background: #eef3fd;
+    padding: 4px 8px;
+    border-radius: 12px;
+    border: 1px solid #d7e2ff;
+    font-weight: 700;
+    font-family: 'Poppins', sans-serif;
+}
+
 .user-guide-link {
     position: absolute;
     padding-right: 50px;
@@ -87,7 +103,7 @@
 
     body::before span {
         color: #0056FF;
-        content: "BIOMARKER ANALYSIS TOOL";
+        content: "Biomark - Biomarker Analysis Tool";
         text-align: center;
         letter-spacing: 0.5px;
     }
