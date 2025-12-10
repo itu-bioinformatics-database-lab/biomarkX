@@ -1,6 +1,8 @@
 const express = require('express');
 const { spawn } = require('child_process');
 const path = require('path');
+const db = require('../db/database');
+const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -72,6 +74,61 @@ router.post('/biomarker-validation', async (req, res) => {
     const message = error?.message || 'Failed to validate biomarkers';
     const details = error?.details || null;
     return res.status(500).json({ success: false, message, error: details || message });
+  }
+});
+
+// Save biomarker validation results to analysis metadata
+router.post('/biomarker-validation/save', authMiddleware, async (req, res) => {
+  try {
+    const { analysisId, validationData } = req.body;
+    const userId = req.userId;
+    const sessionId = req.session_id;
+    
+    if (!analysisId || !validationData) {
+      return res.status(400).json({ success: false, message: 'Missing required parameters' });
+    }
+    
+    // Verify the analysis belongs to this user
+    let analysis;
+    if (userId) {
+      const result = await db.query('SELECT analysis_metadata FROM analyses WHERE id = $1 AND user_id = $2', [analysisId, userId]);
+      analysis = result.rows[0];
+    } else if (sessionId) {
+      const result = await db.query('SELECT analysis_metadata FROM analyses WHERE id = $1 AND session_id = $2', [analysisId, sessionId]);
+      analysis = result.rows[0];
+    } else {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    
+    if (!analysis) {
+      return res.status(404).json({ success: false, message: 'Analysis not found' });
+    }
+    
+    // Parse existing metadata
+    let metadata = {};
+    if (analysis.analysis_metadata) {
+      try {
+        metadata = JSON.parse(analysis.analysis_metadata);
+      } catch (e) {
+        console.error('Failed to parse existing metadata:', e);
+      }
+    }
+    
+    // Add biomarker validation data with timestamp
+    metadata.biomarkerValidation = {
+      ...validationData,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Update the analysis metadata
+    await db.query('UPDATE analyses SET analysis_metadata = $1 WHERE id = $2', [JSON.stringify(metadata), analysisId]);
+    
+    console.log(`Saved biomarker validation to analysis ${analysisId}`);
+    
+    return res.json({ success: true, message: 'Validation results saved successfully' });
+  } catch (error) {
+    console.error('Failed to save validation results:', error);
+    return res.status(500).json({ success: false, message: 'Failed to save validation results' });
   }
 });
 

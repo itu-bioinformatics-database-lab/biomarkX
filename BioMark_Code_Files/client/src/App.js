@@ -2335,11 +2335,31 @@ function App() {
       if (!apiResponse?.data?.success) {
         throw new Error(apiResponse?.data?.message || 'Biomarker validation failed.');
       }
-      setValidationResult({
+      
+      const validationData = {
         ...apiResponse.data,
         classPair: source.classPair || null,
         geneList: genes
-      });
+      };
+      
+      setValidationResult(validationData);
+      
+      // Save validation results to database if we have a current analysis ID
+      if (currentAnalysisId) {
+        try {
+          const token = localStorage.getItem('token');
+          await api.post('/api/biomarker-validation/save', {
+            analysisId: currentAnalysisId,
+            validationData: validationData
+          }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          console.log('Validation results saved to database');
+        } catch (saveError) {
+          console.error('Failed to save validation results:', saveError);
+          // Don't fail the validation if saving fails
+        }
+      }
     } catch (error) {
       setValidationError(error.response?.data?.message || error.message || 'Unable to validate biomarkers.');
       setValidationResult(null);

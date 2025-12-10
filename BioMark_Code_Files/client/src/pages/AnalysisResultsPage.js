@@ -234,6 +234,9 @@ export default function AnalysisResultsPage() {
         return meta.selectedClasses ? meta.selectedClasses.join(' vs ') : 'N/A';
       });
       
+      // Extract biomarker validation results if available
+      const biomarkerValidation = metadata.biomarkerValidation || null;
+      
       setReportData({
         analysisResults,
         analysisDate: formatDate(fullAnalysis.created_at),
@@ -249,7 +252,8 @@ export default function AnalysisResultsPage() {
         featureCount: 20,
         nonFeatureColumns: metadata.nonFeatureColumns || [],
         summarizeAnalyses: allBiomarkerSummaries,
-        enrichmentAnalyses
+        enrichmentAnalyses,
+        biomarkerValidationResult: biomarkerValidation
       });
     } catch (err) {
       console.error('Error preparing report:', err);
@@ -418,6 +422,8 @@ export default function AnalysisResultsPage() {
             summarizeAnalyses={reportData.summarizeAnalyses || []}
             enrichmentAnalyses={reportData.enrichmentAnalyses || []}
             datasetFileName={reportData.filename}
+            biomarkerValidationResult={reportData.biomarkerValidationResult}
+            canValidateBiomarkers={false}
           />
         </div>
       )}

@@ -212,6 +212,82 @@
   box-shadow: none;
 }
 
+/* Validation Results Section */
+.validation-results-section {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  margin-bottom: 30px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.validation-results-section h2 {
+  font-size: 22px;
+  color: #333;
+  margin: 0 0 15px 0;
+}
+
+.validation-meta {
+  font-size: 14px;
+  color: #666;
+  margin: 5px 0;
+}
+
+.validation-table-wrapper {
+  margin-top: 20px;
+  overflow-x: auto;
+}
+
+.validation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.validation-table thead {
+  background: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.validation-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: #495057;
+  white-space: nowrap;
+}
+
+.validation-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid #e9ecef;
+  color: #333;
+}
+
+.validation-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.validation-table a {
+  color: #667eea;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.validation-table a:hover {
+  text-decoration: underline;
+}
+
+.table-truncation-note {
+  margin-top: 15px;
+  padding: 12px;
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #856404;
+  text-align: center;
+}
+
 .error-message {
   background: #fef5f5;
   color: #e74c3c;

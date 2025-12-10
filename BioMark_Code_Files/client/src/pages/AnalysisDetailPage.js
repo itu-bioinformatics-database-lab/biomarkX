@@ -16,6 +16,7 @@ export default function AnalysisDetailPage() {
   const [error, setError] = useState('');
   const [analysisResults, setAnalysisResults] = useState([]);
   const [enrichmentAnalyses, setEnrichmentAnalyses] = useState([]);
+  const [biomarkerValidation, setBiomarkerValidation] = useState(null);
 
   // Function to fetch and parse CSV data for enrichment analyses
   const fetchEnrichmentResultTable = async (relativePath) => {
@@ -149,6 +150,11 @@ export default function AnalysisDetailPage() {
         }]);
         
         setEnrichmentAnalyses(allEnrichmentAnalyses);
+        
+        // Extract biomarker validation results if available
+        if (analysisData.metadata?.biomarkerValidation) {
+          setBiomarkerValidation(analysisData.metadata.biomarkerValidation);
+        }
       }
     } catch (err) {
       console.error('Error fetching analysis details:', err);
@@ -652,6 +658,8 @@ export default function AnalysisDetailPage() {
                 summarizeAnalyses={allBiomarkerSummaries}
                 enrichmentAnalyses={enrichmentAnalyses}
                 datasetFileName={analysis.filename || 'Unknown'}
+                biomarkerValidationResult={biomarkerValidation}
+                canValidateBiomarkers={false}
               />
             </div>
           );
