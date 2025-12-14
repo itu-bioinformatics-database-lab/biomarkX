@@ -16,7 +16,7 @@ export default function AnalysisDetailPage() {
   const [error, setError] = useState('');
   const [analysisResults, setAnalysisResults] = useState([]);
   const [enrichmentAnalyses, setEnrichmentAnalyses] = useState([]);
-  const [biomarkerValidation, setBiomarkerValidation] = useState(null);
+  const [biomarkerValidations, setBiomarkerValidations] = useState([]);
 
   // Function to fetch and parse CSV data for enrichment analyses
   const fetchEnrichmentResultTable = async (relativePath) => {
@@ -151,10 +151,21 @@ export default function AnalysisDetailPage() {
         
         setEnrichmentAnalyses(allEnrichmentAnalyses);
         
-        // Extract biomarker validation results if available
-        if (analysisData.metadata?.biomarkerValidation) {
-          setBiomarkerValidation(analysisData.metadata.biomarkerValidation);
+        // Extract biomarker validation results from all analyses (parent + children)
+        const allValidations = [];
+        for (const singleAnalysis of allAnalyses) {
+          const metadata = singleAnalysis.metadata || {};
+          
+          // Support both old format (single object) and new format (array)
+          if (metadata.biomarkerValidations && Array.isArray(metadata.biomarkerValidations)) {
+            allValidations.push(...metadata.biomarkerValidations);
+          } else if (metadata.biomarkerValidation) {
+            // Legacy support: wrap single validation in array
+            allValidations.push(metadata.biomarkerValidation);
+          }
         }
+        
+        setBiomarkerValidations(allValidations);
       }
     } catch (err) {
       console.error('Error fetching analysis details:', err);
@@ -658,7 +669,7 @@ export default function AnalysisDetailPage() {
                 summarizeAnalyses={allBiomarkerSummaries}
                 enrichmentAnalyses={enrichmentAnalyses}
                 datasetFileName={analysis.filename || 'Unknown'}
-                biomarkerValidationResult={biomarkerValidation}
+                biomarkerValidationResults={biomarkerValidations}
                 canValidateBiomarkers={false}
               />
             </div>

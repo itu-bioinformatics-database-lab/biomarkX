@@ -114,11 +114,16 @@ router.post('/biomarker-validation/save', authMiddleware, async (req, res) => {
       }
     }
     
-    // Add biomarker validation data with timestamp
-    metadata.biomarkerValidation = {
+    // Initialize biomarkerValidations array if it doesn't exist
+    if (!metadata.biomarkerValidations) {
+      metadata.biomarkerValidations = [];
+    }
+    
+    // Add new biomarker validation data with timestamp to the array
+    metadata.biomarkerValidations.push({
       ...validationData,
       timestamp: new Date().toISOString()
-    };
+    });
     
     // Update the analysis metadata
     await db.query('UPDATE analyses SET analysis_metadata = $1 WHERE id = $2', [JSON.stringify(metadata), analysisId]);

@@ -106,7 +106,8 @@ const AnalysisReport = ({
   datasetFileName, // Name(s) of the file(s) used in the analysis (string or string[])
   enrichmentAnalyses = [],
   onValidateBiomarkers,
-  biomarkerValidationResult,
+  biomarkerValidationResult, // For backward compatibility (current analysis flow)
+  biomarkerValidationResults = [], // New: Array of validation results (for My Analysis page)
   biomarkerValidationError,
   biomarkerValidationLoading = false,
   canValidateBiomarkers = true,
@@ -119,6 +120,16 @@ const AnalysisReport = ({
   const [progress, setProgress] = useState(0);
   const [logoDataUrl, setLogoDataUrl] = useState(null);
   const [activeValidationView, setActiveValidationView] = useState('biomarkers');
+
+  // Merge single validation result with array for uniform handling
+  const allValidationResults = useMemo(() => {
+    if (biomarkerValidationResult) {
+      // Current analysis flow: single result
+      return [biomarkerValidationResult];
+    }
+    // My Analysis page: array of results
+    return biomarkerValidationResults;
+  }, [biomarkerValidationResult, biomarkerValidationResults]);
 
   const datasetNameList = useMemo(() => {
     if (Array.isArray(datasetFileName)) {
@@ -174,11 +185,13 @@ const AnalysisReport = ({
     const lightness = normalized == null ? 60 : 78 - normalized * 35;
     return `hsl(205, 60%, ${lightness}%)`;
   };
-  const validationClassPairLabel = biomarkerValidationResult?.classPair ? friendlyClassPair(biomarkerValidationResult.classPair) : null;
-  const validationTimestamp = biomarkerValidationResult?.timestamp ? new Date(biomarkerValidationResult.timestamp).toLocaleString() : null;
-  const validationTable = biomarkerValidationResult?.table;
-  const detailedTableColumns = useMemo(() => (
-    Array.isArray(validationTable?.columns) && validationTable.columns.length > 0
+
+  // Helper function to create validation views for a single validation result
+  const createValidationViews = useCallback((validationResult) => {
+    if (!validationResult) return null;
+
+    const validationTable = validationResult.table;
+    const detailedTableColumns = Array.isArray(validationTable?.columns) && validationTable.columns.length > 0
       ? validationTable.columns
       : [
           { key: 'geneSymbol', label: 'Gene' },
@@ -186,19 +199,16 @@ const AnalysisReport = ({
           { key: 'disease', label: 'Disease / Condition' },
           { key: 'score', label: 'Association Score' },
           { key: 'link', label: 'Link' }
-        ]
-  ), [validationTable?.columns]);
+        ];
 
-  const detailedTableRows = useMemo(() => {
-    if (!validationTable || !Array.isArray(validationTable.rows)) {
-      return [];
-    }
-    return validationTable.rows.map((row, index) => ({
-      __rowId: `${row.geneSymbol || 'gene'}-${index}`,
-      ...row,
-    }));
-  }, [validationTable]);
-  const diseasesView = useMemo(() => {
+    const detailedTableRows = (!validationTable || !Array.isArray(validationTable.rows))
+      ? []
+      : validationTable.rows.map((row, index) => ({
+          __rowId: `${row.geneSymbol || 'gene'}-${index}`,
+          ...row,
+        }));
+
+    // Diseases view
     const diseaseMap = new Map();
     detailedTableRows.forEach((row) => {
       const diseaseName = row.disease || 'Unknown disease';
@@ -213,7 +223,7 @@ const AnalysisReport = ({
       biomarkerScores.set(biomarkerName, bestScore);
     });
 
-    const rows = Array.from(diseaseMap.entries()).map(([diseaseName, biomarkersMap], index) => ({
+    const diseasesViewRows = Array.from(diseaseMap.entries()).map(([diseaseName, biomarkersMap], index) => ({
       __rowId: `disease-${index}`,
       disease: diseaseName,
       biomarkers: Array.from(biomarkersMap.entries())
@@ -221,16 +231,7 @@ const AnalysisReport = ({
         .sort((a, b) => a.label.localeCompare(b.label)),
     }));
 
-    return {
-      columns: [
-        { key: 'disease', label: 'Disease / Condition' },
-        { key: 'biomarkers', label: 'Biomarkers' },
-      ],
-      rows,
-    };
-  }, [detailedTableRows]);
-
-  const biomarkerView = useMemo(() => {
+    // Biomarker view
     const biomarkerMap = new Map();
     detailedTableRows.forEach((row) => {
       const biomarkerKey = row.geneSymbol || row.geneName || 'Unknown biomarker';
@@ -253,7 +254,7 @@ const AnalysisReport = ({
       }
     });
 
-    const rows = Array.from(biomarkerMap.values()).map((entry, index) => ({
+    const biomarkerViewRows = Array.from(biomarkerMap.values()).map((entry, index) => ({
       __rowId: `biomarker-${index}`,
       geneSymbol: entry.geneSymbol,
       geneName: entry.geneName,
@@ -264,33 +265,47 @@ const AnalysisReport = ({
     }));
 
     return {
-      columns: [
-        { key: 'geneSymbol', label: 'Biomarker' },
-        { key: 'geneName', label: 'Gene Name' },
-        { key: 'diseases', label: 'Diseases' },
-        { key: 'link', label: 'Link' },
-      ],
-      rows,
+      classPairLabel: validationResult.classPair ? friendlyClassPair(validationResult.classPair) : null,
+      timestamp: validationResult.timestamp ? new Date(validationResult.timestamp).toLocaleString() : null,
+      geneCount: validationResult.geneCount,
+      maxGenes: validationResult.maxGenes,
+      views: {
+        biomarkers: {
+          label: 'Biomarker view',
+          columns: [
+            { key: 'geneSymbol', label: 'Biomarker' },
+            { key: 'geneName', label: 'Gene Name' },
+            { key: 'diseases', label: 'Diseases' },
+            { key: 'link', label: 'Link' },
+          ],
+          rows: biomarkerViewRows,
+        },
+        diseases: {
+          label: 'Diseases view',
+          columns: [
+            { key: 'disease', label: 'Disease / Condition' },
+            { key: 'biomarkers', label: 'Biomarkers' },
+          ],
+          rows: diseasesViewRows,
+        },
+        detailed: {
+          label: 'Detailed view',
+          columns: detailedTableColumns,
+          rows: detailedTableRows,
+        },
+      }
     };
-  }, [detailedTableRows]);
+  }, []);
 
-  const validationViews = useMemo(() => ({
-    biomarkers: {
-      label: 'Biomarker view',
-      columns: biomarkerView.columns,
-      rows: biomarkerView.rows,
-    },
-    diseases: {
-      label: 'Diseases view',
-      columns: diseasesView.columns,
-      rows: diseasesView.rows,
-    },
-    detailed: {
-      label: 'Detailed view',
-      columns: detailedTableColumns,
-      rows: detailedTableRows,
-    },
-  }), [detailedTableColumns, detailedTableRows, diseasesView, biomarkerView]);
+  // Process all validation results
+  const processedValidations = useMemo(() => {
+    return allValidationResults
+      .map((result, index) => ({
+        id: index,
+        ...createValidationViews(result)
+      }))
+      .filter(v => v.views);
+  }, [allValidationResults, createValidationViews]);
 
   const validationTabOrder = useMemo(() => ([
     { key: 'biomarkers', label: 'Biomarker view' },
@@ -298,21 +313,18 @@ const AnalysisReport = ({
     { key: 'detailed', label: 'Detailed view' },
   ]), []);
 
-  const currentValidationView = useMemo(
-    () => validationViews[activeValidationView] || validationViews.detailed,
-    [validationViews, activeValidationView]
-  );
-
-  const hasRowsInActiveView = currentValidationView.rows.length > 0;
-  const hasValidationResult = Boolean(biomarkerValidationResult);
-  const showValidationSection = hasValidationResult;
+  const hasValidationResults = processedValidations.length > 0;
+  const showValidationSection = hasValidationResults;
 
   useEffect(() => {
     setActiveValidationView('biomarkers');
-  }, [biomarkerValidationResult]);
+  }, [allValidationResults]);
 
-  const handleDownloadValidationCsv = useCallback(() => {
-    const view = validationViews[activeValidationView] || validationViews.detailed;
+  const handleDownloadValidationCsv = useCallback((validationIndex) => {
+    const validation = processedValidations[validationIndex];
+    if (!validation) return;
+    
+    const view = validation.views[activeValidationView] || validation.views.detailed;
     if (!view.rows.length) {
       return;
     }
@@ -353,12 +365,12 @@ const AnalysisReport = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `external_biomarker_validation_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `external_biomarker_validation_${validationIndex + 1}_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }, [activeValidationView, validationViews]);
+  }, [activeValidationView, processedValidations]);
   
   // Load logo as DataURL for PDF
   useEffect(() => {
@@ -1207,38 +1219,43 @@ const AnalysisReport = ({
         yPosition += 6;
       };
 
-      if (hasValidationResult) {
-        ensureSpace(18);
-        pdf.setFontSize(16);
-        pdf.setTextColor(60, 60, 60);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text(`${sectionNumber}. External Biomarker Validation`, marginLeft, yPosition);
-        yPosition += 10;
+      if (hasValidationResults) {
+        processedValidations.forEach((validation, valIndex) => {
+          ensureSpace(18);
+          pdf.setFontSize(16);
+          pdf.setTextColor(60, 60, 60);
+          pdf.setFont('helvetica', 'bold');
+          const validationTitle = processedValidations.length > 1 
+            ? `${sectionNumber}. External Biomarker Validation ${valIndex + 1}`
+            : `${sectionNumber}. External Biomarker Validation`;
+          pdf.text(validationTitle, marginLeft, yPosition);
+          yPosition += 10;
 
-        pdf.setDrawColor(74, 109, 167);
-        pdf.setLineWidth(0.5);
-        pdf.line(marginLeft, yPosition, marginLeft + 95, yPosition);
-        yPosition += 10;
+          pdf.setDrawColor(74, 109, 167);
+          pdf.setLineWidth(0.5);
+          pdf.line(marginLeft, yPosition, marginLeft + 95, yPosition);
+          yPosition += 10;
 
-        pdf.setFontSize(11);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(80, 80, 80);
-        if (validationClassPairLabel) {
-          pdf.text(`Class pair: ${validationClassPairLabel}`, marginLeft, yPosition);
+          pdf.setFontSize(11);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(80, 80, 80);
+          if (validation.classPairLabel) {
+            pdf.text(`Class pair: ${validation.classPairLabel}`, marginLeft, yPosition);
+            yPosition += 6;
+          }
+          if (validation.timestamp) {
+            pdf.text(`Validated on: ${validation.timestamp}`, marginLeft, yPosition);
+            yPosition += 6;
+          }
+          pdf.text(`Genes checked: ${validation.geneCount || '-'}`, marginLeft, yPosition);
           yPosition += 6;
-        }
-        if (validationTimestamp) {
-          pdf.text(`Validated on: ${validationTimestamp}`, marginLeft, yPosition);
-          yPosition += 6;
-        }
-        pdf.text(`Genes checked: ${biomarkerValidationResult?.geneCount || '-'}`, marginLeft, yPosition);
-        yPosition += 6;
-        pdf.text(`Limit: ${biomarkerValidationResult?.maxGenes || '-'}`, marginLeft, yPosition);
-        yPosition += 10;
+          pdf.text(`Limit: ${validation.maxGenes || '-'}`, marginLeft, yPosition);
+          yPosition += 10;
 
-        renderTableSection('Biomarker view', validationViews.biomarkers.columns, validationViews.biomarkers.rows);
-        renderTableSection('Diseases view', validationViews.diseases.columns, validationViews.diseases.rows);
-        renderTableSection('Detailed view', validationViews.detailed.columns, validationViews.detailed.rows);
+          renderTableSection('Biomarker view', validation.views.biomarkers.columns, validation.views.biomarkers.rows);
+          renderTableSection('Diseases view', validation.views.diseases.columns, validation.views.diseases.rows);
+          renderTableSection('Detailed view', validation.views.detailed.columns, validation.views.detailed.rows);
+        });
 
         sectionNumber += 1;
       }
@@ -1319,148 +1336,156 @@ const AnalysisReport = ({
         </div>
       )}
 
-      {showValidationSection && (
-        <div className="validation-results-panel">
-          <div className="validation-results-header">
-            <div>
-              <h3>External Biomarker Validation</h3>
-              {validationClassPairLabel && (
-                <p className="validation-meta-line">Class pair: {validationClassPairLabel}</p>
-              )}
-              {validationTimestamp && (
-                <p className="validation-meta-line">Validated on: {validationTimestamp}</p>
-              )}
+      {showValidationSection && processedValidations.map((validation, valIndex) => {
+        const currentView = validation.views[activeValidationView] || validation.views.detailed;
+        const hasRowsInView = currentView.rows.length > 0;
+        
+        return (
+          <div key={`validation-${valIndex}`} className="validation-results-panel">
+            <div className="validation-results-header">
+              <div>
+                <h3>
+                  External Biomarker Validation
+                  {processedValidations.length > 1 && ` ${valIndex + 1}`}
+                </h3>
+                {validation.classPairLabel && (
+                  <p className="validation-meta-line">Class pair: {validation.classPairLabel}</p>
+                )}
+                {validation.timestamp && (
+                  <p className="validation-meta-line">Validated on: {validation.timestamp}</p>
+                )}
+              </div>
+              <div className="validation-results-meta">
+                {validation.geneCount && (
+                  <span>{validation.geneCount} genes checked</span>
+                )}
+                {validation.maxGenes && (
+                  <span>Limit: {validation.maxGenes}</span>
+                )}
+                {hasRowsInView && (
+                  <button className="validation-download-button" onClick={() => handleDownloadValidationCsv(valIndex)}>
+                    Download CSV
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="validation-results-meta">
-              {biomarkerValidationResult?.geneCount && (
-                <span>{biomarkerValidationResult.geneCount} genes checked</span>
-              )}
-              {biomarkerValidationResult?.maxGenes && (
-                <span>Limit: {biomarkerValidationResult.maxGenes}</span>
-              )}
-              {hasRowsInActiveView && (
-                <button className="validation-download-button" onClick={handleDownloadValidationCsv}>
-                  Download CSV
+            <div className="validation-tabs" role="tablist" aria-label="Validation views">
+              {validationTabOrder.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`validation-tab-button${activeValidationView === tab.key ? ' active' : ''}`}
+                  onClick={() => setActiveValidationView(tab.key)}
+                  role="tab"
+                  aria-selected={activeValidationView === tab.key}
+                  tabIndex={activeValidationView === tab.key ? 0 : -1}
+                >
+                  {tab.label}
                 </button>
-              )}
+              ))}
             </div>
-          </div>
-          <div className="validation-tabs" role="tablist" aria-label="Validation views">
-            {validationTabOrder.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                className={`validation-tab-button${activeValidationView === tab.key ? ' active' : ''}`}
-                onClick={() => setActiveValidationView(tab.key)}
-                role="tab"
-                aria-selected={activeValidationView === tab.key}
-                tabIndex={activeValidationView === tab.key ? 0 : -1}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <p className="validation-score-note">
-            Association score comes from Open Targets and reflects the strength of evidence linking a biomarker to a disease. Higher scores indicate stronger evidence.  
-          </p>
-          {hasRowsInActiveView ? (
-            <div className="validation-table-wrapper">
-              <table className="validation-table">
-                <thead>
-                  <tr>
-                    {currentValidationView.columns.map((column) => (
-                      <th key={column.key}>{column.label || column.key}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentValidationView.rows.map((row) => (
-                    <tr key={row.__rowId}>
-                      {currentValidationView.columns.map((column) => {
-                        let value = row[column.key];
-                        if (column.key === 'diseases' && Array.isArray(value)) {
-                          // sort diseases by score descending
-                          const sortedDiseases = [...value].sort((a, b) => {
-                            const scoreA = a?.score ?? 0;
-                            const scoreB = b?.score ?? 0;
-                            return scoreB - scoreA;
-                          });
-                          value = sortedDiseases;
-                        }
-                        if (column.key === 'biomarkers' && Array.isArray(value)) {
-                          // sort biomarkers by score descending
-                          const sortedBiomarkers = [...value].sort((a, b) => {
-                            const scoreA = a?.score ?? 0;
-                            const scoreB = b?.score ?? 0;
-                            return scoreB - scoreA;
-                          });
-                          value = sortedBiomarkers;
-                        }
-                        if (column.key === 'link') {
-                          return (
-                            <td key={`${row.__rowId}-${column.key}`}>
-                              {value ? (
-                                <a href={value} target="_blank" rel="noreferrer">Open</a>
-                              ) : (
-                                '-'
-                              )}
-                            </td>
-                          );
-                        }
-                        if (column.key === 'score') {
-                          return (
-                            <td
-                              key={`${row.__rowId}-${column.key}`}
-                              style={{ color: getScoreColor(value) }}
-                            >
-                              {typeof value === 'number' ? formatScore(value) : '-'}
-                            </td>
-                          );
-                        }
-                        if (Array.isArray(value)) {
-                          const hasScoredObjects = value.some((item) => item && typeof item === 'object');
-                          if (hasScoredObjects) {
+            <p className="validation-score-note">
+              Association score comes from Open Targets and reflects the strength of evidence linking a biomarker to a disease. Higher scores indicate stronger evidence.  
+            </p>
+            {hasRowsInView ? (
+              <div className="validation-table-wrapper">
+                <table className="validation-table">
+                  <thead>
+                    <tr>
+                      {currentView.columns.map((column) => (
+                        <th key={column.key}>{column.label || column.key}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentView.rows.map((row) => (
+                      <tr key={row.__rowId}>
+                        {currentView.columns.map((column) => {
+                          let value = row[column.key];
+                          if (column.key === 'diseases' && Array.isArray(value)) {
+                            // sort diseases by score descending
+                            const sortedDiseases = [...value].sort((a, b) => {
+                              const scoreA = a?.score ?? 0;
+                              const scoreB = b?.score ?? 0;
+                              return scoreB - scoreA;
+                            });
+                            value = sortedDiseases;
+                          }
+                          if (column.key === 'biomarkers' && Array.isArray(value)) {
+                            // sort biomarkers by score descending
+                            const sortedBiomarkers = [...value].sort((a, b) => {
+                              const scoreA = a?.score ?? 0;
+                              const scoreB = b?.score ?? 0;
+                              return scoreB - scoreA;
+                            });
+                            value = sortedBiomarkers;
+                          }
+                          if (column.key === 'link') {
                             return (
                               <td key={`${row.__rowId}-${column.key}`}>
-                                {value.length ? value.map((item, idx) => {
-                                  const label = item?.label ?? String(item ?? '');
-                                  const score = item?.score;
-                                  const displayScore = score != null ? formatScore(score) : null;
-                                  return (
-                                    <React.Fragment key={`${row.__rowId}-${column.key}-${idx}`}>
-                                      <span>{label}</span>
-                                      {displayScore ? (
-                                        <span style={{ color: getScoreColor(score) }}>{` (${displayScore})`}</span>
-                                      ) : null}
-                                      {idx < value.length - 1 ? ', ' : ''}
-                                    </React.Fragment>
-                                  );
-                                }) : '-'}
+                                {value ? (
+                                  <a href={value} target="_blank" rel="noreferrer">Open</a>
+                                ) : (
+                                  '-'
+                                )}
+                              </td>
+                            );
+                          }
+                          if (column.key === 'score') {
+                            return (
+                              <td
+                                key={`${row.__rowId}-${column.key}`}
+                                style={{ color: getScoreColor(value) }}
+                              >
+                                {typeof value === 'number' ? formatScore(value) : '-'}
+                              </td>
+                            );
+                          }
+                          if (Array.isArray(value)) {
+                            const hasScoredObjects = value.some((item) => item && typeof item === 'object');
+                            if (hasScoredObjects) {
+                              return (
+                                <td key={`${row.__rowId}-${column.key}`}>
+                                  {value.length ? value.map((item, idx) => {
+                                    const label = item?.label ?? String(item ?? '');
+                                    const score = item?.score;
+                                    const displayScore = score != null ? formatScore(score) : null;
+                                    return (
+                                      <React.Fragment key={`${row.__rowId}-${column.key}-${idx}`}>
+                                        <span>{label}</span>
+                                        {displayScore ? (
+                                          <span style={{ color: getScoreColor(score) }}>{` (${displayScore})`}</span>
+                                        ) : null}
+                                        {idx < value.length - 1 ? ', ' : ''}
+                                      </React.Fragment>
+                                    );
+                                  }) : '-'}
+                                </td>
+                              );
+                            }
+                            return (
+                              <td key={`${row.__rowId}-${column.key}`}>
+                                {value.length ? value.join(', ') : '-'}
                               </td>
                             );
                           }
                           return (
                             <td key={`${row.__rowId}-${column.key}`}>
-                              {value.length ? value.join(', ') : '-'}
+                              {value || '-'}
                             </td>
                           );
-                        }
-                        return (
-                          <td key={`${row.__rowId}-${column.key}`}>
-                            {value || '-'}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="validation-empty-state">No results are available for this view.</p>
-          )}
-        </div>
-      )}
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="validation-empty-state">No results are available for this view.</p>
+            )}
+          </div>
+        );
+      })}
 
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
         <button 
