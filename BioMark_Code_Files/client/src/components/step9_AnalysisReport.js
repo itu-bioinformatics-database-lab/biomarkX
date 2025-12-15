@@ -353,7 +353,7 @@ const AnalysisReport = ({
       if (Array.isArray(value)) {
         const normalizedItems = value.map((item) => {
           if (item && typeof item === 'object') {
-            const label = item.label ?? String(item ?? '');
+            const label = item.label ?? String(item);
             const scoreText = item.score != null && typeof item.score === 'number' ? formatScore(item.score) : '';
             return scoreText ? `${label} (${scoreText})` : label;
           }
