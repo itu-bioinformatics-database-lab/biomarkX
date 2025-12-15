@@ -285,6 +285,8 @@ function App() {
   const [summarizeAnalyses, setSummarizeAnalyses] = useState([]); // Stores multiple summarize analyses
   const [info, setInfo] = useState('');
   const [processing, setProcessing] = useState(false); // Summarize process state
+  const summarizeLockRef = useRef(false); // Prevent duplicate summarize requests
+  const [combineError, setCombineError] = useState('');
   const [categoricalEncodingInfo, setCategoricalEncodingInfo] = useState(null); // Categorical encoding information
   const [showCategoricalModal, setShowCategoricalModal] = useState(false); // Show categorical encoding modal
   const [selectedAnalyzes, setSelectedAnalyzes] = useState({
@@ -2053,8 +2055,21 @@ function App() {
         setError(response.data.message || 'An error occurred during analysis. Please check the server logs.');
       }
     } catch (error) {
-      setError('An error occurred during analysis communication. Please try again.');
-      console.error('Error analyzing file:', error.message || error);
+      try {
+        const raw = String(
+          (error && error.response && (error.response.data && (error.response.data.error || error.response.data.message)))
+          || error?.message
+          || ''
+        );
+        if (/No best model found/i.test(raw)) {
+          setError('No sufficiently performing model was found. The best model\'s F1 score is below the quality threshold, so model explanation was not generated. Consider balancing classes, adding more data, tuning hyperparameters, or adjusting the threshold.');
+        } else {
+          setError('An error occurred during analysis communication. Please try again.');
+        }
+      } catch (e) {
+        setError('An error occurred during analysis communication. Please try again.');
+      }
+      console.error('Error analyzing file:', error?.response?.data || error?.message || error);
     } finally {
       setAnalyzing(false);
     }
@@ -2372,6 +2387,8 @@ function App() {
 
   // Final Adımı 1: Yeni analiz yapma butonu
   const handlePerformAnotherAnalysis = () => {
+    // Clear any previous combine/summarize errors when starting a new analysis
+    setCombineError('');
     // Hide current steps (3, 4, 5, 6, 7) and update state for a new analysis block
     // This function does not actually add a new analysis block, just shows previous steps again.
     // If a truly new analysis block is needed, previousAnalyses logic should be changed.
@@ -2490,25 +2507,20 @@ function App() {
 
   // Final Adımı Summarize: İstatistiksel yöntemleri özetle
   const handleSummarizeStatisticalMethods = async (selectedClassPair = null) => {
-  if (!analysisFilePath) {
+    if (!analysisFilePath) {
         setError("Cannot summarize: File path is missing.");
+    }
+    // Synchronous guard against rapid double-clicks
+    if (summarizeLockRef.current) return;
+    summarizeLockRef.current = true;
+    if (!uploadedInfo?.filePath) {
+        setCombineError("Cannot summarize: File path is missing.");
+      summarizeLockRef.current = false;
         return;
     }
 
-    // Check if any differential analysis has been performed
-    const hasDifferentialAnalyses = previousAnalyses.some(
-      analysis => analysis.parameters &&
-                  ((analysis.parameters.statisticalTest &&
-                  analysis.parameters.statisticalTest.length > 0) ||
-                  (analysis.parameters.modelExplanation &&
-                  analysis.parameters.modelExplanation.length > 0))
-    );
-
-    if (!hasDifferentialAnalyses) {
-      setError("No analysis that generates a biomarker list has been performed. Please run a Statistical Test or Model Explanation analysis first.");
-      setProcessing(false);
-      return;
-    }
+    // Client no longer guards by counting runs; rely on server validation
+    setCombineError('');
 
     // If class pair selection is required and not selected, send empty to API (let API decide)
     // If class pair selection modal is open, this function should not be called again (should be disabled)
@@ -2528,7 +2540,8 @@ function App() {
           JSON.parse(aggregationWeights);
         } catch (e) {
           setProcessing(false);
-          setError('Weights must be valid JSON for weighted_borda, e.g. {"shap":1.5,"anova":1.0}');
+            setCombineError('Weights must be valid JSON for weighted_borda, e.g. {"shap":1.5,"anova":1.0}');
+          summarizeLockRef.current = false;
           return;
         }
       }
@@ -2545,7 +2558,7 @@ function App() {
       });
       
       console.log("Summarize response:", response.data);
-      
+
       if (response.data.success) {
         // If server requests class pair selection, open modal
         if (response.data.needsSelection && response.data.classPairs && response.data.classPairs.length > 0) {
@@ -2553,13 +2566,15 @@ function App() {
           setAvailableClassPairs(response.data.classPairs);
           // Since modal is open, processing is not finished, user will select
           setProcessing(false);
+          summarizeLockRef.current = false; // release lock so modal buttons work
           return;
         }
+
         // If no selection is required or result is returned
         if (response.data.imagePath) {
           const imagePath = response.data.imagePath;
           const timestamp = new Date().getTime();
-          
+
           // Accept either key from backend to be robust
           let determinedClassPair = selectedClassPair || response.data.selectedClassPair || response.data.analyzedClassPair;
           const aggregationLabel = response.data.aggregationLabel || '';
@@ -2578,7 +2593,7 @@ function App() {
                   .filter(pair => pair !== null)
               )
             ];
-            
+
             if (differentialAnalysisClassPairs.length === 1) {
               determinedClassPair = differentialAnalysisClassPairs[0];
             }
@@ -2607,26 +2622,27 @@ function App() {
 
           setImageVersion(prev => prev + 1);
           setAvailableClassPairs([]);
-      setCanRunPathwayAnalysis(true);
-      } else {
-            setError(response.data.message || "Summarization successful, but no image path returned.");
-      }
+        } else {
+          setCombineError(response.data.message || "Summarization successful, but no image path returned.");
+        }
       } else {
         console.error("Summarization error response:", response.data);
-        setError(response.data.message || 'Failed to summarize statistical methods.');
+        setCombineError(response.data.message || 'Failed to summarize statistical methods.');
         setAvailableClassPairs([]);
       }
     } catch (error) {
       console.error("Error in handleSummarizeStatisticalMethods:", error);
-      setError(error.response?.data?.message || 'An error occurred while trying to summarize statistical methods.');
+      setCombineError(error.response?.data?.message || 'An error occurred while trying to summarize statistical methods.');
       setAvailableClassPairs([]);
     } finally {
       setProcessing(false);
+      summarizeLockRef.current = false;
     }
   };
 
   // Final Adımı Summarize: When a class pair is selected (from modal)
   const handleClassPairSelection = (classPair) => {
+    if (summarizeLockRef.current) return; // prevent re-entry during processing
     setAvailableClassPairs([]); // Immediately close modal
     handleSummarizeStatisticalMethods(classPair); // Call again with selected pair
   };
@@ -2737,6 +2753,7 @@ function App() {
   return (
     <div>
       <header className="app-header">
+        <div className="app-version" aria-label="Application version">v2.3.0</div>
         <img src={process.env.PUBLIC_URL + "/logo192.png"} alt="Logo" />
         <span>BIOMARKER ANALYSIS TOOL</span>
         
@@ -3633,11 +3650,14 @@ function App() {
                     </div>
                     <button 
                       className="button summarize-statistical-methods" 
-                      onClick={() => handleSummarizeStatisticalMethods()}
+                      onClick={() => { setCombineError(''); handleSummarizeStatisticalMethods(); }}
                       disabled={processing}
                     >
                       {processing ? 'Processing...' : 'Combine the above biomarker list in to one list'}
                     </button>
+                    {combineError && (
+                      <div className="error-message" style={{ textAlign: 'center', marginTop: 8 }}>{combineError}</div>
+                    )}
                   </div>
 
                   {canRunPathwayAnalysis && remainingEnrichmentOptions.length > 0 && (

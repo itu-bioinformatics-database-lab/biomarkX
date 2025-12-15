@@ -9,7 +9,7 @@ const UserGuideModal = ({ onClose }) => {
     <div className="user-guide-overlay">
       <div className="user-guide-modal">
         <div className="popup-header">
-          <h2>Biomarker Analysis Tool - User Guide</h2>
+          <h2>Biomark - Biomarker Analysis Tool - User Guide</h2>
           <button className="close-button" onClick={onClose}>×</button>
         </div>
         <div className="popup-content">
@@ -54,67 +54,69 @@ const UserGuideModal = ({ onClose }) => {
 
             <ol className="guide-step-list">
               <li>
-                <strong>Step 1: Loading the Demo Dataset</strong>
+                <strong>Step 1: Choose a File or Demo</strong>
                 <br />
-                Navigate to the BioMark website.
+                Click "Browse" to select your file or use the built‑in option "OR Use a Demo Dataset for Alzheimer's Disease" to try the tool instantly.
                 <br />
-                On the homepage, you have two options: upload your own data with the "Browse" button or use the built-in demo data.
-                <br />
-                To follow along with this tutorial, select the "Use a Demo Dataset for Alzheimer's Disease" option.
+                Need a template? Open "(Input file format instructions)" and download the sample file from the popup.
               </li>
 
               <li>
-                <strong>Step 2: Configuring the Analysis Groups</strong>
+                <strong>Step 2: Upload</strong>
                 <br />
-                In Step 3 of the tool, you need to select two key columns from your data.
-                <br />
-                First, select the column that specifies the status of your samples (e.g., patient or healthy). For our demo, this is the "Diagnosis" column.
-                <br />
-                Next, select the column that contains the unique ID for each sample.
-                <br />
-                In Step 4, you will see the distribution of patient groups. Choose the classes you want to compare. For this example, we select "AD" (Alzheimer's Disease) and "Control".
-                <br />
-                Click "Analyze" to proceed.
+                Click "Upload" to send your file. The app shows filename and size. Demo data loads automatically.
               </li>
 
               <li>
-                <strong>Step 3: Running Your First Analysis (SHAP)</strong>
+                <strong>Step 3: Select Columns</strong>
                 <br />
-                In Step 5, choose your desired analysis. BioMark offers a wide array of methods, from differential analysis to clustering and classification. We will start with SHAP, a powerful machine-learning-based method.
-                <br />
-                In Step 6, exclude any non-numeric or irrelevant columns from the analysis (e.g., "Age", "Gender").
-                <br />
-                Click "Run Analysis" to start the process.
+                Choose "Patient Group" and "Sample ID" using the searchable lists. These cannot be the same.
               </li>
 
               <li>
-                <strong>Step 4: Interpreting Results & Running a Second Analysis (ANOVA)</strong>
+                <strong>Step 4: Pick Two Classes</strong>
                 <br />
-                Once the analysis is complete, you can explore the interactive SHAP plots to understand the results. The Summary Plot gives a global overview of the most impactful biomarkers, while the Force Plot explains the model's reasoning for a single, specific sample.
-                <br />
-                To run a comparative analysis, click the "Perform another analysis" button.
-                <br />
-                This time, select a different method, such as ANOVA, and run the analysis again to get results from a traditional statistical perspective.
+                Review the class distribution chart and select exactly two classes to compare (e.g., AD vs Control). Click "Analyze" to confirm.
               </li>
 
               <li>
-                <strong>Step 5: Creating a Consolidated Biomarker List</strong>
+                <strong>Step 5: Choose Analysis and Parameters</strong>
                 <br />
-                Now that you have results from two different methods (SHAP and ANOVA), it's time to find the most reliable candidates.
+                Pick one primary analysis: Statistical Test (T‑test/ANOVA), Dimensionality Reduction (PCA/t‑SNE/UMAP), or Classification (Logistic Regression, Random Forest, XGB, etc.). Optionally add a Model Explanation (SHAP/LIME/Permutation Importance) after selecting a classifier.
                 <br />
-                Click the "Combine Biomarker List" button.
+                Use the "Feature selection stage" toggle to run on "All Features" or on "Selected Top‑N" features derived from earlier runs.
                 <br />
-                Select the classes you compared ("AD" and "Control").
-                <br />
-                BioMark will generate a consensus-based ranking, showing the most robust biomarkers that were identified as important across both methods, giving you higher confidence in your findings.
+                Click "Confirm Selection". Either keep defaults or adjust parameters, then "Use default parameter settings" or "Update Parameter Settings".
               </li>
 
               <li>
-                <strong>Step 6: Generating Your Final Report</strong>
+                <strong>Step 6: Exclude Non‑Feature Columns (Optional)</strong>
                 <br />
-                Finally, click the "Generate Analysis Report" button to compile all your results into a single, professional document.
+                Add IDs or metadata (e.g., Age) to the exclusion list using the searchable picker.
+              </li>
+
+              <li>
+                <strong>Step 7: Run Analysis</strong>
                 <br />
-                The downloadable PDF report is structured to be publication-ready. It strategically begins with your most critical finding—the consolidated biomarker list—and is followed by a detailed breakdown of all the plots from your individual analyses (Waterfall, Force, Summary, Heatmap, ANOVA, etc.).
+                Click "Run Analysis". If the run is expected to take long, you can enter an email to get notified when it finishes.
+              </li>
+
+              <li>
+                <strong>Exploring Results</strong>
+                <br />
+                Click any figure to zoom and pan. Use "Plot guide" for quick interpretation. Where available, use the links under plots to "Download Model Details as CSV". For tuned classifiers, review "Optimized Hyperparameters (GridSearchCV)" and download as CSV.
+              </li>
+
+              <li>
+                <strong>Combine Biomarker Lists</strong>
+                <br />
+                After running at least two biomarker‑producing analyses (e.g., SHAP + ANOVA), set Top‑N and choose an aggregation method (RRF, Rank Product, Weighted Borda with JSON weights, or Sum), then click "Combine the above biomarker list in to one list". If multiple class pairs exist, select one. A summary heatmap and CSV download will be produced.
+              </li>
+
+              <li>
+                <strong>Generate Analysis Report</strong>
+                <br />
+                Click "Generate Analysis Report" to create a publication‑ready PDF. The report groups results by class pairs and includes your summaries and all analysis figures.
               </li>
             </ol>
           </div>

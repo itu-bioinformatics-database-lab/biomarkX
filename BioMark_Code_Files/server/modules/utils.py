@@ -153,7 +153,7 @@ def evaluate_models(X_train,
                     y_source = pd.Series(y_train).values
                     if finetune_fraction < 1.0:
                         from sklearn.model_selection import StratifiedShuffleSplit
-                        splitter = StratifiedShuffleSplit(n_splits=1, train_size=finetune_fraction, random_state=32)
+                        splitter = StratifiedShuffleSplit(n_splits=1, train_size=finetune_fraction, random_state=42)
                         idx_train, _ = next(splitter.split(np.asarray(X_source), y_source))
                         # X_source is expected to be DataFrame; fall back to iloc if available, else array indexing
                         if hasattr(X_source, 'iloc'):
@@ -168,7 +168,7 @@ def evaluate_models(X_train,
                     # Fallback to already transformed features (may introduce mild leakage)
                     if finetune_fraction < 1.0:
                         from sklearn.model_selection import StratifiedShuffleSplit
-                        splitter = StratifiedShuffleSplit(n_splits=1, train_size=finetune_fraction, random_state=32)
+                        splitter = StratifiedShuffleSplit(n_splits=1, train_size=finetune_fraction, random_state=42)
                         X_arr = np.asarray(X_train)
                         y_arr = pd.Series(y_train).values
                         idx_train, _ = next(splitter.split(X_arr, y_arr))

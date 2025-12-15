@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import re
 import contextlib
 
 # Load sklearn packages
@@ -160,15 +161,39 @@ class LIME_Analysis:
         logging.info(f"Initializing LIME Explainer for {model_key} using processed data")
 
         # initialize LIME explainer with processed data
-        try:
-            mapped_feature_names = list(map(lambda x: self.feature_map_reverse[x], self.X.columns.values)) if self.feature_map_reverse else list(self.X.columns.values)
-        except Exception:
-            mapped_feature_names = list(self.X.columns.values)
+        # Build display names for processed features that map back to original column names
+        internal_cols = list(self.X.columns.values)
+        proc_cols = list(getattr(self, "_processed_feature_names", []))
+        if not proc_cols or len(proc_cols) != X_processed_np.shape[1]:
+            try:
+                proc_cols = list(self.preprocessor.get_feature_names_out())
+            except Exception:
+                proc_cols = [f"feature_{i}" for i in range(X_processed_np.shape[1])]
 
-        # Guard against mismatch between processed feature count and names
-        if len(mapped_feature_names) != X_processed_np.shape[1]:
-            # Fallback to generic names to avoid runtime errors
-            mapped_feature_names = [f"feature_{i}" for i in range(X_processed_np.shape[1])]
+        def map_internal_to_original(tail: str) -> str:
+            # Handles cases like 'Feature_12' or 'Feature_12_CategoryA'
+            m = re.match(r"^(Feature_\d+)(.*)$", tail)
+            if m:
+                base_internal, suffix = m.group(1), m.group(2)
+                try:
+                    if self.feature_map_reverse and base_internal in self.feature_map_reverse:
+                        return f"{self.feature_map_reverse[base_internal]}{suffix}"
+                except Exception:
+                    pass
+            # Exact match mapping
+            try:
+                if self.feature_map_reverse and tail in self.feature_map_reverse:
+                    return self.feature_map_reverse[tail]
+            except Exception:
+                pass
+            return tail
+
+        def to_display_name(proc_name: str) -> str:
+            s = str(proc_name)
+            tail = s.split("__")[-1] if "__" in s else s
+            return map_internal_to_original(tail)
+
+        mapped_feature_names = [to_display_name(p) for p in proc_cols]
 
         self.explainer = lime.lime_tabular.LimeTabularExplainer(
             training_data=X_processed_np,
@@ -177,7 +202,7 @@ class LIME_Analysis:
             class_names=self.class_names[::-1],
             mode=self.mode,
             verbose=True,
-            random_state=32
+            random_state=42
         )
          
     def _check_fit(self):
