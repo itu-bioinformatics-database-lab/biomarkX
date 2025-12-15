@@ -20,6 +20,7 @@ BioMark_Code_Files/server/**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
+BioMark_Code_Files/server/.env
 
 BioMark_Code_Files/server/artifacts/biomarker_validation_cache.json
 
@@ -31,3 +32,4 @@ Thumbs.db
 *.swp
 *.swo
 *~
+BioMark_Code_Files/server/.env

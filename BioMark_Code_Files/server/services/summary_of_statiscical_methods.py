@@ -8,6 +8,9 @@ import seaborn as sns
 import sys
 import os
 import re
+from pathlib import Path
+import hashlib
+from datetime import datetime
 
 # Get parameters from command line
 data_path = sys.argv[1]  # File path
@@ -75,6 +78,37 @@ def _humanize_agg_label(label: str) -> str:
 # Extract analysis name from data_path (remove 'uploads/' and .csv extension)
 # Example: "uploads/GSE120584_serum_norm.csv" -> "GSE120584_serum_norm"
 file_name = os.path.basename(data_path).split('.')[0]
+
+
+def _safe_fs_token(value: object, *, max_len: int = 80) -> str:
+    """Return a filesystem-safe token; truncate with a stable hash if too long."""
+    raw = '' if value is None else str(value)
+    safe = re.sub(r'[^A-Za-z0-9._=+\-]+', '_', raw)
+    safe = safe.strip('._-')
+    if not safe:
+        return ''
+    if len(safe) <= max_len:
+        return safe
+    digest = hashlib.sha1(safe.encode('utf-8', errors='ignore')).hexdigest()[:10]
+    head = safe[: max(10, max_len - 11)]
+    return f"{head}_{digest}"
+
+
+def _win_extended_path(path_value: Path) -> str:
+    """Return a Windows extended-length path for long filenames.
+
+    Matplotlib/Pillow ultimately use builtins.open(); on Windows this can fail
+    for long paths unless using the \\?\ prefix.
+    """
+    path_str = str(path_value.resolve())
+    if os.name != 'nt':
+        return path_str
+    if path_str.startswith('\\\\?\\'):
+        return path_str
+    if path_str.startswith('\\\\'):
+        # UNC path: \\server\share -> \\?\UNC\server\share
+        return '\\\\?\\UNC\\' + path_str.lstrip('\\')
+    return '\\\\?\\' + path_str
 
 # Resolve ranked features CSV path: prefer explicit csv_path; otherwise
 # use class_pair + agg_label method folder (e.g., method=rrf_k=60)
@@ -182,18 +216,19 @@ ax = sns.heatmap(
 )
 
 # Output directory (labeled per aggregation if provided)
+# IMPORTANT: resolve relative to the server folder, not the current working directory.
+server_root = Path(__file__).resolve().parents[1]
+outdir_rel = Path("results") / file_name / "summaryStatisticalMethods"
 if class_pair:
-    outdir = os.path.join("results", file_name, "summaryStatisticalMethods", class_pair)
-else:
-    outdir = os.path.join("results", file_name, "summaryStatisticalMethods")
+    outdir_rel = outdir_rel / str(class_pair)
 
-if agg_label:
-    safe_label = re.sub(r'[^A-Za-z0-9._=+\-]+', '_', agg_label)
-    outdir = os.path.join(outdir, safe_label)
+safe_label = _safe_fs_token(agg_label)
+if safe_label:
+    outdir_rel = outdir_rel / safe_label
 
-# Create folders if they do not exist
-os.makedirs(os.path.join(outdir, "png"), exist_ok=True)
-os.makedirs(os.path.join(outdir, "pdf"), exist_ok=True)
+outdir_abs = server_root / outdir_rel
+(outdir_abs / "png").mkdir(parents=True, exist_ok=True)
+(outdir_abs / "pdf").mkdir(parents=True, exist_ok=True)
 
 human_label = _humanize_agg_label(agg_label)
 if class_pair:
@@ -223,17 +258,20 @@ plt.subplots_adjust(top=0.92, bottom=0.15, left=0.20, right=0.95)
 plt.tight_layout()
 
 # Save files with higher resolution
-safe_name = re.sub(r'[^A-Za-z0-9._=+\-]+', '_', str(agg_label or ''))
+safe_name = _safe_fs_token(agg_label)
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 base_stem = "summary_of_statistical_methods_plot"
-file_stem = f"{base_stem}_{safe_name}" if safe_name else base_stem
+file_stem = f"{base_stem}_{safe_name}_{timestamp}" if safe_name else f"{base_stem}_{timestamp}"
 
-png_output_path = os.path.join(outdir, "png", f"{file_stem}.png")
-plt.savefig(png_output_path, dpi=400, bbox_inches='tight')
+png_output_abs = outdir_abs / "png" / f"{file_stem}.png"
+png_output_abs.parent.mkdir(parents=True, exist_ok=True)
+plt.savefig(_win_extended_path(png_output_abs), dpi=400, bbox_inches='tight')
 
-# Print relative path (to be used by server.js)
-print(png_output_path)
+# Print relative path (to be used by server.js / client URLs)
+print((outdir_rel / "png" / f"{file_stem}.png").as_posix())
 
 # Save as PDF
-pdf_output_path = os.path.join(outdir, "pdf", f"{file_stem}.pdf")
-plt.savefig(pdf_output_path, dpi=400, bbox_inches='tight')
+pdf_output_abs = outdir_abs / "pdf" / f"{file_stem}.pdf"
+pdf_output_abs.parent.mkdir(parents=True, exist_ok=True)
+plt.savefig(_win_extended_path(pdf_output_abs), dpi=400, bbox_inches='tight')
 plt.close()

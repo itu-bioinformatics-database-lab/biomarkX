@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, buildUrl } from '../api';
-import { buildBackendUrl } from '../CHANGE_AFTER_DEPLOYMENT';
+import { api } from '../api';
 import UserMenu from '../components/UserMenu';
 import AnalysisReport from '../components/step9_AnalysisReport';
 import '../css/AnalysisResultsPage.css';
@@ -15,35 +14,6 @@ export default function AnalysisResultsPage() {
   const [reportData, setReportData] = useState(null);
   const reportTriggerRef = useRef(null);
   const [username, setUsername] = useState('');
-
-  // Function to fetch and parse CSV data for enrichment analyses
-  const fetchEnrichmentResultTable = async (relativePath) => {
-    if (!relativePath) return null;
-    try {
-      const url = buildUrl(`/${relativePath}`);
-      const response = await fetch(url);
-      if (!response.ok) return null;
-      
-      const rawText = (await response.text()).replace(/^\uFEFF/, '').trim();
-      if (!rawText) return null;
-      
-      const lines = rawText.split(/\r?\n/).filter((line) => line.trim().length > 0);
-      if (lines.length === 0) return null;
-      
-      const delimiter = [';', '\t', ','].find((del) => lines[0].includes(del)) || ',';
-      const cleanCell = (value) => value.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
-      const headers = lines[0].split(delimiter).map(cleanCell);
-      const rows = lines.slice(1).map((line) => line.split(delimiter).map(cleanCell));
-      
-      if (headers.length === 0 || rows.length === 0) {
-        return { headers, rows: [] };
-      }
-      return { headers, rows, delimiter };
-    } catch (err) {
-      console.warn('Failed to load enrichment table:', err);
-      return null;
-    }
-  };
 
   useEffect(() => {
     fetchAnalyses();
@@ -121,143 +91,6 @@ export default function AnalysisResultsPage() {
     
     // Navigate to a dedicated results page with the analysis ID
     navigate(`/analysis/${analysis.id}`);
-  };
-
-  const handleDownloadReport = async (analysis) => {
-    if (!analysis.result_path) return;
-    
-    try {
-      // Fetch full analysis data including metadata and child analyses
-      const token = localStorage.getItem('token');
-      const response = await api.get(`/api/user/analyses/${analysis.id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (!response.data.success) return;
-
-      const fullAnalysis = response.data.analysis;
-      
-      // Collect all analyses (parent + children if any)
-      const allAnalyses = [fullAnalysis];
-      if (fullAnalysis.childAnalyses && fullAnalysis.childAnalyses.length > 0) {
-        allAnalyses.push(...fullAnalysis.childAnalyses);
-      }
-      
-      // Build separate analysisResults for each analysis
-      const analysisResults = [];
-      const allBiomarkerSummaries = [];
-      const allPathwayAnalyses = [];
-      
-      for (let i = 0; i < allAnalyses.length; i++) {
-        const singleAnalysis = allAnalyses[i];
-        const metadata = singleAnalysis.metadata || {};
-        
-        // Collect images from this analysis
-        let images = [];
-        if (singleAnalysis.result_path) {
-          const allPaths = singleAnalysis.result_path.split(',');
-          images = allPaths
-            .filter(path => {
-              const trimmed = path.trim();
-              const isImage = trimmed.match(/\.(png|jpg|jpeg|gif|svg)$/i);
-              const isBiomarker = trimmed.includes('summary_of_statistical_methods');
-              return isImage && !isBiomarker;
-            })
-            .map((path) => {
-              const trimmedPath = path.trim();
-              return {
-                id: `img-${singleAnalysis.id}-${trimmedPath}`,
-                path: trimmedPath,
-                caption: trimmedPath.split('/').pop()
-              };
-            });
-        }
-        
-        // Create a separate analysis result entry for each analysis
-        analysisResults.push({
-          title: `Analysis ${i + 1}`,
-          images: images,
-          classPair: metadata.selectedClasses ? metadata.selectedClasses.join(' vs ') : 'N/A',
-          date: formatDate(singleAnalysis.created_at),
-          time: metadata.executionTime || 'N/A',
-          types: {
-            differential: metadata.analysisMethods?.differential || [],
-            clustering: metadata.analysisMethods?.clustering || [],
-            classification: metadata.analysisMethods?.classification || []
-          },
-          parameters: metadata
-        });
-        
-        // Collect biomarker summaries
-        if (metadata.biomarkerSummaries && metadata.biomarkerSummaries.length > 0) {
-          allBiomarkerSummaries.push(...metadata.biomarkerSummaries.map(summary => ({
-            classPair: summary.classPair,
-            imagePath: summary.imagePath,
-            timestamp: summary.timestamp,
-            featureCount: summary.featureCount,
-            aggregationLabel: summary.aggregationLabel || '',
-            csvPath: summary.csvPath
-          })));
-        }
-        
-        // Collect pathway analyses
-        if (metadata.pathwayAnalyses && metadata.pathwayAnalyses.length > 0) {
-          allPathwayAnalyses.push(...metadata.pathwayAnalyses);
-        }
-      }
-      
-      // Transform pathwayAnalyses to enrichmentAnalyses format - load CSV data
-      const enrichmentPromises = allPathwayAnalyses.map(async (pathway) => {
-        const table = await fetchEnrichmentResultTable(pathway.resultPath);
-        return {
-          analysisType: pathway.type,
-          analysisDisplayName: pathway.displayName,
-          geneSet: pathway.geneSet || '',
-          summary: pathway.summary || '',
-          significantPathwayCount: pathway.significantPathwayCount || 0,
-          totalPathways: pathway.totalPathways || 0,
-          inputGeneCount: pathway.inputGeneCount || 0,
-          downloadUrl: buildBackendUrl(pathway.resultPath),
-          rawPath: pathway.resultPath,
-          table: table,
-        };
-      });
-      
-      const enrichmentAnalyses = await Promise.all(enrichmentPromises);
-      
-      // Use parent analysis metadata for main info
-      const metadata = fullAnalysis.metadata || {};
-      
-      // Collect all selected classes from all analyses for the first page
-      const allSelectedClasses = allAnalyses.map(a => {
-        const meta = a.metadata || {};
-        return meta.selectedClasses ? meta.selectedClasses.join(' vs ') : 'N/A';
-      });
-      
-      // Extract biomarker validation results if available
-      const biomarkerValidation = metadata.biomarkerValidation || null;
-      
-      setReportData({
-        analysisResults,
-        analysisDate: formatDate(fullAnalysis.created_at),
-        executionTime: metadata.executionTime || 'N/A',
-        filename: fullAnalysis.filename || 'Unknown',
-        selectedClasses: allSelectedClasses, // Array of all class pairs
-        selectedIllnessColumn: metadata.illnessColumn || '',
-        selectedAnalyzes: [
-          ...(metadata.analysisMethods?.differential || []),
-          ...(metadata.analysisMethods?.clustering || []),
-          ...(metadata.analysisMethods?.classification || [])
-        ],
-        featureCount: 20,
-        nonFeatureColumns: metadata.nonFeatureColumns || [],
-        summarizeAnalyses: allBiomarkerSummaries,
-        enrichmentAnalyses,
-        biomarkerValidationResult: biomarkerValidation
-      });
-    } catch (err) {
-      console.error('Error preparing report:', err);
-    }
   };
 
   const handleLogout = () => {
@@ -392,12 +225,6 @@ export default function AnalysisResultsPage() {
                       onClick={() => handleViewResults(analysis)}
                     >
                       &#128270; View Details
-                    </button>
-                    <button 
-                      className="download-button"
-                      onClick={() => handleDownloadReport(analysis)}
-                    >
-                      &#128229; Download Report
                     </button>
                   </div>
                 )}

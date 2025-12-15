@@ -67,47 +67,28 @@ const extractGenesFromCsv = (csvText, limit = DEFAULT_VALIDATION_GENE_LIMIT) => 
 
   const delimiter = lines[0].includes(';') ? ';' : ',';
   const cleanCell = (value = '') => value.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
-  const headers = lines[0].split(delimiter).map(cleanCell);
-  const normalizeHeader = (header = '') => header.replace(/[_\s]+/g, ' ').trim().toLowerCase();
-  const overallIndex = headers.findIndex((header) => normalizeHeader(header) === 'overall score');
 
-  const rows = lines.slice(1).map((line, index) => {
-    const parts = line.split(delimiter).map(cleanCell);
-    const gene = parts[0] || '';
-    const rawScore = overallIndex >= 0 ? parts[overallIndex] : '';
-    const numericScore = overallIndex >= 0 ? Number(rawScore) : Number.NaN;
-    return {
-      gene,
-      score: Number.isFinite(numericScore) ? numericScore : null,
-      originalIndex: index,
-    };
-  });
-
-  const sortedRows = rows.some((row) => row.score !== null)
-    ? [...rows].sort((a, b) => {
-        const scoreA = a.score === null ? Number.POSITIVE_INFINITY : a.score;
-        const scoreB = b.score === null ? Number.POSITIVE_INFINITY : b.score;
-        if (scoreA !== scoreB) {
-          return scoreA - scoreB;
-        }
-        return a.originalIndex - b.originalIndex;
-      })
-    : rows;
-
+  // The CSV is already sorted by the user's selected aggregation method,
+  // so we just extract genes in the order they appear
   const genes = [];
   const seen = new Set();
 
-  for (let i = 0; i < sortedRows.length; i += 1) {
-    const gene = (sortedRows[i].gene || '').trim();
+  for (let i = 1; i < lines.length; i += 1) {
+    const parts = lines[i].split(delimiter).map(cleanCell);
+    const gene = (parts[0] || '').trim();
+    
     if (!gene) {
       continue;
     }
+    
     const dedupeKey = gene.toUpperCase();
     if (seen.has(dedupeKey)) {
       continue;
     }
+    
     seen.add(dedupeKey);
     genes.push(gene);
+    
     if (limit && limit > 0 && genes.length >= limit) {
       break;
     }
@@ -891,6 +872,7 @@ function App() {
       console.error("File path is not available for fetching all columns.");
       return [];
     }
+    console.log("Fetching all columns for file:", filePath);
     try {
       const response = await api.post('/get_all_columns', {
         filePath: filePath // Use the filePath passed as a parameter
@@ -1089,7 +1071,6 @@ function App() {
         setColumns(response.data.columns || []);
         setShowStepTwo(true);
         setShowStepThree(true);
-        
         // Fetch all columns in the background (with path)
         fetchAllColumnsInBackground(demoFilePath);
 
@@ -2619,7 +2600,7 @@ function App() {
               const withoutSamePairAndLabel = prev.filter(s => !(s.classPair === newSummary.classPair && (s.aggregationLabel || '') === (newSummary.aggregationLabel || '')));
               return [...withoutSamePairAndLabel, newSummary];
           });
-
+          setCanRunPathwayAnalysis(true);
           setImageVersion(prev => prev + 1);
           setAvailableClassPairs([]);
         } else {

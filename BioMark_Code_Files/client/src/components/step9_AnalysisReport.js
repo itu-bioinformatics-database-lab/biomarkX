@@ -7,70 +7,7 @@ import { buildKeggColumns, sanitizeKeggCell } from '../utils/keggTable';
 
 const ENRICHMENT_REPORT_PREVIEW_LIMIT = 10; // limit report tables to top 10 pathways
 
-const TYPE_LABELS = {
-  differential: 'Differential Analyses',
-  clustering: 'Clustering Analyses',
-  classification: 'Classification Models',
-  statisticalTest: 'Statistical Tests',
-  dimensionalityReduction: 'Dimensionality Reduction',
-  classificationAnalysis: 'Classification Analyses',
-  modelExplanation: 'Model Explanations'
-};
 
-const normalizeTypeItems = (value) => {
-  if (value == null) return [];
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        if (item == null) return '';
-        if (typeof item === 'string') return item.trim();
-        if (typeof item === 'object') {
-          const nested = normalizeTypeItems(Object.values(item));
-          return nested.join(', ').trim();
-        }
-        if (typeof item === 'boolean') return item ? 'Yes' : 'No';
-        return String(item).trim();
-      })
-      .filter(Boolean);
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed ? [trimmed] : [];
-  }
-  if (typeof value === 'boolean') {
-    return [value ? 'Yes' : 'No'];
-  }
-  if (typeof value === 'object') {
-    const nestedEntries = [];
-    Object.entries(value).forEach(([key, nestedValue]) => {
-      const items = normalizeTypeItems(nestedValue);
-      if (items.length > 0) {
-        nestedEntries.push(`${key}: ${items.join(', ')}`);
-      }
-    });
-    return nestedEntries;
-  }
-  return [String(value).trim()].filter(Boolean);
-};
-
-const getAnalysisTypeEntries = (typesObj) => {
-  if (!typesObj || typeof typesObj !== 'object') return [];
-  const entries = [];
-
-  Object.entries(typesObj).forEach(([key, value]) => {
-    const items = normalizeTypeItems(value);
-    if (items.length === 0) return;
-    const label = TYPE_LABELS[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
-    entries.push(`${label}: ${items.join(', ')}`);
-  });
-
-  return entries;
-};
-
-const summarizeAnalysisTypes = (typesObj) => {
-  const entries = getAnalysisTypeEntries(typesObj);
-  return entries.length > 0 ? entries.join('; ') : 'N/A';
-};
 
 /**
  * Component for generating biomarker analysis report
@@ -201,7 +138,7 @@ const AnalysisReport = ({
   const getScoreColor = (score) => {
     const normalized = normalizeScoreValue(score);
     // Use a blue hue with darker shade as score approaches 1.0
-    const lightness = normalized == null ? 60 : 78 - normalized * 35;
+    const lightness = normalized == null ? 60 : 78 - normalized * 60;
     return `hsl(205, 60%, ${lightness}%)`;
   };
 
@@ -336,8 +273,13 @@ const AnalysisReport = ({
   const showValidationSection = hasValidationResults;
 
   useEffect(() => {
-    setActiveValidationView('biomarkers');
-  }, [allValidationResults]);
+    if (!processedValidations.length) return;
+    const views = processedValidations[0]?.views;
+    if (!views) return;
+    if (!views[activeValidationView]) {
+      setActiveValidationView('biomarkers');
+    }
+  }, [processedValidations, activeValidationView]);
 
   const handleDownloadValidationCsv = useCallback((validationIndex) => {
     const validation = processedValidations[validationIndex];
@@ -349,9 +291,25 @@ const AnalysisReport = ({
     }
     const headers = view.columns.map((col) => col.label || col.key);
     const columnKeys = view.columns.map((col) => col.key);
+
+    const sortScoredItemsForCsv = (items) => {
+      if (!Array.isArray(items) || items.length === 0) return items;
+      const hasScoreObjects = items.some((item) => item && typeof item === 'object' && typeof item.score === 'number');
+      if (!hasScoreObjects) return items;
+
+      return [...items].sort((a, b) => {
+        const scoreA = typeof a?.score === 'number' ? a.score : 0;
+        const scoreB = typeof b?.score === 'number' ? b.score : 0;
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        const labelA = String(a?.label ?? '').trim();
+        const labelB = String(b?.label ?? '').trim();
+        return labelA.localeCompare(labelB);
+      });
+    };
+
     const toCsvValue = (value) => {
       if (Array.isArray(value)) {
-        const normalizedItems = value.map((item) => {
+        const normalizedItems = sortScoredItemsForCsv(value).map((item) => {
           if (item && typeof item === 'object') {
             const label = item.label ?? String(item);
             const scoreText = item.score != null && typeof item.score === 'number' ? formatScore(item.score) : '';
@@ -359,7 +317,7 @@ const AnalysisReport = ({
           }
           return String(item ?? '');
         });
-        return normalizedItems.join('; ');
+        return normalizedItems.join(', ');
       }
       const normalizedValue = value;
       const stringValue = normalizedValue == null ? '' : String(normalizedValue);
@@ -377,9 +335,9 @@ const AnalysisReport = ({
           return toCsvValue(row[key]);
         }
         return toCsvValue(row[key]);
-      }).join(',')
+      }).join(';')
     ));
-    const csvContent = [headers.map(toCsvValue).join(','), ...rows].join('\n');
+    const csvContent = [headers.map(toCsvValue).join(';'), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -546,7 +504,8 @@ const AnalysisReport = ({
       yPosition += 10;
       pdf.text('All Rights Reserved', pageWidth / 2, yPosition, { align: 'center' });
       yPosition += 30;
-      
+      pdf.addPage();
+      yPosition = topMargin - 20;
       // ----- ANALYSIS SUMMARY -----
       
       // Section title
@@ -1239,6 +1198,8 @@ const AnalysisReport = ({
       };
 
       if (hasValidationResults) {
+        pdf.addPage();
+        yPosition = topMargin - 20;
         processedValidations.forEach((validation, valIndex) => {
           ensureSpace(18);
           pdf.setFontSize(16);

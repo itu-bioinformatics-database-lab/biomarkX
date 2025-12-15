@@ -373,29 +373,6 @@ app.post('/get_all_columns', async (req, res) => {
     console.log("At get all columns endpoint.");
     const { filePath } = req.body;
 
-    // Check if the file is owned by the current user (either by user_id or session_id)
-    try {
-        const derivedUploadId = path.basename(filePath).split('_')[0];
-        const result = await db.query('SELECT user_id, session_id FROM uploads WHERE id = $1', [derivedUploadId]);
-        
-        if (result.rows.length === 0) {
-            return res.status(403).json({ success: false, error: 'File not found' });
-        }
-        
-        const uploadOwner = result.rows[0];
-        
-        // Check ownership: either by user_id (logged-in) or session_id (guest)
-        const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
-        const ownedBySession = req.sessionId && uploadOwner.session_id === req.sessionId;
-        
-        if (!ownedByUser && !ownedBySession) {
-            return res.status(403).json({ success: false, error: 'Access denied for this file' });
-        }
-    } catch (e) {
-        console.error('Ownership check failed:', e);
-        return res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-
     // Check if the file exists
     console.log("filePath: ", filePath);
 
@@ -433,29 +410,6 @@ app.post('/get_classes', async (req, res) => {
     console.log("At get classes endpoint.");
     const {filePath, columnName} = req.body; // Get the file path and column name from the request body
     console.log("columnName: ", columnName);
-
-    // Check if the file is owned by the current user (either by user_id or session_id)
-    try {
-        const derivedUploadId = path.basename(filePath).split('_')[0];
-        const result = await db.query('SELECT user_id, session_id FROM uploads WHERE id = $1', [derivedUploadId]);
-        
-        if (result.rows.length === 0) {
-            return res.status(403).json({ success: false, error: 'File not found' });
-        }
-        
-        const uploadOwner = result.rows[0];
-        
-        // Check ownership: either by user_id (logged-in) or session_id (guest)
-        const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
-        const ownedBySession = req.sessionId && uploadOwner.session_id === req.sessionId;
-        
-        if (!ownedByUser && !ownedBySession) {
-            return res.status(403).json({ success: false, error: 'Access denied for this file' });
-        }
-    } catch (e) {
-        console.error('Ownership check failed:', e);
-        return res.status(500).json({ success: false, error: 'Internal server error' });
-    }
     
     const pythonCommand = getPythonCommand();
     const scriptPath = path.join(__dirname, 'services', 'get_classes.py');
@@ -535,26 +489,6 @@ app.post('/analyze', async (req, res) => {
 
     // Check if it's a merged file (saved in uploads directory with _merged_dataset suffix)
     const isMergedFile = baseFileName.includes('_merged_dataset.csv');
-
-    // Ownership check — only apply to user uploads
-    if (!isMergedFile) {
-        const derivedUploadId = path.basename(filePath).split('_')[0];
-        const result = await db.query('SELECT session_id, user_id FROM uploads WHERE id = $1', [derivedUploadId]);
-        
-        if (result.rows.length === 0) {
-            return res.status(403).json({ success: false, error: 'File not found' });
-        }
-        
-        const uploadOwner = result.rows[0];
-        
-        // Check ownership: either by user_id (logged-in) or session_id (guest)
-        const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
-        const ownedBySession = req.sessionId && uploadOwner.session_id === req.sessionId;
-        
-        if (!ownedByUser && !ownedBySession) {
-            return res.status(403).json({ success: false, error: 'Access denied for this file' });
-        }
-    }
 
     const analysisId = uuidv4();
     let derivedUploadIdForInsert = null;
@@ -933,29 +867,6 @@ app.post('/summarize_statistical_methods', async (req, res) => {
     const selectedClassPair = req.body.selectedClassPair; // User-selected class pair (optional)
     const analysisId = req.body.analysisId; // Analysis ID to associate summary with
     
-    // Ownership check: ensure the request's user owns this file
-    try {
-        const derivedUploadId = path.basename(filePath).split('_')[0];
-        const result = await db.query('SELECT user_id, session_id FROM uploads WHERE id = $1', [derivedUploadId]);
-        
-        if (result.rows.length === 0) {
-            return res.status(403).json({ success: false, message: 'File not found' });
-        }
-        
-        const uploadOwner = result.rows[0];
-        
-        // Check ownership: either by user_id (logged-in) or session_id (guest)
-        const ownedByUser = req.userId && uploadOwner.user_id === req.userId;
-        const ownedBySession = req.sessionId && uploadOwner.session_id === req.sessionId;
-        
-        if (!ownedByUser && !ownedBySession) {
-            return res.status(403).json({ success: false, message: 'Access denied for this file' });
-        }
-    } catch (e) {
-        console.error('Ownership check failed:', e);
-        return res.status(500).json({ success: false, message: 'Internal server error' });
-    }
-    
     // Extract the file name
     const fileName = path.basename(filePath).split('.')[0];
     
@@ -994,7 +905,7 @@ app.post('/summarize_statistical_methods', async (req, res) => {
                 scriptPath,
                 filePath,
                 String(featureCount) // Convert numeric value to string
-            ]);
+            ], { cwd: __dirname });
             
             let outputData = '';
             python.stdout.on('data', (data) => {
@@ -1236,7 +1147,7 @@ app.post('/summarize_statistical_methods', async (req, res) => {
             classToUse,
             csvPath,
             labelForDirAndTitle
-        ]);
+        ], { cwd: __dirname });
 
         // Build a human-readable aggregation label for directory and title
         const buildAggLabel = () => {
@@ -1260,7 +1171,7 @@ app.post('/summarize_statistical_methods', async (req, res) => {
             aggregationWeights || '',
             rrfK || '',
             aggLabel || ''
-        ]);
+        ], { cwd: __dirname });
 
         const maybeRerank = runRerank();
         let outputData = '';
@@ -1269,7 +1180,7 @@ app.post('/summarize_statistical_methods', async (req, res) => {
             let sumErr = '';
             py.stdout.on('data', (data) => { outputData += data.toString(); console.log(`Python stdout: ${data}`); });
             py.stderr.on('data', (data) => { console.error(`stderr: ${data}`); sumErr += data.toString(); });
-            py.on('close', (code) => {
+            py.on('close', async (code) => {
                 if (code !== 0) {
                     console.error(`Python process exited with code ${code}`);
                     return res.status(500).json({ success: false, message: 'Process failed', error: sumErr });
