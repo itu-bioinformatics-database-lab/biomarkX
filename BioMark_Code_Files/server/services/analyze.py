@@ -543,6 +543,7 @@ if __name__ == "__main__":
                             if numeric_equal(item_s, t):
                                 return True
             except Exception:
+                # Ignore parsing errors for malformed list-like strings; fall through to try other formats
                 pass
         # check common delimiters
         for delim in [',', ';', '|', '/']:
