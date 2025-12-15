@@ -157,6 +157,7 @@ def run_model_explanation(data, selectedIllnessColumn, selectedSampleColumn, out
         if hasattr(clf, 'categorical_encoding_info') and clf.categorical_encoding_info:
             print("CATEGORICAL_ENCODING_INFO:", json.dumps(clf.categorical_encoding_info))
     except Exception:
+        # Silently ignore if encoding info cannot be serialized or printed
         pass
     trained_models_info, preprocessor = clf.initiate_model_trainer(return_models=True)
     print("\nRunning EXPLANATION methods.....\n")
@@ -230,6 +231,7 @@ def initial_model_training(data, selectedIllnessColumn, selectedSampleColumn, ou
             if hasattr(clf, 'categorical_encoding_info') and clf.categorical_encoding_info:
                 print("CATEGORICAL_ENCODING_INFO:", json.dumps(clf.categorical_encoding_info))
         except Exception:
+            # Silently ignore if encoding info cannot be serialized or printed
             pass
         clf.initiate_model_trainer()
 
@@ -494,6 +496,7 @@ if __name__ == "__main__":
     try:
         print(f"Sample unique values in column '{selectedIllnessColumn}':", pd.Series(df[selectedIllnessColumn].dropna().astype(str).str.strip().unique()[:50]))
     except Exception:
+        # Silently ignore if debug print fails (e.g., column doesn't exist or empty dataframe)
         pass
 
     # Filter data for selected classes - handle multiple cell formats:
@@ -508,6 +511,7 @@ if __name__ == "__main__":
         try:
             numeric_targets[t] = float(t)
         except Exception:
+            # Set to None if target cannot be converted to float (e.g., non-numeric string)
             numeric_targets[t] = None
 
     def numeric_equal(a_str, t_str):
@@ -519,9 +523,11 @@ if __name__ == "__main__":
                 try:
                     t_float = float(t_str)
                 except Exception:
+                    # Return False if target string cannot be converted to float
                     return False
             return a_float == t_float
         except Exception:
+            # Return False if numeric comparison fails (e.g., input string cannot be converted to float)
             return False
 
     def cell_matches(cell_val, targets):
