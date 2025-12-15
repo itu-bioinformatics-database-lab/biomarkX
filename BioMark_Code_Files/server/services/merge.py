@@ -12,7 +12,6 @@ def merge_files(chosen_columns):
 
     for info in chosen_columns:
         path = info['filePath']
-        illness_col = info['illnessColumn']
         sample_col = info['sampleColumn']
 
         if not os.path.exists(path):
