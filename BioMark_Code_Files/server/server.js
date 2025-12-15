@@ -430,7 +430,7 @@ app.post('/get_all_columns', async (req, res) => {
 
 // step3 - Get the classes of the selected column
 app.post('/get_classes', async (req, res) => { 
-    console.log("At get classes endpoint.")
+    console.log("At get classes endpoint.");
     const {filePath, columnName} = req.body; // Get the file path and column name from the request body
     console.log("columnName: ", columnName);
 
@@ -491,7 +491,7 @@ app.post('/get_classes', async (req, res) => {
 // step7 - Run the analysis
 app.post('/analyze', async (req, res) => {
     
-    console.log("At analyze endpoint.")
+    console.log("At analyze endpoint.");
     console.log("Request body: ", req.body);
     
     // Assign the values from req.body to the variables on the left
