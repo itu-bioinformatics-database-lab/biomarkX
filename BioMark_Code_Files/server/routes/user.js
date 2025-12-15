@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db/database');
 const authMiddleware = require('../middleware/auth');
-const { verifyToken } = authMiddleware;
+const verifyToken = authMiddleware.verifyToken;
 
 const router = express.Router();
 
