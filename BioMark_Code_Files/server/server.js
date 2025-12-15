@@ -531,8 +531,6 @@ app.post('/analyze', async (req, res) => {
         usePreprocessing
     } = req.body;
 
-    // Normalize file path for cross-platform consistency
-    const normalizedFilePath = path.normalize(filePath);
     const baseFileName = path.basename(filePath);
 
     // Check if it's a merged file (saved in uploads directory with _merged_dataset suffix)
