@@ -534,7 +534,6 @@ app.post('/analyze', async (req, res) => {
     // Normalize file path for cross-platform consistency
     const normalizedFilePath = path.normalize(filePath);
     const baseFileName = path.basename(filePath);
-    const fileNameWithoutExt = path.parse(baseFileName).name;
 
     // Check if it's a merged file (saved in uploads directory with _merged_dataset suffix)
     const isMergedFile = baseFileName.includes('_merged_dataset.csv');
