@@ -549,7 +549,7 @@ if __name__ == "__main__":
                             if numeric_equal(item_s, t):
                                 return True
             except Exception:
-                # Silently ignore if list parsing fails (e.g., malformed list-like string)
+                # Ignore parsing errors for malformed list-like strings; fall through to try other formats
                 pass
         # check common delimiters
         for delim in [',', ';', '|', '/']:
