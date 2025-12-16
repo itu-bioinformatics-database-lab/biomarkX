@@ -158,7 +158,39 @@ class SHAP_Analysis:
             explainer = shap.Explainer(predict_fn, X_processed_background)
             self.shap_values = explainer(X_processed_background)
         
-        self.shap_values.feature_names = [self.feature_map_reverse.get(f, f) for f in self.X.columns]
+        # --- İSİM DÜZELTME KISMI (GÜNCELLENDİ) ---
+        try:
+            processed_feature_names = []
+            
+            # 1. Preprocessor'dan ham çıktı isimlerini al
+            if hasattr(self.preprocessor, "get_feature_names_out"):
+                raw_names = self.preprocessor.get_feature_names_out()
+            elif hasattr(X_processed_background, "columns"):
+                raw_names = X_processed_background.columns
+            else:
+                raw_names = [f"Feature {i}" for i in range(X_processed_background.shape[1])]
+
+            # 2. İsimleri Temizle ve Eşleştir
+            for name in raw_names:
+                # A) Prefix temizliği: 'num_pipeline__Feature_1' -> 'Feature_1'
+                # Eğer isimde '__' varsa, son parçayı al.
+                clean_name = name.split("__")[-1] if "__" in name else name
+                
+                # B) Mapping kontrolü: Eğer clean_name sözlükte varsa gerçek ismini al
+                # Örn: feature_map_reverse = {'Feature_1': 'Age'} ise 'Age' olur.
+                if self.feature_map_reverse:
+                     final_name = self.feature_map_reverse.get(clean_name, clean_name)
+                else:
+                     final_name = clean_name
+                
+                processed_feature_names.append(final_name)
+
+            # 3. SHAP objesine ata
+            self.shap_values.feature_names = processed_feature_names
+            
+        except Exception as e:
+            logging.error(f"Error assigning feature names: {str(e)}")
+            self.shap_values.feature_names = [f"Feature {i}" for i in range(X_processed_background.shape[1])]
 
     def _check_fit(self):
         """
@@ -296,6 +328,11 @@ class SHAP_Analysis:
         self._check_fit()
         logging.info("Plotting SHAP Summary Plot")
 
+        # Ham self.X yerine, modelin gördüğü işlenmiş (transformed) veriyi hazırlıyoruz.
+        # shap_values bu yapıya göre hesaplandığı için matris boyutları artık tutacaktır.
+        X_transformed = self.preprocessor.transform(self.X)
+        # -----------------------
+
         # Handle multi-class models by creating subplots
         if len(self.shap_values.shape) > 2 and self.shap_values.shape[2] > 1:
             fig, axes = plt.subplots(1, 2, figsize=(20, 10))
@@ -303,12 +340,14 @@ class SHAP_Analysis:
             
             # --- Plot for the first class ---
             plt.sca(axes[0])
-            shap.summary_plot(self.shap_values[:,:,0], self.X, show=False)
+            # self.X yerine X_transformed kullanıyoruz
+            shap.summary_plot(self.shap_values[:,:,0], X_transformed, show=False)
             axes[0].set_title(f"SHAP Summary for {class_names[0]}", fontsize=15)
 
             # --- Plot for the second class ---
             plt.sca(axes[1])
-            shap.summary_plot(self.shap_values[:,:,1], self.X, show=False)
+            # self.X yerine X_transformed kullanıyoruz
+            shap.summary_plot(self.shap_values[:,:,1], X_transformed, show=False)
             axes[1].set_title(f"SHAP Summary for {class_names[1]}", fontsize=15)
             
             # --- Finalize and save the combined plot ---
@@ -322,7 +361,8 @@ class SHAP_Analysis:
         else:
             # This handles single-output models
             plt.figure()
-            shap.summary_plot(self.shap_values, self.X, show=False)
+            # self.X yerine X_transformed kullanıyoruz
+            shap.summary_plot(self.shap_values, X_transformed, show=False)
             plt.title("SHAP Summary Plot")
             plot_path_png = f'{self.outdir}/png/shap_summary_plot_overall.png'
             plot_path_pdf = f'{self.outdir}/pdf/shap_summary_plot_overall.pdf'
@@ -409,8 +449,25 @@ class SHAP_Analysis:
                 shap_v = self.shap_values.values if hasattr(self.shap_values, 'values') else self.shap_values
                 # Aggregate: mean over samples of mean absolute SHAP over classes
                 global_importance = np.mean(np.abs(shap_v), axis=0).mean(axis=1)
-                # Map feature names back
-                feature_names = [self.feature_map_reverse.get(f, f) for f in self.X.columns]
+                # Yeni Doğru Kod: shap_values içindeki doğru feature isimlerini kullan
+                if hasattr(self.shap_values, "feature_names") and self.shap_values.feature_names:
+                    feature_names = self.shap_values.feature_names
+                else:
+                    try:
+                        feature_names = list(self.preprocessor.get_feature_names_out())
+                    except Exception:
+                        feature_names = [f"Feature {i}" for i in range(len(global_importance))]
+                # Clean transformer prefixes and map back to original names when possible
+                cleaned = []
+                for name in feature_names:
+                    base = name.split("__")[-1] if isinstance(name, str) and "__" in name else name
+                    if isinstance(base, str) and self.feature_map_reverse:
+                        cleaned.append(self.feature_map_reverse.get(base, base))
+                    else:
+                        cleaned.append(base)
+                feature_names = cleaned
+                # -----------------------
+
                 importance_df = pd.DataFrame({
                     'feature': feature_names,
                     'importance': global_importance
@@ -426,8 +483,9 @@ class SHAP_Analysis:
                 plt.savefig(plot_path_pdf_global, bbox_inches='tight')
                 plt.close()
                 print(plot_path_png_global)
-            except Exception as _:
-                # Fail silently to avoid interrupting pipeline
+            except Exception as e:
+                # Hata logunu görebilmek için pass yerine loglamak daha iyidir
+                logging.warning(f"Could not plot Global Mean SHAP: {str(e)}")
                 pass
         else:
             plt.figure(figsize=(8, 6), dpi=300)
@@ -460,10 +518,31 @@ class SHAP_Analysis:
             # For single-class, just average the absolute SHAP values over samples
             shap_importance_values = np.mean(np.abs(shap_v), axis=0)
 
+        # YENİ: Özellik isimlerini doğrudan SHAP objesinden alıyoruz (çünkü fit() metodunda bunları doğru ayarlamıştık)
+        # Eğer fit() metodundaki düzeltmeyi yaptıysanız feature_names burada hazırdır.
+        if hasattr(self.shap_values, "feature_names") and self.shap_values.feature_names:
+             feature_names_list = list(self.shap_values.feature_names)
+        else:
+             # Güvenlik önlemi: Eğer shap_values içinde isim yoksa preprocessor'dan iste
+             try:
+                 feature_names_list = list(self.preprocessor.get_feature_names_out())
+             except Exception:
+                 feature_names_list = [f"Feature {i}" for i in range(len(shap_importance_values))]
+        # Transformer prefix temizliği ve orijinal isme dönüş
+        processed_names = []
+        for name in feature_names_list:
+            base = name.split("__")[-1] if isinstance(name, str) and "__" in name else name
+            if isinstance(base, str) and self.feature_map_reverse:
+                processed_names.append(self.feature_map_reverse.get(base, base))
+            else:
+                processed_names.append(base)
+        feature_names_list = processed_names
+        
         shap_values_df = pd.DataFrame({
-            'feature': list(map(lambda x: self.feature_map_reverse[x], self.X.columns)),
+            'feature': feature_names_list,  # self.X.columns yerine bunu kullanıyoruz
             'importance': shap_importance_values
         }).sort_values('importance', ascending=False)
+        # -----------------------
         
         top_features = {row.feature: row.importance for index, row in shap_values_df.iterrows()}
 

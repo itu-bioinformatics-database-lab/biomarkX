@@ -105,7 +105,7 @@ export const helpTexts = {
     items: [
       "Accuracy/Precision/Recall/F1: Classification metrics; F1 balances precision and recall.",
       "Cross-validation: Average across folds; variability indicates stability.",
-      "SHAP/LIME: Model-agnostic methods to explain predictions.",
+      "SHAP/LIME/Permutation Importance: Model-agnostic methods to explain predictions.",
       "p-value (T-test/ANOVA): Lower suggests stronger group difference; adjust for multiple testing.",
     ],
     interpreting: "For classification, focus on F1/Recall when classes are imbalanced and check consistency across folds. Combine statistical significance with model explanations for robust conclusions.",

@@ -7,70 +7,7 @@ import { buildKeggColumns, sanitizeKeggCell } from '../utils/keggTable';
 
 const ENRICHMENT_REPORT_PREVIEW_LIMIT = 10; // limit report tables to top 10 pathways
 
-const TYPE_LABELS = {
-  differential: 'Differential Analyses',
-  clustering: 'Clustering Analyses',
-  classification: 'Classification Models',
-  statisticalTest: 'Statistical Tests',
-  dimensionalityReduction: 'Dimensionality Reduction',
-  classificationAnalysis: 'Classification Analyses',
-  modelExplanation: 'Model Explanations'
-};
 
-const normalizeTypeItems = (value) => {
-  if (value == null) return [];
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        if (item == null) return '';
-        if (typeof item === 'string') return item.trim();
-        if (typeof item === 'object') {
-          const nested = normalizeTypeItems(Object.values(item));
-          return nested.join(', ').trim();
-        }
-        if (typeof item === 'boolean') return item ? 'Yes' : 'No';
-        return String(item).trim();
-      })
-      .filter(Boolean);
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed ? [trimmed] : [];
-  }
-  if (typeof value === 'boolean') {
-    return [value ? 'Yes' : 'No'];
-  }
-  if (typeof value === 'object') {
-    const nestedEntries = [];
-    Object.entries(value).forEach(([key, nestedValue]) => {
-      const items = normalizeTypeItems(nestedValue);
-      if (items.length > 0) {
-        nestedEntries.push(`${key}: ${items.join(', ')}`);
-      }
-    });
-    return nestedEntries;
-  }
-  return [String(value).trim()].filter(Boolean);
-};
-
-const getAnalysisTypeEntries = (typesObj) => {
-  if (!typesObj || typeof typesObj !== 'object') return [];
-  const entries = [];
-
-  Object.entries(typesObj).forEach(([key, value]) => {
-    const items = normalizeTypeItems(value);
-    if (items.length === 0) return;
-    const label = TYPE_LABELS[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
-    entries.push(`${label}: ${items.join(', ')}`);
-  });
-
-  return entries;
-};
-
-const summarizeAnalysisTypes = (typesObj) => {
-  const entries = getAnalysisTypeEntries(typesObj);
-  return entries.length > 0 ? entries.join('; ') : 'N/A';
-};
 
 /**
  * Component for generating biomarker analysis report
@@ -146,6 +83,25 @@ const AnalysisReport = ({
     ? datasetNameList.join('_').replace(/[\s,]+/g, '_').replace(/[^A-Za-z0-9_-]/g, '')
     : 'Unknown_File';
 
+  // Helper to render analysis type selections (supports old and new keys)
+  const buildAnalysisTypesText = (typesObj) => {
+    if (!typesObj || typeof typesObj !== 'object') return 'N/A';
+    const parts = [];
+    const add = (arr, label) => {
+      if (Array.isArray(arr) && arr.length) parts.push(`${label}: ${arr.join(', ')}`);
+    };
+    // New keys
+    add(typesObj.statisticalTest, 'Statistical Test');
+    add(typesObj.dimensionalityReduction, 'Dimensionality Reduction');
+    add(typesObj.classificationAnalysis, 'Classification');
+    add(typesObj.modelExplanation, 'Model Explanation');
+    // Backward-compatibility with old keys
+    add(typesObj.differential, 'Statistical Test');
+    add(typesObj.clustering, 'Dimensionality Reduction');
+    add(typesObj.classification, 'Classification');
+    return parts.length ? parts.join('; ') : 'N/A';
+  };
+
   // Group analyses by class pairs
   const groupedAnalyses = useMemo(() => {
     if (!analysisResults || !Array.isArray(analysisResults)) return {};
@@ -182,7 +138,7 @@ const AnalysisReport = ({
   const getScoreColor = (score) => {
     const normalized = normalizeScoreValue(score);
     // Use a blue hue with darker shade as score approaches 1.0
-    const lightness = normalized == null ? 60 : 78 - normalized * 35;
+    const lightness = normalized == null ? 60 : 78 - normalized * 60;
     return `hsl(205, 60%, ${lightness}%)`;
   };
 
@@ -317,8 +273,13 @@ const AnalysisReport = ({
   const showValidationSection = hasValidationResults;
 
   useEffect(() => {
-    setActiveValidationView('biomarkers');
-  }, [allValidationResults]);
+    if (!processedValidations.length) return;
+    const views = processedValidations[0]?.views;
+    if (!views) return;
+    if (!views[activeValidationView]) {
+      setActiveValidationView('biomarkers');
+    }
+  }, [processedValidations, activeValidationView]);
 
   const handleDownloadValidationCsv = useCallback((validationIndex) => {
     const validation = processedValidations[validationIndex];
@@ -330,17 +291,33 @@ const AnalysisReport = ({
     }
     const headers = view.columns.map((col) => col.label || col.key);
     const columnKeys = view.columns.map((col) => col.key);
+
+    const sortScoredItemsForCsv = (items) => {
+      if (!Array.isArray(items) || items.length === 0) return items;
+      const hasScoreObjects = items.some((item) => item && typeof item === 'object' && typeof item.score === 'number');
+      if (!hasScoreObjects) return items;
+
+      return [...items].sort((a, b) => {
+        const scoreA = typeof a?.score === 'number' ? a.score : 0;
+        const scoreB = typeof b?.score === 'number' ? b.score : 0;
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        const labelA = String(a?.label ?? '').trim();
+        const labelB = String(b?.label ?? '').trim();
+        return labelA.localeCompare(labelB);
+      });
+    };
+
     const toCsvValue = (value) => {
       if (Array.isArray(value)) {
-        const normalizedItems = value.map((item) => {
+        const normalizedItems = sortScoredItemsForCsv(value).map((item) => {
           if (item && typeof item === 'object') {
-            const label = item.label ?? String(item ?? '');
+            const label = item.label ?? String(item);
             const scoreText = item.score != null && typeof item.score === 'number' ? formatScore(item.score) : '';
             return scoreText ? `${label} (${scoreText})` : label;
           }
           return String(item ?? '');
         });
-        return normalizedItems.join('; ');
+        return normalizedItems.join(', ');
       }
       const normalizedValue = value;
       const stringValue = normalizedValue == null ? '' : String(normalizedValue);
@@ -358,9 +335,9 @@ const AnalysisReport = ({
           return toCsvValue(row[key]);
         }
         return toCsvValue(row[key]);
-      }).join(',')
+      }).join(';')
     ));
-    const csvContent = [headers.map(toCsvValue).join(','), ...rows].join('\n');
+    const csvContent = [headers.map(toCsvValue).join(';'), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -378,7 +355,7 @@ const AnalysisReport = ({
       try {
         const img = new Image();
         img.crossOrigin = "Anonymous";
-        img.src = '/logo192.png';
+        img.src = (process.env.PUBLIC_URL || '') + '/logo192.png';
         
         img.onload = () => {
           // Draw logo to canvas and get DataURL
@@ -523,11 +500,12 @@ const AnalysisReport = ({
       // Corporate info
       pdf.setFontSize(10);
       pdf.setTextColor(150, 150, 150);
-      pdf.text('Biomarker Analysis Tool © ' + new Date().getFullYear(), pageWidth / 2, yPosition, { align: 'center' });
+      pdf.text('Biomark - Biomarker Analysis Tool © ' + new Date().getFullYear(), pageWidth / 2, yPosition, { align: 'center' });
       yPosition += 10;
       pdf.text('All Rights Reserved', pageWidth / 2, yPosition, { align: 'center' });
       yPosition += 30;
-      
+      pdf.addPage();
+      yPosition = topMargin - 20;
       // ----- ANALYSIS SUMMARY -----
       
       // Section title
@@ -602,7 +580,7 @@ const AnalysisReport = ({
             pdf.setFont('helvetica', 'bold');
             pdf.text('Analysis Types:', leftColumnX + 10, yPosition);
             pdf.setFont('helvetica', 'normal');
-            const analysisTypesText = summarizeAnalysisTypes(analysis.types);
+            const analysisTypesText = buildAnalysisTypesText(analysis.types);
             const splitTypes = pdf.splitTextToSize(analysisTypesText, contentWidth - 30);
             pdf.text(splitTypes, leftColumnX + 40, yPosition);
             yPosition += lineHeight * splitTypes.length;
@@ -1220,6 +1198,8 @@ const AnalysisReport = ({
       };
 
       if (hasValidationResults) {
+        pdf.addPage();
+        yPosition = topMargin - 20;
         processedValidations.forEach((validation, valIndex) => {
           ensureSpace(18);
           pdf.setFontSize(16);
@@ -1265,7 +1245,7 @@ const AnalysisReport = ({
       pdf.setTextColor(150, 150, 150);
       pdf.setFont('helvetica', 'italic');
       const currentDate = new Date().toLocaleString();
-      const version = "1.0.0";
+      const version = "2.3.0";
       
       // Leave enough space for footer
       yPosition += 5;
@@ -1277,7 +1257,7 @@ const AnalysisReport = ({
       yPosition += 15;
       
       // Footer text
-      pdf.text(`This report was automatically generated by Biomarker Analysis Tool v${version} on ${currentDate}`, pageWidth / 2, yPosition, { align: 'center' });
+      pdf.text(`This report was automatically generated by Biomark - Biomarker Analysis Tool v${version} on ${currentDate}`, pageWidth / 2, yPosition, { align: 'center' });
       
       // Save PDF
   pdf.save(`Biomarker_Analysis_Report_${new Date().toISOString().split('T')[0]}_${datasetSlug}.pdf`);
@@ -1297,7 +1277,7 @@ const AnalysisReport = ({
   };
 
   // Version info
-  const version = "1.0.0";
+  const version = "2.3.0";
 
   const showValidationControls = Boolean(
     typeof onValidateBiomarkers === 'function'
@@ -1544,34 +1524,28 @@ const AnalysisReport = ({
               </div>
             )}
             {Object.keys(groupedAnalyses).length > 0 ? (
-              (() => {
-                let globalIndex = 1;
-                return Object.entries(groupedAnalyses).map(([classPair, analysesInGroup]) => (
-                  <div key={classPair} className="class-pair-summary-group">
-                    <h4>{classPair}</h4>
-                    {analysesInGroup.map((analysis) => {
-                      const currentIndex = globalIndex++;
-                      return (
-                        <div key={analysis.title || currentIndex} className="analysis-summary-item">
-                          <h5>Analysis {currentIndex}</h5>
-                          <div className="info-row">
-                            <span className="label">Analysis Date:</span>
-                            <span className="value">{analysis.date || 'N/A'}</span>
-                          </div>
-                          <div className="info-row">
-                            <span className="label">Analysis Types:</span>
-                            <span className="value">{summarizeAnalysisTypes(analysis.types)}</span>
-                          </div>
-                          <div className="info-row">
-                            <span className="label">Execution Time:</span>
-                            <span className="value">{analysis.time || 'N/A'}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ));
-              })()
+              Object.entries(groupedAnalyses).map(([classPair, analysesInGroup]) => (
+                <div key={classPair} className="class-pair-summary-group">
+                  <h4>{classPair}</h4>
+                  {analysesInGroup.map((analysis, index) => (
+                    <div key={analysis.title || index} className="analysis-summary-item">
+                      <h5>{analysis.title ? analysis.title.replace(/Analysis \d+/, `Analysis ${index + 1}`) : `Analysis ${index + 1}`}</h5>
+                      <div className="info-row">
+                        <span className="label">Analysis Date:</span>
+                        <span className="value">{analysis.date || 'N/A'}</span>
+                      </div>
+                      <div className="info-row">
+                        <span className="label">Analysis Types:</span>
+                        <span className="value">{buildAnalysisTypesText(analysis.types)}</span>
+                      </div>
+                      <div className="info-row">
+                        <span className="label">Execution Time:</span>
+                        <span className="value">{analysis.time || 'N/A'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))
             ) : (
               <div className="summary-info"> {/* Fallback to old global summary if no grouped data */}
                  <div className="info-row">

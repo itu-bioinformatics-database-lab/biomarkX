@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { api, buildUrl } from '../api';
+import { api, buildUrl, apiFetch } from '../api';
 import { buildBackendUrl } from '../CHANGE_AFTER_DEPLOYMENT';
 import UserMenu from '../components/UserMenu';
 import AnalysisReport from '../components/step9_AnalysisReport';
@@ -58,6 +58,31 @@ export default function AnalysisDetailPage() {
       }
     } catch (err) {
       console.error('Error fetching username:', err);
+    }
+  };
+
+  const handleDownloadFile = async (path) => {
+    console.log('Downloading file from path:', path);
+    try {
+      const url = buildUrl(`/${path}`);
+      const response = await apiFetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = path.split('/').pop();
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Error downloading file:', err);
+      alert('Failed to download file. Please try again.');
     }
   };
 
@@ -512,12 +537,15 @@ export default function AnalysisDetailPage() {
                       <div key={`pathway-${index}`} className="result-card">
                         <div className="result-file-link">
                           <a 
-                            href={buildBackendUrl(path)} // CHANGE AFTER DEPLOYMENT
-                            target="_blank" 
-                            rel="noopener noreferrer"
+                            href={buildUrl(`/${path}`)}
+                            download={path.split('/').pop()}
                             className="download-csv-link"
-                          >
-                            📊 Download: {path.split('/').pop()}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handleDownloadFile(path);
+                            }}
+                        >
+                            &#128202; Download: {path.split('/').pop()}
                           </a>
                         </div>
                       </div>

@@ -1,9 +1,16 @@
+import matplotlib
+# Ensure headless rendering on servers without a display
+matplotlib.use("Agg")
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sys
 import os
 import re
+from pathlib import Path
+import hashlib
+from datetime import datetime
 
 # Get parameters from command line
 data_path = sys.argv[1]  # File path
@@ -72,18 +79,54 @@ def _humanize_agg_label(label: str) -> str:
 # Example: "uploads/GSE120584_serum_norm.csv" -> "GSE120584_serum_norm"
 file_name = os.path.basename(data_path).split('.')[0]
 
-# Use custom csv_path if specified, otherwise choose a sensible default
-if csv_path:
-    # Use custom CSV file
+
+def _safe_fs_token(value: object, *, max_len: int = 80) -> str:
+    """Return a filesystem-safe token; truncate with a stable hash if too long."""
+    raw = '' if value is None else str(value)
+    safe = re.sub(r'[^A-Za-z0-9._=+\-]+', '_', raw)
+    safe = safe.strip('._-')
+    if not safe:
+        return ''
+    if len(safe) <= max_len:
+        return safe
+    digest = hashlib.sha1(safe.encode('utf-8', errors='ignore')).hexdigest()[:10]
+    head = safe[: max(10, max_len - 11)]
+    return f"{head}_{digest}"
+
+
+def _win_extended_path(path_value: Path) -> str:
+    """Return a Windows extended-length path for long filenames.
+
+    Matplotlib/Pillow ultimately use builtins.open(); on Windows this can fail
+    for long paths unless using the \\?\ prefix.
+    """
+    path_str = str(path_value.resolve())
+    if os.name != 'nt':
+        return path_str
+    if path_str.startswith('\\\\?\\'):
+        return path_str
+    if path_str.startswith('\\\\'):
+        # UNC path: \\server\share -> \\?\UNC\server\share
+        return '\\\\?\\UNC\\' + path_str.lstrip('\\')
+    return '\\\\?\\' + path_str
+
+# Resolve ranked features CSV path: prefer explicit csv_path; otherwise
+# use class_pair + agg_label method folder (e.g., method=rrf_k=60)
+if csv_path and str(csv_path).strip():
     ranked_features_path = csv_path
 else:
-    # Prefer the canonical per-class-pair location when class_pair is provided
-    if class_pair:
-        ranked_features_path = os.path.join("results", file_name, "feature_ranking", class_pair, "ranked_features_df.csv")
-        # Fallback to legacy location if not found later during read
+    base_dir = os.path.join("results", file_name)
+    if class_pair and str(class_pair).strip():
+        if agg_label and str(agg_label).strip():
+            ranked_features_path = os.path.join(
+                base_dir, "feature_ranking", class_pair, str(agg_label), "ranked_features_df.csv"
+            )
+        else:
+            ranked_features_path = os.path.join(
+                base_dir, "feature_ranking", class_pair, "ranked_features_df.csv"
+            )
     else:
-        # Legacy fallback (no class_pair specified)
-        ranked_features_path = os.path.join("results", file_name, "ranked_features_df.csv")
+        ranked_features_path = os.path.join(base_dir, "ranked_features_df.csv")
 
 # Read the CSV file (feature ranking CSVs are written with ';' separator)
 def _read_ranked_csv(path):
@@ -99,94 +142,104 @@ df = None
 if os.path.exists(ranked_features_path):
     df = _read_ranked_csv(ranked_features_path)
 else:
-    # Final fallback: try legacy path if class_pair default was missing
-    legacy_path = os.path.join("results", file_name, "ranked_features_df.csv")
-    df = _read_ranked_csv(legacy_path)
+    # Fallbacks
+    legacy_pair_path = os.path.join("results", file_name, "feature_ranking", str(class_pair or ""), "ranked_features_df.csv")
+    legacy_root_path = os.path.join("results", file_name, "ranked_features_df.csv")
+    if os.path.exists(legacy_pair_path):
+        df = _read_ranked_csv(legacy_pair_path)
+        ranked_features_path = legacy_pair_path
+    elif os.path.exists(legacy_root_path):
+        df = _read_ranked_csv(legacy_root_path)
+        ranked_features_path = legacy_root_path
+    else:
+        print(f"Ranked features CSV not found at '{ranked_features_path}'", file=sys.stderr)
+        sys.exit(1)
 
 # Some ranked CSVs may not include this column; ignore if missing
 df.drop(columns=["overall score"], inplace=True, errors="ignore")
 
-# Calculate mean rank robustly (coerce non-numeric, tolerate missing values)
+# Optional: compute Mean Rank for reference only (not used for ordering Top-N)
 numeric_part = df.iloc[:, 1:].apply(pd.to_numeric, errors='coerce')
 mean_rank = numeric_part.mean(axis=1, skipna=True)
-global_max = numeric_part.max().max()
+global_max = pd.to_numeric(numeric_part.max().max(), errors='coerce')
 if pd.isna(global_max):
-    global_max = 1e9  # fallback if all values are NaN
-# Fill NaNs with a large value to push them to the bottom, then round and cast
-df["Mean Rank"] = mean_rank.fillna(global_max + 1000).round().astype(int)
+    global_max = 1e9
+safe_mean = pd.to_numeric(mean_rank, errors='coerce').fillna(float(global_max) + 1000.0)
+df["Mean Rank"] = np.rint(safe_mean.astype(float)).astype(int)
 
-# Select and sort the top N (feature_count) biomarkers with the smallest (most effective) mean rank
-df_top = df.nsmallest(feature_count, "Mean Rank")
-
-# Visualization settings - adjust for larger size
-column_count = df.shape[1] - 1
-# Set minimum width to 12 inches and scale by number of columns
-min_width = max(12, column_count * 1.5)  
-# Increase height, especially for more rows
-height = min(15, feature_count/3 + 5)  
-plt.figure(figsize=(min_width, height))
-
-# Custom annotation function for heatmap
-# Annotates each cell with integer value and increases font size
-
-def annotate_heatmap(data, annot, fmt=".2f", **textkw):
-    for i in range(data.shape[0]):
-        for j in range(data.shape[1]):
-            if j == data.shape[1] - 1:  # Last column (Mean Rank)
-                text = format(int(data[i, j]), "d")  # Format as integer
-            else:
-                text = format(int(data[i, j]), "d")
-            # Increase font size for cell text
-            annot[i * data.shape[1] + j].set_text(text)
-            annot[i * data.shape[1] + j].set_fontsize(20)  # Increased cell font size
+# Select Top-N strictly by the CSV order (i.e., chosen aggregation’s ranking)
+df_top = df.head(feature_count).copy()
 
 # Find the appropriate feature column name (feature type)
 feature_column = df_top.columns[0]  # First column is feature type (microRNA, gene, etc)
 
+from math import isfinite
+
+# Add Aggregation Rank (1..N) for clarity
+df_top.insert(1, "Aggregation Rank", np.arange(1, len(df_top) + 1))
+
+# If Reciprocal Rank Fusion is used, compute and show RRF Score = Σ 1/(k + rank)
+rrf_match = re.search(r'rrf_k\s*=\s*(\d+)', str(agg_label))
+if rrf_match:
+    try:
+        k = int(rrf_match.group(1))
+    except Exception:
+        k = 60
+    rank_cols = [c for c in df_top.columns if c not in [df_top.columns[0], "Aggregation Rank", "Mean Rank"]]
+    numeric_ranks = df_top[rank_cols].apply(pd.to_numeric, errors='coerce')
+    rrf_score = numeric_ranks.apply(lambda row: np.nansum(1.0 / (k + row.values.astype(float))), axis=1)
+    df_top.insert(2, "RRF Score", pd.to_numeric(rrf_score, errors='coerce').round(6))
+
+# Visualization settings - adjust for larger size
+column_count = (df_top.shape[1] - 1)  # excluding feature column in index later
+min_width = max(12, column_count * 1.5)
+height = min(15, max(6, feature_count/3 + 5))
+plt.figure(figsize=(min_width, height))
+
+# Prepare data for heatmap (numeric values, integer formatting)
+plot_df = df_top.set_index(feature_column)
+# Hide Mean Rank in the visualization to avoid confusion
+plot_df = plot_df.drop(columns=["Mean Rank"], errors="ignore")
+# Convert all cells to numeric where possible and round for display
+plot_df = plot_df.apply(pd.to_numeric, errors='coerce').round()
+
 # Use a more readable and high-contrast color palette ("magma")
 ax = sns.heatmap(
-    df_top.set_index(feature_column),  # Do not include last column
-    annot=True,  # Annotate cells with numbers
-    cmap="magma_r",  # Reversed magma colormap for dark background, light text
-    fmt="",  # Custom format
-    linewidths=0.7,  # Add more visible lines between cells
-    linecolor="gray",  # Gray lines between cells
-    square=False,  # Use rectangular cells
-    annot_kws={"size": 14}  # Increase annotation font size
+    plot_df,
+    annot=True,
+    cmap="magma_r",
+    fmt="g",  # generic; with rounded numbers this shows integers
+    linewidths=0.7,
+    linecolor="gray",
+    square=False,
+    annot_kws={"size": 14}
 )
 
 # Output directory (labeled per aggregation if provided)
+# IMPORTANT: resolve relative to the server folder, not the current working directory.
+server_root = Path(__file__).resolve().parents[1]
+outdir_rel = Path("results") / file_name / "summaryStatisticalMethods"
 if class_pair:
-    outdir = os.path.join("results", file_name, "summaryStatisticalMethods", class_pair)
-else:
-    outdir = os.path.join("results", file_name, "summaryStatisticalMethods")
+    outdir_rel = outdir_rel / str(class_pair)
 
-if agg_label:
-    safe_label = re.sub(r'[^A-Za-z0-9._=+\-]+', '_', agg_label)
-    outdir = os.path.join(outdir, safe_label)
+safe_label = _safe_fs_token(agg_label)
+if safe_label:
+    outdir_rel = outdir_rel / safe_label
 
-# Create folders if they do not exist
-os.makedirs(os.path.join(outdir, "png"), exist_ok=True)
-os.makedirs(os.path.join(outdir, "pdf"), exist_ok=True)
+outdir_abs = server_root / outdir_rel
+(outdir_abs / "png").mkdir(parents=True, exist_ok=True)
+(outdir_abs / "pdf").mkdir(parents=True, exist_ok=True)
 
-# Apply custom annotation to heatmap
-annotate_heatmap(ax.collections[0].get_array(), ax.texts)
-
-# Adjust title font size based on length
-# Use a more generic heading and include aggregation label for clarity
+human_label = _humanize_agg_label(agg_label)
 if class_pair:
-    # Replace underscores with ' vs ' for display purposes
     class_pair_display = class_pair.replace('_', ' vs ')
-    human_label = _humanize_agg_label(agg_label)
-    agg_suffix = f" (Aggregation: {human_label})" if human_label else ""
     title_text = (
-        f"Top {feature_count} Biomarkers and Their Rankings by Statistical Methods\n"
-        f"for Class Pair: {class_pair_display}{agg_suffix}"
+        f"Top {feature_count} Biomarkers by Chosen Aggregation\n"
+        f"for Class Pair: {class_pair_display}"
+        + (f" (Aggregation: {human_label})" if human_label else "")
     )
 else:
-    human_label = _humanize_agg_label(agg_label)
-    agg_suffix = f" (Aggregation: {human_label})" if human_label else ""
-    title_text = f"Top {feature_count} Biomarkers and Their Rankings by Statistical Methods{agg_suffix}"
+    title_text = f"Top {feature_count} Biomarkers by Chosen Aggregation" + (f" (Aggregation: {human_label})" if human_label else "")
 
 # Set font size
 fontsize = 20 if column_count >= 5 else 18
@@ -195,7 +248,7 @@ fontsize = 20 if column_count >= 5 else 18
 plt.title(title_text, fontsize=fontsize, fontweight="bold", pad=20)
 plt.xticks(rotation=45, ha="right", fontsize=18)
 plt.yticks(rotation=0, fontsize=18)
-plt.xlabel("Statistical Methods", fontsize=24)
+plt.xlabel("Methods and Aggregation Metrics", fontsize=24)
 plt.ylabel(feature_column, fontsize=24)
 
 # Expand and adjust plot area
@@ -205,12 +258,20 @@ plt.subplots_adjust(top=0.92, bottom=0.15, left=0.20, right=0.95)
 plt.tight_layout()
 
 # Save files with higher resolution
-png_output_path = os.path.join(outdir, "png", "summary_of_statistical_methods_plot.png")
-plt.savefig(png_output_path, dpi=400, bbox_inches='tight')
+safe_name = _safe_fs_token(agg_label)
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+base_stem = "summary_of_statistical_methods_plot"
+file_stem = f"{base_stem}_{safe_name}_{timestamp}" if safe_name else f"{base_stem}_{timestamp}"
 
-# Print relative path (to be used by server.js)
-print(png_output_path)
+png_output_abs = outdir_abs / "png" / f"{file_stem}.png"
+png_output_abs.parent.mkdir(parents=True, exist_ok=True)
+plt.savefig(_win_extended_path(png_output_abs), dpi=400, bbox_inches='tight')
+
+# Print relative path (to be used by server.js / client URLs)
+print((outdir_rel / "png" / f"{file_stem}.png").as_posix())
 
 # Save as PDF
-pdf_output_path = os.path.join(outdir, "pdf", "summary_of_statistical_methods_plot.pdf")
-plt.savefig(pdf_output_path, dpi=400, bbox_inches='tight')
+pdf_output_abs = outdir_abs / "pdf" / f"{file_stem}.pdf"
+pdf_output_abs.parent.mkdir(parents=True, exist_ok=True)
+plt.savefig(_win_extended_path(pdf_output_abs), dpi=400, bbox_inches='tight')
+plt.close()

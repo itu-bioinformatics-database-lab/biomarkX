@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
-import time
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -40,9 +37,6 @@ OPEN_TARGETS_QUERY = (
 )
 DEFAULT_MAX_GENES = 10
 ABSOLUTE_MAX_GENES = 100
-CACHE_TTL_SECONDS = 60 * 60 * 6  # 6 hours
-CACHE_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "validation_table_cache.json"
-CACHE_VERSION = 2
 
 TABLE_COLUMNS = [
 	{"key": "geneSymbol", "label": "Gene"},
@@ -92,38 +86,6 @@ def _sanitize_max_genes(value: Any) -> int:
 	if parsed < 1:
 		return DEFAULT_MAX_GENES
 	return min(parsed, ABSOLUTE_MAX_GENES)
-
-
-def _load_cache() -> Dict[str, Dict[str, Any]]:
-	if not CACHE_PATH.exists():
-		return {}
-	try:
-		with CACHE_PATH.open("r", encoding="utf-8") as handle:
-			raw_cache = json.load(handle)
-	except (OSError, json.JSONDecodeError):  # pragma: no cover - defensive
-		return {}
-	now = time.time()
-	return {
-		gene: entry
-		for gene, entry in raw_cache.items()
-		if (
-			isinstance(entry, dict)
-			and entry.get("expiry", 0) > now
-			and entry.get("version") == CACHE_VERSION
-			and "rows" in entry
-		)
-	}
-
-
-def _persist_cache(cache: Dict[str, Dict[str, Any]]) -> None:
-	try:
-		CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-		temp = CACHE_PATH.with_suffix(".tmp")
-		with temp.open("w", encoding="utf-8") as handle:
-			json.dump(cache, handle)
-		temp.replace(CACHE_PATH)
-	except OSError:
-		pass  # Cache failures should not block the response
 
 
 def _fetch_gene(symbol: str) -> Optional[Dict[str, Any]]:
@@ -198,19 +160,10 @@ def _build_table_rows(
 
 
 def _build_response_rows(genes: List[str]) -> Dict[str, Any]:
-	cache = _load_cache()
-	now = time.time()
 	table_rows: List[Dict[str, Any]] = []
 	unmatched: List[str] = []
-	cache_changed = False
 
 	for symbol in genes:
-		cache_key = symbol.upper()
-		cached = cache.get(cache_key)
-		if cached:
-			table_rows.extend(cached["rows"])
-			continue
-
 		rows: List[Dict[str, Any]] = []
 		try:
 			hit = _fetch_gene(symbol)
@@ -230,16 +183,6 @@ def _build_response_rows(genes: List[str]) -> Dict[str, Any]:
 			unmatched.append(symbol)
 		else:
 			table_rows.extend(rows)
-
-		cache[cache_key] = {
-			"rows": rows,
-			"expiry": now + CACHE_TTL_SECONDS,
-			"version": CACHE_VERSION,
-		}
-		cache_changed = True
-
-	if cache_changed:
-		_persist_cache(cache)
 
 	return {
 		"tableRows": table_rows,

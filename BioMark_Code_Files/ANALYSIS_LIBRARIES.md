@@ -79,7 +79,7 @@ Source: server/services/summary_of_statiscical_methods.py
 - tqdm (>=4.64.0)
 - debugpy (>=1.6.0)
 
-### Backend (Node.js)
+### Backend (Node.js v22.21.1 LTS)
 - express (^4.21.1)
 - cors (^2.8.5)
 - multer (^1.4.5-lts.1)
