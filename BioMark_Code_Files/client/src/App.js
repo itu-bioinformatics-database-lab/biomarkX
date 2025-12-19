@@ -1,6 +1,6 @@
 import './css/App.css';
 import React, { useState, useRef , useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import BarChartWithSelection from './components/step4_BarChartWithSelection';
 import AnalysisSelection from './components/step5_AnalysisSelection';
 import ImagePopup from './components/step8-1_ImagePopup'; // Import the component
@@ -144,6 +144,7 @@ const normalizeAndSortClasses = (classArray = []) => {
 
 function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   
   // Authentication state
   const [token, setToken] = useState(localStorage.getItem('token') || null);
@@ -286,6 +287,16 @@ function App() {
   const [validationError, setValidationError] = useState('');
   const [validationResult, setValidationResult] = useState(null);
   const [validationGeneCap, setValidationGeneCap] = useState(DEFAULT_VALIDATION_GENE_LIMIT);
+  
+  // Queue-related state
+  const [queuedAnalysisId, setQueuedAnalysisId] = useState(null);
+  const [analysisStatus, setAnalysisStatus] = useState(null); // 'queued', 'processing', 'finished', 'failed'
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [queuePosition, setQueuePosition] = useState(null);
+  const pollingIntervalRef = useRef(null);
+  const [pendingAnalysis, setPendingAnalysis] = useState(null); // Store completed analysis data
+  const [showAnalysisNotification, setShowAnalysisNotification] = useState(false);
+  
   // Parameter States
   const [useDefaultParams, setUseDefaultParams] = useState(true);
   // Differential Analysis Parameters
@@ -2003,37 +2014,64 @@ function App() {
     console.log("Running analysis with payload:", payload);
     setError('');
     setAnalyzing(true);
+    
+    // Reset queue state
+    setAnalysisStatus('queued');
+    setAnalysisProgress(0);
+    setQueuePosition(null);
+    setPendingAnalysis(null);
+    setShowAnalysisNotification(false);
+    
     try {
       const response = await api.post('/analyze', payload);
-      // ... reuse existing handling from handleRunAnalysis ...
-      if (response.data.categoricalEncodingInfo) {
-        showCategoricalEncodingInfo(response.data.categoricalEncodingInfo);
-      }
-      if (response.data.success) {
-        // Store the analysis ID for pathway analysis
-        if (response.data.analysisId) {
-          setCurrentAnalysisId(response.data.analysisId);
-        }
-        const newAnalysis = {
-          results: response.data.imagePaths || [],
-          time: response.data.elapsedTime || "N/A",
-          date: new Date().toLocaleString('en-GB'),
-          parameters: payload,
-          analysisInfo: { ...selectedAnalyzes },
-          bestParams: response.data.bestParams || null,
-          analysisId: response.data.analysisId || null
-        };
-        const paths2 = response.data.imagePaths || [];
-        const hasAfterFSFolder2 = paths2.some(p => /AfterFeatureSelection/i.test(p));
-        const producedFeatureScores2 = paths2.some(p => /(feature_importance|anova|t_test|shap|lime|feature_ranking)/i.test(p));
-        if (producedFeatureScores2) setCanUseAfterFS(true);
-        if (hasAfterFSFolder2) { setAfterFeatureSelection(true); setCanUseAfterFS(true); }
-        setPreviousAnalyses((prev) => [...prev, newAnalysis]);
-        setAnalysisInformation((prev) => [...prev, payload]);
-        setShowStepOne(false); setShowStepTwo(false); setShowStepThree(false); setShowStepFour(false); setShowStepFive(false); setShowStepSix(false); setShowStepAnalysis(false);
-        setTimeout(() => { if (pageRef.current) scrollToStep(pageRef); }, 100);
+      
+      console.log('[Frontend] Received response from /analyze:', response.data);
+      
+      if (response.data.success && response.data.status === 'queued') {
+        // Analysis queued successfully
+        const analysisId = response.data.analysisId;
+        setQueuedAnalysisId(analysisId);
+        setCurrentAnalysisId(analysisId);
+        setAnalysisStatus('queued');
+        
+        console.log(`[Frontend] Analysis ${analysisId} queued. Starting polling...`);
+        
+        // Reset to clean state - show step 1 so user can start another analysis
+        setShowStepOne(true);
+        setShowStepTwo(false);
+        setShowStepThree(false);
+        setShowStepFour(false);
+        setShowStepFive(false);
+        setShowStepSix(false);
+        setShowStepAnalysis(false);
+        setAnalyzing(false);
+        
+        // Clear previous selections to allow new analysis
+        setFile(null);
+        setSelectedFilePreviews([]);
+        setUploadedInfo(null);
+        setMergeMetadata(null);
+        setColumns([]);
+        setSelectedIllnessColumn('');
+        setSelectedSampleColumn('');
+        setselectedClasses([]);
+        setSelectedAnalyzes({
+          statisticalTest: [],
+          dimensionalityReduction: [],
+          classificationAnalysis: [],
+          modelExplanation: []
+        });
+        
+        // Show notification
+        setShowAnalysisNotification(true);
+        
+        // Start polling for status in background
+        startStatusPolling(analysisId, payload);
       } else {
-        setError(response.data.message || 'An error occurred during analysis. Please check the server logs.');
+        // Fallback for non-queue response (shouldn't happen with new backend)
+        console.log('[Frontend] Non-queue response received:', response.data);
+        setError(response.data.message || 'Unexpected response from server');
+        setAnalyzing(false);
       }
     } catch (error) {
       try {
@@ -2045,16 +2083,134 @@ function App() {
         if (/No best model found/i.test(raw)) {
           setError('No sufficiently performing model was found. The best model\'s F1 score is below the quality threshold, so model explanation was not generated. Consider balancing classes, adding more data, tuning hyperparameters, or adjusting the threshold.');
         } else {
-          setError('An error occurred during analysis communication. Please try again.');
+          setError('Failed to submit analysis. Please try again.');
         }
       } catch (e) {
-        setError('An error occurred during analysis communication. Please try again.');
+        setError('Failed to submit analysis. Please try again.');
       }
-      console.error('Error analyzing file:', error?.response?.data || error?.message || error);
-    } finally {
+      console.error('Error submitting analysis:', error?.response?.data || error?.message || error);
       setAnalyzing(false);
+      setAnalysisStatus(null);
     }
   };
+  
+  // Poll for analysis status
+  const startStatusPolling = (analysisId, payload) => {
+    // Clear any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    
+    const pollStatus = async () => {
+      try {
+        const response = await api.get(`/api/analysis/${analysisId}/status`);
+        
+        console.log(`[Frontend] Polling response for ${analysisId}:`, response.data);
+        
+        if (response.data.success) {
+          const { status, progress, queuePosition: pos, resultPath, metadata } = response.data;
+          
+          setAnalysisStatus(status);
+          setAnalysisProgress(progress || 0);
+          setQueuePosition(pos);
+          
+          console.log(`[Frontend] Analysis ${analysisId} status: ${status} (${progress}%) - Queue pos: ${pos}`);
+          
+          if (status === 'finished') {
+            // Analysis complete! Store results but don't auto-open
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+            
+            console.log('[Frontend] Analysis finished! Storing results...');
+            
+            const imagePaths = resultPath ? resultPath.split(',').filter(p => p.trim()) : [];
+            
+            const newAnalysis = {
+              results: imagePaths,
+              time: metadata?.executionTime || "N/A",
+              date: new Date().toLocaleString('en-GB'),
+              parameters: payload,
+              analysisInfo: { ...selectedAnalyzes },
+              bestParams: metadata?.bestParams || null,
+              analysisId: analysisId
+            };
+            
+            // Check for AfterFeatureSelection
+            const hasAfterFSFolder = imagePaths.some(p => /AfterFeatureSelection/i.test(p));
+            const producedFeatureScores = imagePaths.some(p => /(feature_importance|anova|t_test|shap|lime|feature_ranking)/i.test(p));
+            
+            // Store the completed analysis
+            setPendingAnalysis({
+              analysis: newAnalysis,
+              payload: payload,
+              hasAfterFSFolder,
+              producedFeatureScores
+            });
+            
+            setAnalysisStatus('finished');
+            setAnalysisProgress(100);
+            
+          } else if (status === 'failed') {
+            // Analysis failed
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+            
+            setError('Analysis failed. Please check your data and try again.');
+            setAnalyzing(false);
+            setAnalysisStatus(null);
+            setQueuedAnalysisId(null);
+          }
+          // If still queued or processing, continue polling
+        }
+      } catch (error) {
+        console.error('Error polling status:', error);
+        // Don't stop polling on error, might be temporary network issue
+      }
+    };
+    
+    // Poll immediately, then every 2 seconds
+    pollStatus();
+    pollingIntervalRef.current = setInterval(pollStatus, 2000);
+  };
+  
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+  
+  // Function to open completed analysis results
+  const openAnalysisResults = () => {
+    if (!pendingAnalysis) return;
+    
+    const { analysis, payload, hasAfterFSFolder, producedFeatureScores } = pendingAnalysis;
+    
+    // Update feature selection flags
+    if (producedFeatureScores) setCanUseAfterFS(true);
+    if (hasAfterFSFolder) { 
+      setAfterFeatureSelection(true); 
+      setCanUseAfterFS(true); 
+    }
+    
+    // Add to previous analyses
+    setPreviousAnalyses((prev) => [...prev, analysis]);
+    setAnalysisInformation((prev) => [...prev, payload]);
+    
+    // Clear notification and pending state
+    setShowAnalysisNotification(false);
+    setPendingAnalysis(null);
+    setAnalysisStatus(null);
+    setQueuedAnalysisId(null);
+    
+    // Scroll to results
+    setTimeout(() => { 
+      if (pageRef.current) scrollToStep(pageRef); 
+    }, 100);
+  };
+  
   const handleValidationGeneCapChange = (event) => {
     const rawValue = Number(event?.target?.value);
     const nextValue = Number.isFinite(rawValue) ? rawValue : DEFAULT_VALIDATION_GENE_LIMIT;
@@ -2755,6 +2911,74 @@ function App() {
       </header>
       {/* Render User Guide Modal */}
       {showUserGuide && <UserGuideModal onClose={handleCloseUserGuide} />}
+      
+      {/* Analysis Queue Notification */}
+      {showAnalysisNotification && (
+        <div className="analysis-notification">
+          <div className="analysis-notification-content">
+            {analysisStatus === 'queued' && (
+              <>
+                <div className="notification-icon">⏳</div>
+                <div className="notification-text">
+                  <strong>Analysis Queued</strong>
+                  <p>Your analysis has been queued and will be processed shortly.</p>
+                  {queuePosition > 0 && <p className="queue-position">Position in queue: {queuePosition}</p>}
+                </div>
+              </>
+            )}
+            {analysisStatus === 'processing' && (
+              <>
+                <div className="notification-icon">
+                  <div className="spinner"></div>
+                </div>
+                <div className="notification-text">
+                  <strong>Analysis Running</strong>
+                  <p>Your analysis is currently being processed ({analysisProgress}%)</p>
+                </div>
+              </>
+            )}
+            {analysisStatus === 'finished' && pendingAnalysis && (
+              <>
+                <div className="notification-icon">✅</div>
+                <div className="notification-text">
+                  <strong>Analysis Complete!</strong>
+                  <p>Your analysis has finished successfully.</p>
+                </div>
+                <button className="notification-button" onClick={openAnalysisResults}>
+                  Open Results
+                </button>
+                <button 
+                  className="notification-close" 
+                  onClick={() => {
+                    setShowAnalysisNotification(false);
+                    setPendingAnalysis(null);
+                  }}
+                  aria-label="Close notification"
+                >
+                  ×
+                </button>
+              </>
+            )}
+            {analysisStatus === 'failed' && (
+              <>
+                <div className="notification-icon">❌</div>
+                <div className="notification-text">
+                  <strong>Analysis Failed</strong>
+                  <p>There was an error processing your analysis. Please try again.</p>
+                </div>
+                <button 
+                  className="notification-close" 
+                  onClick={() => setShowAnalysisNotification(false)}
+                  aria-label="Close notification"
+                >
+                  ×
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      
       {/* Step 1: Browse file*/}
       {showStepOne && (
       <div className="file-browse-section">
@@ -3188,7 +3412,17 @@ function App() {
               {analyzing && (
                 <div className="analysis-running">
                   <div className="spinner"></div>
-                  Analysis is running...
+                  {analysisStatus === 'queued' && (
+                    queuePosition ? 
+                      `Analysis queued (Position: ${queuePosition})...` : 
+                      'Analysis queued...'
+                  )}
+                  {analysisStatus === 'processing' && (
+                    analysisProgress > 0 ? 
+                      `Analysis running (${analysisProgress}%)...` : 
+                      'Analysis is running...'
+                  )}
+                  {!analysisStatus && 'Analysis is running...'}
                 </div>
               )}
             </>

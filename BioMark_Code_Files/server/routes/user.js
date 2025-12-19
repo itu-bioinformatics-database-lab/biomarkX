@@ -295,9 +295,26 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
       analysis.analysisCount = childAnalyses.length + 1;
     }
     
+    // Check if this is the latest analysis for this user
+    let isLatest = false;
+    if (userId) {
+      const latestResult = await db.query(
+        `SELECT id FROM analyses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [userId]
+      );
+      isLatest = latestResult.rows.length > 0 && latestResult.rows[0].id === analysisId;
+    } else if (sessionId) {
+      const latestResult = await db.query(
+        `SELECT id FROM analyses WHERE session_id = $1 AND user_id IS NULL ORDER BY created_at DESC LIMIT 1`,
+        [sessionId]
+      );
+      isLatest = latestResult.rows.length > 0 && latestResult.rows[0].id === analysisId;
+    }
+    
     return res.json({
       success: true,
-      analysis
+      analysis,
+      isLatest
     });
   } catch (err) {
     console.error('Error fetching analysis:', err);

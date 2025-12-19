@@ -23,6 +23,14 @@
   margin: 15px 0;
 }
 
+.detail-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
 .back-button {
   background: none;
   border: none;
@@ -33,11 +41,35 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-bottom: 20px;
 }
 
 .back-button:hover {
   text-decoration: underline;
+}
+
+.interactive-view-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.interactive-view-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.interactive-view-button:active {
+  transform: translateY(0);
 }
 
 .analysis-information-card {

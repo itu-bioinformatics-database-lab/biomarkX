@@ -17,6 +17,7 @@ export default function AnalysisDetailPage() {
   const [analysisResults, setAnalysisResults] = useState([]);
   const [enrichmentAnalyses, setEnrichmentAnalyses] = useState([]);
   const [biomarkerValidations, setBiomarkerValidations] = useState([]);
+  const [isLatestAnalysis, setIsLatestAnalysis] = useState(false);
 
   // Function to fetch and parse CSV data for enrichment analyses
   const fetchEnrichmentResultTable = async (relativePath) => {
@@ -97,6 +98,9 @@ export default function AnalysisDetailPage() {
       if (response.data.success) {
         const analysisData = response.data.analysis;
         setAnalysis(analysisData);
+        
+        // Check if this is the latest analysis
+        setIsLatestAnalysis(response.data.isLatest || false);
         
         // Collect all analyses (parent + children if any)
         const allAnalyses = [analysisData];
@@ -328,9 +332,21 @@ export default function AnalysisDetailPage() {
         </div>
       </header>
       <div className="detail-container">
-        <button className="back-button" onClick={() => navigate(isGuestUser() ? '/' : '/my-analyses')}>
-          &#11013; {isGuestUser() ? 'Back to Home' : 'Back to My Analyses'}
-        </button>
+        <div className="detail-action-buttons">
+          <button className="back-button" onClick={() => navigate(isGuestUser() ? '/' : '/my-analyses')}>
+            &#11013; {isGuestUser() ? 'Back to Home' : 'Back to My Analyses'}
+          </button>
+          
+          {isLatestAnalysis && (
+            <button 
+              className="interactive-view-button" 
+              onClick={() => navigate('/')}
+              title="Open this analysis in the interactive view to perform follow-up actions like KEGG analysis, pathway analysis, or external validation"
+            >
+              🔬 Open Interactive View
+            </button>
+          )}
+        </div>
 
         <div className="detail-header">
           <h1>Analysis Details</h1>

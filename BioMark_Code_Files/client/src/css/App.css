@@ -433,3 +433,108 @@ body {
   width: 60px;
   min-width: 60px;
 }
+
+/* Analysis Queue Notification */
+.analysis-notification {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 9999;
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.analysis-notification-content {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 20px;
+  min-width: 350px;
+  max-width: 400px;
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  border-left: 4px solid #4CAF50;
+}
+
+.notification-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+
+.notification-text {
+  flex: 1;
+}
+
+.notification-text strong {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 5px;
+  color: #2b365a;
+}
+
+.notification-text p {
+  margin: 5px 0;
+  font-size: 14px;
+  color: #4b5975;
+}
+
+.queue-position {
+  font-style: italic;
+  color: #7289da;
+}
+
+.notification-button {
+  background: #4CAF50;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.2s;
+  margin-top: 10px;
+}
+
+.notification-button:hover {
+  background: #45a049;
+}
+
+.notification-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  color: #999;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.notification-close:hover {
+  color: #333;
+}
+
+.analysis-notification-content .spinner {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+}
