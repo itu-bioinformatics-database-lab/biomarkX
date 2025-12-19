@@ -214,8 +214,11 @@ analysisQueue.process(async (job) => {
           }
         }
         
-        // Add execution time
+        // Add execution time and best params
         metadata.executionTime = elapsedTime;
+        if (bestParams && Object.keys(bestParams).length > 0) {
+          metadata.bestParams = bestParams;
+        }
 
         job.progress(95);
 

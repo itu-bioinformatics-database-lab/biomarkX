@@ -289,7 +289,6 @@ function App() {
   const [validationGeneCap, setValidationGeneCap] = useState(DEFAULT_VALIDATION_GENE_LIMIT);
   
   // Queue-related state
-  const [queuedAnalysisId, setQueuedAnalysisId] = useState(null);
   const [analysisStatus, setAnalysisStatus] = useState(null); // 'queued', 'processing', 'finished', 'failed'
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [queuePosition, setQueuePosition] = useState(null);
@@ -1770,17 +1769,11 @@ function App() {
     const requiresAction = requiresMerge || (singleIncluded && !mergeCompleted);
     const readyForStepFour = hasColumns && (!requiresAction || mergeCompleted);
     if (readyForStepFour) {
-      if (!showStepFour) {
-        console.log("[Effect Check Step 4 Visibility] Enabling Step 4 after merge requirement satisfied.");
-      }
       setShowStepFour(true);
       setTimeout(() => {
         if (stepFourRef.current) scrollToStep(stepFourRef);
       }, 100);
     } else {
-      if (showStepFour) {
-        console.log("[Effect Check Step 4 Visibility] Hiding Step 4 (waiting for merge or selections).");
-      }
       setShowStepFour(false);
       setShowStepFive(false);
       setShowStepSix(false);
@@ -1794,15 +1787,9 @@ function App() {
 
   // Show Step 5: When Step 4 is visible and 2 classes are selected
   useEffect(() => {
-    console.log("[Effect Check Step 5 Visibility] showStepFour:", showStepFour, "selectedClasses:", selectedClasses.length);
     if (showStepFour && selectedClasses.length === 2) {
-        console.log("[Effect Check Step 5 Visibility] Setting showStepFive to TRUE");
         setShowStepFive(true);
     } else {
-        // Only log if showStepFive is true
-        if (showStepFive) {
-            console.log("[Effect Check Step 5 Visibility] Setting showStepFive to FALSE");
-        }
         setShowStepFive(false);
         // When Step 5 is hidden, also hide later steps
         setShowStepSix(false);
@@ -1932,6 +1919,7 @@ function App() {
   };
 
   // Show categorical encoding information to user
+  // eslint-disable-next-line no-unused-vars
   const showCategoricalEncodingInfo = (encodingInfo) => {
     setCategoricalEncodingInfo(encodingInfo);
     setShowCategoricalModal(true);
@@ -1995,7 +1983,8 @@ function App() {
       saveLabelEncoder: saveLabelEncoder,
       verbose: verbose,
       testSize: testSize,
-      nFolds: nFolds
+      nFolds: nFolds,
+      datasetNames: datasetNamesForReport // Add dataset names for PDF filename
     };
   };
 
@@ -2030,13 +2019,12 @@ function App() {
       if (response.data.success && response.data.status === 'queued') {
         // Analysis queued successfully
         const analysisId = response.data.analysisId;
-        setQueuedAnalysisId(analysisId);
         setCurrentAnalysisId(analysisId);
         setAnalysisStatus('queued');
         
         console.log(`[Frontend] Analysis ${analysisId} queued. Starting polling...`);
         
-        // Reset to clean state - show step 1 so user can start another analysis
+        // Show Step 1 so users can continue using the system while analysis runs
         setShowStepOne(true);
         setShowStepTwo(false);
         setShowStepThree(false);
@@ -2158,7 +2146,6 @@ function App() {
             setError('Analysis failed. Please check your data and try again.');
             setAnalyzing(false);
             setAnalysisStatus(null);
-            setQueuedAnalysisId(null);
           }
           // If still queued or processing, continue polling
         }
@@ -2199,11 +2186,19 @@ function App() {
     setPreviousAnalyses((prev) => [...prev, analysis]);
     setAnalysisInformation((prev) => [...prev, payload]);
     
+    // Hide all steps to show only results
+    setShowStepOne(false);
+    setShowStepTwo(false);
+    setShowStepThree(false);
+    setShowStepFour(false);
+    setShowStepFive(false);
+    setShowStepSix(false);
+    setShowStepAnalysis(false);
+    
     // Clear notification and pending state
     setShowAnalysisNotification(false);
     setPendingAnalysis(null);
     setAnalysisStatus(null);
-    setQueuedAnalysisId(null);
     
     // Scroll to results
     setTimeout(() => { 
@@ -2526,38 +2521,153 @@ function App() {
   const handlePerformAnotherAnalysis = () => {
     // Clear any previous combine/summarize errors when starting a new analysis
     setCombineError('');
-    // Hide current steps (3, 4, 5, 6, 7) and update state for a new analysis block
-    // This function does not actually add a new analysis block, just shows previous steps again.
-    // If a truly new analysis block is needed, previousAnalyses logic should be changed.
-    // For now, just go back to Step 3.
     setAnotherAnalysis((prev) => [...prev, prev.length]); // Only used as index
     console.log("Performing another analysis, resetting to Step 3...");
 
-    // Show/hide steps for new analysis
+    // Get the last analysis payload to restore state
+    const lastPayload = analysisInformation[analysisInformation.length - 1];
+    const savedFilePath = lastPayload?.filePath;
+    
+    console.log('[handlePerformAnotherAnalysis] Last payload:', lastPayload);
+    console.log('[handlePerformAnotherAnalysis] analysisFilePath:', analysisFilePath);
+    console.log('[handlePerformAnotherAnalysis] uploadedInfo:', uploadedInfo);
+    console.log('[handlePerformAnotherAnalysis] mergeMetadata:', mergeMetadata);
+    console.log('[handlePerformAnotherAnalysis] analysisUploadContext:', analysisUploadContext);
+    console.log('[handlePerformAnotherAnalysis] uploadContexts:', uploadContexts);
+    
+    if (lastPayload) {
+      // Restore previously selected columns from the last analysis
+      const savedIllnessColumn = lastPayload.IlnessColumnName;
+      const savedSampleColumn = lastPayload.SampleColumnName;
+      const savedNonFeatureColumns = lastPayload.nonFeatureColumns || [];
+      
+      console.log('[handlePerformAnotherAnalysis] Restoring columns from last analysis:', {
+        illness: savedIllnessColumn,
+        sample: savedSampleColumn,
+        nonFeature: savedNonFeatureColumns,
+        filePath: savedFilePath
+      });
+      
+      // For single file: We need to restore uploadedInfo context
+      // Check if this is a single file (not merged)
+      const isMergedFile = savedFilePath?.includes('_merged_dataset');
+      console.log('[handlePerformAnotherAnalysis] Is merged file?', isMergedFile);
+      
+      if (!isMergedFile && savedFilePath) {
+        // Single file - need to restore uploadedInfo to make columns accessible
+        const existingContext = uploadContexts[savedFilePath];
+        console.log('[handlePerformAnotherAnalysis] Existing context for single file:', existingContext);
+        
+        if (existingContext) {
+          // Restore uploadedInfo so Step 3 works properly
+          console.log('[handlePerformAnotherAnalysis] Restoring uploadedInfo for single file');
+          setUploadedInfo({
+            filePath: savedFilePath,
+            name: existingContext.name || savedFilePath.split('/').pop(),
+            size: existingContext.size || 0
+          });
+        } else {
+          // Need to fetch columns and create context
+          console.log('[handlePerformAnotherAnalysis] No context found, fetching columns for single file');
+          fetchAllColumnsInBackground(savedFilePath, { silent: false }).then(() => {
+            // After fetching, set uploadedInfo
+            setUploadedInfo({
+              filePath: savedFilePath,
+              name: savedFilePath.split('/').pop(),
+              size: 0
+            });
+          });
+        }
+      } else if (isMergedFile) {
+        // Merged file - keep the merge state so it acts as a child analysis
+        // Don't reset mergeCompleted or mergeMetadata
+        console.log('[handlePerformAnotherAnalysis] Preserving merge state for child analysis');
+        // The mergeMetadata and mergeCompleted should remain as-is
+        // This ensures the analysis will be linked as a child
+        
+        // CRITICAL: Set uploadedInfo to the merged file so activeUploadContext gets populated
+        // This makes columns available in Step 3
+        const existingContext = uploadContexts[savedFilePath];
+        console.log('[handlePerformAnotherAnalysis] Existing context for merged file:', existingContext);
+        
+        if (existingContext) {
+          console.log('[handlePerformAnotherAnalysis] Setting uploadedInfo for merged file');
+          setUploadedInfo({
+            filePath: savedFilePath,
+            name: existingContext.name || savedFilePath.split('/').pop(),
+            size: existingContext.size || 0
+          });
+        } else {
+          // Need to fetch columns and create context
+          console.log('[handlePerformAnotherAnalysis] No context found, fetching columns for merged file');
+          fetchAllColumnsInBackground(savedFilePath, { silent: false }).then(() => {
+            // After fetching, set uploadedInfo
+            setUploadedInfo({
+              filePath: savedFilePath,
+              name: savedFilePath.split('/').pop(),
+              size: 0
+            });
+          });
+        }
+      }
+      
+      // Set the columns immediately so Step 3 shows them
+      if (savedIllnessColumn) {
+        console.log('[handlePerformAnotherAnalysis] Setting illness column:', savedIllnessColumn);
+        setSelectedIllnessColumn(savedIllnessColumn);
+      }
+      if (savedSampleColumn) {
+        console.log('[handlePerformAnotherAnalysis] Setting sample column:', savedSampleColumn);
+        setSelectedSampleColumn(savedSampleColumn);
+      }
+      if (savedNonFeatureColumns.length > 0) {
+        console.log('[handlePerformAnotherAnalysis] Setting non-feature columns:', savedNonFeatureColumns);
+        setNonFeatureColumns(savedNonFeatureColumns);
+      }
+      
+      // Check if we need to fetch columns
+      if (savedFilePath) {
+        const hasContext = uploadContexts[savedFilePath];
+        console.log('[handlePerformAnotherAnalysis] Has context for file:', hasContext);
+        
+        if (!hasContext || !hasContext.columns || hasContext.columns.length === 0) {
+          console.log('[handlePerformAnotherAnalysis] Fetching columns for:', savedFilePath);
+          fetchAllColumnsInBackground(savedFilePath, { silent: true });
+        } else {
+          console.log('[handlePerformAnotherAnalysis] Using existing columns from context:', hasContext.columns?.length, 'columns');
+        }
+      }
+    } else {
+      console.log('[handlePerformAnotherAnalysis] No last payload found!');
+    }
+
+    // Show steps 3-6 for re-analysis
+    // For merged files, skip Step 4 (merge step) since we're continuing with same dataset
+    const skipMergeStep = savedFilePath?.includes('_merged_dataset');
+    console.log('[handlePerformAnotherAnalysis] Skip merge step?', skipMergeStep);
+    
+    setShowStepOne(false);
+    setShowStepTwo(false);
     setShowStepThree(true);
-    setShowStepFour(true);
+    setShowStepFour(!skipMergeStep); // Hide merge step for merged files
     setShowStepFive(false);
     setShowStepSix(false);
     setShowStepAnalysis(false);
     
-    // Optionally reset previous selections (user may want to continue)
-    // Keep classTable intact to avoid re-fetching and reloading the diagnosis distribution chart
+    // Reset selections for new analysis (but keep columns and merge state)
     setselectedClasses([]);
     setSelectedAnalyzes({ statisticalTest: [], dimensionalityReduction: [], classificationAnalysis: [], modelExplanation: [] });
     setUseDefaultParams(true);
     setCanRunPathwayAnalysis(false);
     setEnrichmentAnalyses([]);
     setCompletedEnrichmentTypes({});
-    // Optionally reset parameters as well.
-
-    // Do not re-fetch classes; reuse existing classTable/classDiagramUrl if dataset & columns are unchanged
 
     setTimeout(() => {
       const targetRef = stepFourRef.current || stepThreeRef.current;
       if (targetRef) {
         scrollToStep(targetRef);
       }
-    }, 200); // Wait a bit for API call and state updates
+    }, 200);
   };
 
   // Final Adımı 2: Baştan başlama butonu
@@ -2865,11 +2975,7 @@ function App() {
 
   // Show Step 7 (Run Analysis button): When Step 6 is visible and not analyzing
   useEffect(() => {
-    console.log("[Effect Check Step 7 Visibility] showStepSix:", showStepSix, "analyzing:", analyzing);
     const shouldShow = showStepSix && !analyzing;
-    if (shouldShow !== showStepAnalysis) {
-        console.log(`[Effect Check Step 7 Visibility] Setting showStepAnalysis to ${shouldShow}`);
-    }
     setShowStepAnalysis(shouldShow);
     if (shouldShow) {
       setTimeout(() => {
@@ -2944,7 +3050,7 @@ function App() {
                   <strong>Analysis Complete!</strong>
                   <p>Your analysis has finished successfully.</p>
                 </div>
-                <button className="notification-button" onClick={openAnalysisResults}>
+                <button className="notification-button" onClick={openAnalysisResults} style={{ marginRight: '12px' }}>
                   Open Results
                 </button>
                 <button 
@@ -3010,7 +3116,7 @@ function App() {
             </button>
             
             <span id="file-name">
-              {selectedFilePreviews.length > 0
+              {selectedFilePreviews && selectedFilePreviews.length > 0
                 ? selectedFilePreviews.map((name, index) => (
                     <React.Fragment key={`${name}-${index}`}>
                       {index > 0 && ', '}
@@ -3442,7 +3548,7 @@ function App() {
                     return (
                       <>
                       {/* A separate box will now be displayed for each analysis */}
-                      <div className="analysis-information" style={{ margin: '0 auto', maxWidth: '800px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <div className="analysis-information" style={{ margin: '30px auto 0 auto', maxWidth: '800px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         <h2 className="analysis-title" style={{ textAlign: 'center' }}>Analysis {index + 1} Details</h2>
                         
                         <div className="execution-time-container" style={{ textAlign: 'center', fontSize: '13px', color: '#555', margin: '5px 0 15px 0' }}>
@@ -3672,7 +3778,7 @@ function App() {
                     )}
                   </div>
                 )}
-                  {previousAnalyses[index].results
+                  {previousAnalyses[index]?.results && previousAnalyses[index].results
                     .filter(imagePath => {
                       // If an explanation method is selected, filter out the classification performance metric images.
                       if (analysisInformation[index].modelExplanation?.length > 0) {
@@ -3681,8 +3787,7 @@ function App() {
                       return true; // Otherwise, show all images.
                     })
                     .map((imagePath, imgIndex) => {
-                    // Extract file name and add more detailed logging
-                    console.log("imagePath: ", imagePath);
+                    // Extract file name
                     const rawImageName = imagePath.split('/').pop(); // Get the full file name
                     
                     let imageName = rawImageName
@@ -4035,7 +4140,7 @@ function App() {
                     analysisResults={previousAnalyses.map((analysis, idx) => {
                       const analysisParams = analysis.parameters; // Parameters specific to each analysis (payload)
 
-                      const images = analysis.results.map((imagePath, imgIdx) => {
+                      const images = (analysis.results || []).map((imagePath, imgIdx) => {
                         const rawImageName = imagePath.split('/').pop();
                         let imageName = rawImageName
                           .replace(/_/g, ' ')

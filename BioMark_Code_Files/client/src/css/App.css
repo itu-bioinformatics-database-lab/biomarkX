@@ -437,7 +437,7 @@ body {
 /* Analysis Queue Notification */
 .analysis-notification {
   position: fixed;
-  top: 80px;
+  top: 100px;
   right: 20px;
   z-index: 9999;
   animation: slideInRight 0.3s ease-out;

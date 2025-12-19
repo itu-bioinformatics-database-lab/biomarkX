@@ -67,6 +67,17 @@ const initializeDatabase = async () => {
         END IF;
       END $$;
 
+      -- Add source_upload_ids column to track original files in merged datasets
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'analyses' AND column_name = 'source_upload_ids'
+        ) THEN
+          ALTER TABLE analyses ADD COLUMN source_upload_ids TEXT[];
+        END IF;
+      END $$;
+
       CREATE INDEX IF NOT EXISTS idx_analyses_session_id ON analyses(session_id);
       CREATE INDEX IF NOT EXISTS idx_analyses_user_id ON analyses(user_id);
       CREATE INDEX IF NOT EXISTS idx_analyses_upload_id ON analyses(upload_id);

@@ -90,15 +90,29 @@ router.get('/analyses', authMiddleware, async (req, res) => {
       
       if (analysis.merged_file_id) {
         analysis.isMerged = true;
-        // Filename is already set from the uploads table join
-        // Wrap it with "Merged Files (...)" for display
-        if (analysis.filename) {
-          analysis.filename = `Merged Files (${analysis.filename})`;
+        
+        // Try to get a better filename from metadata or uploads table
+        let baseFilename = analysis.filename;
+        
+        // If no filename from uploads table, try to get from metadata
+        if (!baseFilename && analysis.metadata && analysis.metadata.datasetNames) {
+          // metadata.datasetNames contains array of original file names
+          baseFilename = analysis.metadata.datasetNames.join(', ');
+        }
+        
+        if (baseFilename) {
+          analysis.filename = `Merged Files (${baseFilename})`;
         } else {
-          analysis.filename = `Merged file (${analysis.merged_file_id})`;
+          analysis.filename = `Merged_Files`;
         }
       } else {
         analysis.isMerged = false;
+        // For single files, ensure we have a filename
+        if (!analysis.filename && analysis.metadata && analysis.metadata.datasetNames && analysis.metadata.datasetNames.length > 0) {
+          analysis.filename = analysis.metadata.datasetNames[0];
+        } else if (!analysis.filename) {
+          analysis.filename = 'Analysis_Results';
+        }
       }
       return analysis;
     });
@@ -279,13 +293,27 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
     // Enhance with merged file information
     if (analysis.merged_file_id) {
       analysis.isMerged = true;
-      if (analysis.filename) {
-        analysis.filename = `Merged Files (${analysis.filename})`;
+      
+      // Try to get a better filename from metadata or uploads table
+      let baseFilename = analysis.filename;
+      
+      // If no filename from uploads table, try to get from metadata
+      if (!baseFilename && analysis.metadata && analysis.metadata.datasetNames) {
+        // metadata.datasetNames contains array of original file names
+        baseFilename = analysis.metadata.datasetNames.join(', ');
+      }
+      
+      if (baseFilename) {
+        analysis.filename = `Merged Files (${baseFilename})`;
       } else {
-        analysis.filename = `Merged file (${analysis.merged_file_id})`;
+        analysis.filename = `Merged_Files`;
       }
     } else {
       analysis.isMerged = false;
+      // For single files, ensure we have a filename
+      if (!analysis.filename) {
+        analysis.filename = 'Analysis_Results';
+      }
     }
     
     // Add child analyses info

@@ -495,55 +495,90 @@ app.post('/analyze', async (req, res) => {
     const analysisId = uuidv4();
     let derivedUploadIdForInsert = null;
     let mergedFileId = null;
+    let sourceUploadIds = null;
+
+    console.log('[Analyze] filePath:', filePath);
+    console.log('[Analyze] baseFileName:', baseFileName);
+    console.log('[Analyze] isMergedFile:', isMergedFile);
 
     if (!isMergedFile) {
         derivedUploadIdForInsert = path.basename(filePath).split('_')[0];
+        console.log('[Analyze] Single file - derivedUploadIdForInsert:', derivedUploadIdForInsert);
     } else {
         // Extract merged file ID from filename like "FULLID_merged_dataset.csv"
         const basename = path.basename(filePath);
-        const match = basename.match(/^([a-f0-9]+)_merged_dataset\.csv$/);
+        const match = basename.match(/^([a-f0-9-]+)_merged_dataset\.csv$/);
         if (match) {
             mergedFileId = match[1];
+            console.log('[Analyze] Merged file - mergedFileId:', mergedFileId);
+        }
+        
+        // Get source upload IDs from the merged file's metadata
+        try {
+            // Metadata is saved in results/merged_files/ directory by merge.py
+            const metadataPath = path.join(__dirname, 'results', 'merged_files', `${mergedFileId}_metadata.json`);
+            console.log('[Analyze] Looking for metadata at:', metadataPath);
+            
+            if (fs.existsSync(metadataPath)) {
+                console.log('[Analyze] Metadata file exists, reading...');
+                const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+                console.log('[Analyze] Metadata input_files:', Object.keys(metadata.input_files || {}));
+                
+                // Extract upload IDs from input_files keys
+                const sourceFiles = Object.keys(metadata.input_files || {});
+                sourceUploadIds = sourceFiles
+                    .map(f => path.basename(f).split('_')[0])
+                    .sort(); // Sort for consistent comparison
+                console.log('[Analyze] Extracted sourceUploadIds from metadata:', sourceUploadIds);
+            } else {
+                console.log('[Analyze] Metadata file does NOT exist');
+            }
+        } catch (err) {
+            console.error('[Analyze] Error reading merged file metadata:', err);
         }
     }
 
     // Check for existing analyses on the same dataset to establish parent-child relationship
     let parentAnalysisId = null;
+    console.log('[Analyze] Looking for parent analysis...');
     try {
         let existingAnalysisQuery;
-        if (isMergedFile && mergedFileId) {
-            // For merged files, find the most recent analysis using this merged file ID
-            // Match by either user_id (for registered users) or session_id (for guests)
+        if (isMergedFile && sourceUploadIds && sourceUploadIds.length > 0) {
+            // For merged files, find the most recent analysis using the SAME SOURCE FILES
+            // This works even when re-merging generates a new UUID
+            console.log('[Analyze] Searching for existing merged analysis with sourceUploadIds:', sourceUploadIds);
             if (req.userId) {
                 existingAnalysisQuery = await db.query(
                     `SELECT id, parent_analysis_id FROM analyses 
-                     WHERE merged_file_id = $1 
+                     WHERE source_upload_ids = $1 
                      AND user_id = $2 
-                     AND status IN ('finished', 'running')
+                     AND status IN ('finished', 'running', 'queued')
                      ORDER BY created_at DESC 
                      LIMIT 1`,
-                    [mergedFileId, req.userId]
+                    [sourceUploadIds, req.userId]
                 );
             } else {
                 existingAnalysisQuery = await db.query(
                     `SELECT id, parent_analysis_id FROM analyses 
-                     WHERE merged_file_id = $1 
+                     WHERE source_upload_ids = $1 
                      AND session_id = $2 
                      AND user_id IS NULL
-                     AND status IN ('finished', 'running')
+                     AND status IN ('finished', 'running', 'queued')
                      ORDER BY created_at DESC 
                      LIMIT 1`,
-                    [mergedFileId, req.sessionId]
+                    [sourceUploadIds, req.sessionId]
                 );
             }
+            console.log('[Analyze] Found existing merged analysis:', existingAnalysisQuery?.rows?.length > 0 ? existingAnalysisQuery.rows[0] : 'none');
         } else if (derivedUploadIdForInsert) {
             // For single files, find the most recent analysis using this upload ID
+            console.log('[Analyze] Searching for existing single file analysis with uploadId:', derivedUploadIdForInsert);
             if (req.userId) {
                 existingAnalysisQuery = await db.query(
                     `SELECT id, parent_analysis_id FROM analyses 
                      WHERE upload_id = $1 
                      AND user_id = $2 
-                     AND status IN ('finished', 'running')
+                     AND status IN ('finished', 'running', 'queued')
                      ORDER BY created_at DESC 
                      LIMIT 1`,
                     [derivedUploadIdForInsert, req.userId]
@@ -554,12 +589,13 @@ app.post('/analyze', async (req, res) => {
                      WHERE upload_id = $1 
                      AND session_id = $2 
                      AND user_id IS NULL
-                     AND status IN ('finished', 'running')
+                     AND status IN ('finished', 'running', 'queued')
                      ORDER BY created_at DESC 
                      LIMIT 1`,
                     [derivedUploadIdForInsert, req.sessionId]
                 );
             }
+            console.log('[Analyze] Found existing single file analysis:', existingAnalysisQuery?.rows?.length > 0 ? existingAnalysisQuery.rows[0] : 'none');
         }
 
         // If we found an existing analysis, either use it as parent or find its root parent
@@ -568,32 +604,73 @@ app.post('/analyze', async (req, res) => {
             
             // If existing analysis has a parent, use that parent; otherwise use the existing analysis as parent
             parentAnalysisId = existingAnalysis.parent_analysis_id || existingAnalysis.id;
-            console.log(`Linking new analysis ${analysisId} to parent ${parentAnalysisId}`);
+            console.log(`[Analyze] Linking new analysis ${analysisId} to parent ${parentAnalysisId}`);
+            console.log(`[Analyze] Parent analysis details:`, existingAnalysis);
+        } else {
+            console.log('[Analyze] No existing analysis found - this will be a parent analysis');
         }
     } catch (err) {
-        console.error('Error checking for parent analysis:', err);
+        console.error('[Analyze] Error checking for parent analysis:', err);
     }
 
     // Record analysis start with metadata
     try {
         const metadata = {
+            // Store ALL parameters for Continue Analysis feature
+            filePath: filePath,
             illnessColumn: IlnessColumnName,
             sampleColumn: SampleColumnName,
             selectedClasses: selectedClasses || [],
+            statisticalTest: statisticalTest || [],
+            dimensionalityReduction: dimensionalityReduction || [],
+            classificationAnalysis: classificationAnalysis || [],
+            modelExplanation: modelExplanation || [],
+            nonFeatureColumns: nonFeatureColumns || [],
+            isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
+            afterFeatureSelection: afterFeatureSelection || false,
+            useDefaultParams: useDefaultParams !== undefined ? useDefaultParams : true,
+            featureType: featureType || 'numerical',
+            referenceClass: referenceClass || null,
+            limeGlobalExplanationSampleNum: limeGlobalExplanationSampleNum || 1000,
+            shapModelFinetune: shapModelFinetune !== undefined ? shapModelFinetune : true,
+            limeModelFinetune: limeModelFinetune !== undefined ? limeModelFinetune : true,
+            scoring: scoring || 'accuracy',
+            featureImportanceFinetune: featureImportanceFinetune !== undefined ? featureImportanceFinetune : true,
+            numTopFeatures: numTopFeatures || 50,
+            plotter: plotter || 'matplotlib',
+            dim: dim || 2,
+            paramFinetune: paramFinetune !== undefined ? paramFinetune : true,
+            finetuneFraction: finetuneFraction || 0.1,
+            saveBestModel: saveBestModel !== undefined ? saveBestModel : true,
+            standardScaling: standardScaling !== undefined ? standardScaling : true,
+            saveDataTransformer: saveDataTransformer !== undefined ? saveDataTransformer : true,
+            saveLabelEncoder: saveLabelEncoder !== undefined ? saveLabelEncoder : true,
+            verbose: verbose !== undefined ? verbose : true,
+            testSize: testSize || 0.2,
+            nFolds: nFolds || 10,
+            // Also store old format for compatibility with AnalysisReport component
             analysisMethods: {
-                // Map new parameter names to old format for compatibility with AnalysisReport component
                 differential: statisticalTest || [],
                 clustering: dimensionalityReduction || [],
                 classification: [...(classificationAnalysis || []), ...(modelExplanation || [])]
-            },
-            nonFeatureColumns: nonFeatureColumns || [],
-            isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
+            }
         };
         
-                await db.query('INSERT INTO analyses (id, upload_id, merged_file_id, session_id, user_id, status, analysis_metadata, parent_analysis_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-                    [analysisId, derivedUploadIdForInsert, mergedFileId, req.sessionId, req.userId || null, 'queued', JSON.stringify(metadata), parentAnalysisId]);
+        console.log('[Analyze] Inserting analysis into database:');
+        console.log('[Analyze] - analysisId:', analysisId);
+        console.log('[Analyze] - upload_id:', derivedUploadIdForInsert);
+        console.log('[Analyze] - merged_file_id:', mergedFileId);
+        console.log('[Analyze] - source_upload_ids:', sourceUploadIds);
+        console.log('[Analyze] - parent_analysis_id:', parentAnalysisId);
+        console.log('[Analyze] - session_id:', req.sessionId);
+        console.log('[Analyze] - user_id:', req.userId || null);
+        
+        await db.query('INSERT INTO analyses (id, upload_id, merged_file_id, source_upload_ids, session_id, user_id, status, analysis_metadata, parent_analysis_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+                    [analysisId, derivedUploadIdForInsert, mergedFileId, sourceUploadIds, req.sessionId, req.userId || null, 'queued', JSON.stringify(metadata), parentAnalysisId]);
+        
+        console.log('[Analyze] Analysis record inserted successfully');
     } catch (err) {
-        console.error('Failed to insert analysis record:', err);
+        console.error('[Analyze] Failed to insert analysis record:', err);
         return res.status(500).json({ success: false, error: 'Failed to create analysis record' });
     }
     
@@ -604,7 +681,7 @@ app.post('/analyze', async (req, res) => {
         const jobData = {
             analysisId,
             uploadId: derivedUploadIdForInsert,
-            uploadPath: normalizedFilePath,
+            uploadPath: filePath,
             originalName: baseFileName,
             sessionId: req.sessionId,
             userId: req.userId || null,

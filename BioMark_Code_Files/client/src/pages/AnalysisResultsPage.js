@@ -93,6 +93,121 @@ export default function AnalysisResultsPage() {
     navigate(`/analysis/${analysis.id}`);
   };
 
+  const handleDownloadReport = async (analysis) => {
+    if (!analysis.result_path) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get(`/api/user/analyses/${analysis.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data.success) {
+        const analysisData = response.data.analysis;
+        
+        // Collect all analyses (parent + children if any)
+        const allAnalyses = [analysisData];
+        if (analysisData.childAnalyses && analysisData.childAnalyses.length > 0) {
+          allAnalyses.push(...analysisData.childAnalyses);
+        }
+        
+        // Collect all class pairs from all analyses for filename
+        const allClassPairs = [];
+        
+        // Collect data from all analyses (parent + children)
+        const allAnalysisResults = [];
+        const allEnrichmentAnalyses = [];
+        const allValidations = [];
+        const allSummaries = [];
+        
+        for (const singleAnalysis of allAnalyses) {
+          const metadata = singleAnalysis.metadata || {};
+          
+          // Collect class pair for filename
+          if (metadata.selectedClasses && metadata.selectedClasses.length > 0) {
+            const classPair = metadata.selectedClasses.join(' vs ');
+            if (!allClassPairs.includes(classPair)) {
+              allClassPairs.push(classPair);
+            }
+          }
+          
+          // Collect images from this analysis
+          if (singleAnalysis.result_path) {
+            const allPaths = singleAnalysis.result_path.split(',');
+            const images = allPaths
+              .filter(path => {
+                const trimmed = path.trim();
+                const isImage = trimmed.match(/\.(png|jpg|jpeg|gif|svg)$/i);
+                const isBiomarker = trimmed.includes('summary_of_statistical_methods');
+                return isImage && !isBiomarker;
+              })
+              .map((path) => ({
+                id: `img-${singleAnalysis.id}-${path.trim()}`,
+                path: path.trim(),
+                caption: path.trim().split('/').pop(),
+                analysisId: singleAnalysis.id,
+                classPair: metadata.selectedClasses ? metadata.selectedClasses.join(' vs ') : 'N/A'
+              }));
+            
+            // Add this analysis's results
+            allAnalysisResults.push({
+              title: `Analysis ${allAnalysisResults.length + 1} for ${metadata.selectedClasses ? metadata.selectedClasses.join(' vs ') : 'N/A'}`,
+              images: images,
+              classPair: metadata.selectedClasses ? metadata.selectedClasses.join(' vs ') : 'N/A',
+              date: singleAnalysis.created_at,
+              time: metadata.executionTime || 'N/A',
+              types: {
+                differential: metadata.analysisMethods?.differential || [],
+                clustering: metadata.analysisMethods?.clustering || [],
+                classification: metadata.analysisMethods?.classification || []
+              }
+            });
+          }
+          
+          // Collect enrichment analyses
+          if (metadata.pathwayAnalyses && metadata.pathwayAnalyses.length > 0) {
+            allEnrichmentAnalyses.push(...metadata.pathwayAnalyses);
+          }
+          
+          // Collect summaries
+          if (metadata.summaries && metadata.summaries.length > 0) {
+            allSummaries.push(...metadata.summaries);
+          }
+          
+          // Collect validations
+          if (metadata.biomarkerValidations && Array.isArray(metadata.biomarkerValidations)) {
+            allValidations.push(...metadata.biomarkerValidations);
+          } else if (metadata.biomarkerValidation) {
+            allValidations.push(metadata.biomarkerValidation);
+          }
+        }
+        
+        // Get proper filename - just use analysisData.filename directly like AnalysisDetailPage does
+        const fileName = analysisData.filename || 'Analysis_Results';
+        
+        // Set report data to trigger PDF generation
+        setReportData({
+          analysisResults: allAnalysisResults,
+          analysisDate: analysisData.created_at,
+          executionTime: analysisData.metadata?.executionTime || 0,
+          selectedClasses: allClassPairs,
+          selectedIllnessColumn: analysisData.metadata?.illnessColumn || '',
+          selectedAnalyzes: analysisData.metadata?.selectedAnalyses || {},
+          featureCount: analysisData.metadata?.featureCount || 0,
+          summarizeAnalyses: allSummaries,
+          enrichmentAnalyses: allEnrichmentAnalyses,
+          datasetFileName: fileName,
+          biomarkerValidationResult: allValidations.length > 0 ? allValidations : null
+        });
+      }
+    } catch (err) {
+      console.error('Error loading analysis for report:', err);
+      alert('Failed to generate report. Please try again.');
+    }
+  };
+
+
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate(LOGIN_PATH);
@@ -226,6 +341,13 @@ export default function AnalysisResultsPage() {
                     >
                       &#128270; View Details
                     </button>
+                    <button 
+                      className="download-button"
+                      onClick={() => handleDownloadReport(analysis)}
+                      title="Generate and download analysis report"
+                    >
+                      &#128202; Download Report
+                    </button>
                   </div>
                 )}
               </div>
@@ -248,7 +370,7 @@ export default function AnalysisResultsPage() {
             summaryImagePath=""
             summarizeAnalyses={reportData.summarizeAnalyses || []}
             enrichmentAnalyses={reportData.enrichmentAnalyses || []}
-            datasetFileName={reportData.filename}
+            datasetFileName={reportData.datasetFileName}
             biomarkerValidationResult={reportData.biomarkerValidationResult}
             canValidateBiomarkers={false}
           />

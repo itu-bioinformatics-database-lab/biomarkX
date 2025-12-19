@@ -158,6 +158,7 @@
 .analysis-actions {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .view-button,
@@ -181,12 +182,12 @@
 }
 
 .download-button {
-  background: #f0f0f0;
-  color: #333;
+  background: #34d399;
+  color: white;
 }
 
 .download-button:hover {
-  background: #e0e0e0;
+  background: #10b981;
 }
 
 .error-message {
