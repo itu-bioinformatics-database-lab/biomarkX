@@ -139,7 +139,7 @@ export default function AnalysisResultsPage() {
             onClick={() => navigate('/')}
             style={{ cursor: 'pointer' }}
           />
-          <span>BIOMARKER ANALYSIS TOOL</span>
+          <span>BIOMARK-X: Biomarker Analysis Tool</span>
           <div className="header-buttons">
             <UserMenu 
               isGuest={isGuestUser()}
@@ -166,7 +166,7 @@ export default function AnalysisResultsPage() {
           onClick={() => navigate('/')}
           style={{ cursor: 'pointer' }}
         />
-        <span>BIOMARKER ANALYSIS TOOL</span>
+        <span>BIOMARK-X: Biomarker Analysis Tool</span>
         <div className="header-buttons">
           <UserMenu 
             isGuest={isGuestUser()}

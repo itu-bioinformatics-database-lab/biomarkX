@@ -2736,7 +2736,7 @@ function App() {
       <header className="app-header">
         <div className="app-version" aria-label="Application version">v2.3.0</div>
         <img src={process.env.PUBLIC_URL + "/logo192.png"} alt="Logo" />
-        <span>BIOMARKER ANALYSIS TOOL</span>
+        <span>BIOMARK-X: Biomarker Analysis Tool</span>
         
         <div className="header-buttons">
           <UserMenu 

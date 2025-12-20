@@ -65,7 +65,7 @@ export default function LoginPage() {
     <div className="login-page">
       <div className="login-container">
         <div className="login-header">
-          <h1>BIOMARKER ANALYSIS TOOL</h1>
+          <h1>BIOMARK-X: Biomarker Analysis Tool</h1>
           <p>{isSignup ? 'Create a new account' : 'Please login to continue'}</p>
         </div>
         

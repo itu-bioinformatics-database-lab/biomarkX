@@ -142,6 +142,13 @@ const AnalysisReport = ({
     return `hsl(205, 60%, ${lightness}%)`;
   };
 
+  const formatTotalScore = (score) => {
+    if (typeof score !== 'number' || Number.isNaN(score)) {
+      return null;
+    }
+    return String(Number(score.toFixed(4)));
+  };
+
   // Helper function to create validation views for a single validation result
   const createValidationViews = useCallback((validationResult) => {
     if (!validationResult) return null;
@@ -185,7 +192,22 @@ const AnalysisReport = ({
       biomarkers: Array.from(biomarkersMap.entries())
         .map(([biomarker, score]) => ({ label: biomarker, score }))
         .sort((a, b) => a.label.localeCompare(b.label)),
+      totalScore: Array.from(biomarkersMap.values()).reduce((sum, value) => (
+        typeof value === 'number' && !Number.isNaN(value) ? sum + value : sum
+      ), 0),
     }));
+
+    diseasesViewRows.sort((a, b) => {
+      const scoreA = typeof a?.totalScore === 'number' ? a.totalScore : 0;
+      const scoreB = typeof b?.totalScore === 'number' ? b.totalScore : 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return String(a?.disease ?? '').localeCompare(String(b?.disease ?? ''));
+    });
+
+    const topDiseases = diseasesViewRows
+      .slice(0, 5)
+      .map((row) => String(row?.disease ?? '').trim())
+      .filter(Boolean);
 
     // Biomarker view
     const biomarkerMap = new Map();
@@ -225,6 +247,7 @@ const AnalysisReport = ({
       timestamp: validationResult.timestamp ? new Date(validationResult.timestamp).toLocaleString() : null,
       geneCount: validationResult.geneCount,
       maxGenes: validationResult.maxGenes,
+      topDiseases,
       views: {
         biomarkers: {
           label: 'Biomarker view',
@@ -241,6 +264,7 @@ const AnalysisReport = ({
           columns: [
             { key: 'disease', label: 'Disease / Condition' },
             { key: 'biomarkers', label: 'Biomarkers' },
+            { key: 'totalScore', label: 'Total Score' },
           ],
           rows: diseasesViewRows,
         },
@@ -333,6 +357,11 @@ const AnalysisReport = ({
         }
         if (key === 'score' && row[key] != null) {
           return toCsvValue(row[key]);
+        }
+        if (key === 'totalScore' && row[key] != null) {
+          const total = row[key];
+          const formatted = typeof total === 'number' ? formatTotalScore(total) : String(total);
+          return toCsvValue(formatted);
         }
         return toCsvValue(row[key]);
       }).join(';')
@@ -1319,6 +1348,11 @@ const AnalysisReport = ({
       {showValidationSection && processedValidations.map((validation, valIndex) => {
         const currentView = validation.views[activeValidationView] || validation.views.detailed;
         const hasRowsInView = currentView.rows.length > 0;
+        const topDiseaseSet = new Set(
+          (Array.isArray(validation.topDiseases) ? validation.topDiseases : [])
+            .map((name) => String(name ?? '').trim().toLowerCase())
+            .filter(Boolean)
+        );
         
         return (
           <div key={`validation-${valIndex}`} className="validation-results-panel">
@@ -1421,6 +1455,28 @@ const AnalysisReport = ({
                               </td>
                             );
                           }
+                          if (column.key === 'totalScore') {
+                            const display = typeof value === 'number' ? formatTotalScore(value) : null;
+                            return (
+                              <td
+                                key={`${row.__rowId}-${column.key}`}
+                              >
+                                {display ?? '-'}
+                              </td>
+                            );
+                          }
+                          if (column.key === 'disease') {
+                            const diseaseLabel = String(value ?? '');
+                            const isDiseasesView = activeValidationView === 'diseases';
+                            const isTopDisease = isDiseasesView && topDiseaseSet.has(diseaseLabel.trim().toLowerCase());
+                            return (
+                              <td key={`${row.__rowId}-${column.key}`}>
+                                <span style={isTopDisease ? { color: '#CC0011' } : undefined}>
+                                  {diseaseLabel || '-'}
+                                </span>
+                              </td>
+                            );
+                          }
                           if (Array.isArray(value)) {
                             const hasScoredObjects = value.some((item) => item && typeof item === 'object');
                             if (hasScoredObjects) {
@@ -1430,9 +1486,11 @@ const AnalysisReport = ({
                                     const label = item?.label ?? String(item ?? '');
                                     const score = item?.score;
                                     const displayScore = score != null ? formatScore(score) : null;
+                                    const isBiomarkerViewDisease = activeValidationView === 'biomarkers' && column.key === 'diseases';
+                                    const isTopDisease = isBiomarkerViewDisease && topDiseaseSet.has(String(label).trim().toLowerCase());
                                     return (
                                       <React.Fragment key={`${row.__rowId}-${column.key}-${idx}`}>
-                                        <span>{label}</span>
+                                        <span style={isTopDisease ? { color: '#CC0011' } : undefined}>{label}</span>
                                         {displayScore ? (
                                           <span style={{ color: getScoreColor(score) }}>{` (${displayScore})`}</span>
                                         ) : null}
@@ -1451,7 +1509,7 @@ const AnalysisReport = ({
                           }
                           return (
                             <td key={`${row.__rowId}-${column.key}`}>
-                              {value || '-'}
+                              {value === 0 ? '0' : (value || '-')}
                             </td>
                           );
                         })}
