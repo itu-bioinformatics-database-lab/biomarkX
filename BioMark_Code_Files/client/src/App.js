@@ -298,7 +298,7 @@ function App() {
   const [featureImportanceFinetune, setFeatureImportanceFinetune] = useState(false);
   const [numTopFeatures, setNumTopFeatures] = useState(20);
   // Aggregation for Combine step
-  const [aggregationMethod, setAggregationMethod] = useState('rrf');
+  const [aggregationMethod, setAggregationMethod] = useState('sum');
   const [aggregationWeights, setAggregationWeights] = useState('');
   const [rrfK, setRrfK] = useState(60);
   // Clustering Analysis Parameters
@@ -3609,10 +3609,24 @@ function App() {
                         <HelpTooltip placement="right" text={<AggregationHelpContent />}>info</HelpTooltip>
                       </label>
                       <select value={aggregationMethod} onChange={(e) => setAggregationMethod(e.target.value)}>
-                        <option value="rrf">Reciprocal Rank Fusion</option>
-                        <option value="rank_product">Rank Product</option>
-                        <option value="weighted_borda">Weighted Borda Count</option>
-                        <option value="sum">Simple Sum</option>
+                        <optgroup label="Rank-based methods">
+                          <option value="sum">Mean Rank</option>
+                          <option value="weighted_borda">Weighted Borda Count (Weighted Mean Rank)</option>
+                          <option value="median_rank">Median Rank</option>
+                          <option value="mra">Median Rank Algorithm (MRA)</option>
+                          <option value="min_rank">Minimum (Best) Rank</option>
+                          <option value="rank_product">Geometric Mean Rank</option>
+                          <option value="stuart">Stuart Rank Aggregation</option>
+                          <option value="rra">Robust Rank Aggregation (RRA)</option>
+                          <option value="rrf">Reciprocal Rank Fusion</option>
+                        </optgroup>
+                        <optgroup label="Weight-based methods">
+                          <option value="mean_weight">Mean Weight</option>
+                          <option value="median_weight">Median Weight</option>
+                          <option value="max_weight">Max Weight</option>
+                          <option value="geometric_mean_weight">Geometric Mean Weight</option>
+                          <option value="ta">Threshold Algorithm (TA)</option>
+                        </optgroup>
                       </select>
                       {aggregationMethod === 'weighted_borda' && (
                         <>
