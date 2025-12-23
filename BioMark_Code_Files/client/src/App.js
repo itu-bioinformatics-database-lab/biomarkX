@@ -3618,7 +3618,7 @@ function App() {
                           <option value="rank_product">Geometric Mean Rank</option>
                           <option value="stuart">Stuart Rank Aggregation</option>
                           <option value="rra">Robust Rank Aggregation (RRA)</option>
-                          <option value="rrf">Reciprocal Rank Fusion</option>
+                          <option value="rrf">Reciprocal Rank Fusion (RRF)</option>
                         </optgroup>
                         <optgroup label="Weight-based methods">
                           <option value="mean_weight">Mean Weight</option>
@@ -3631,7 +3631,7 @@ function App() {
                       {aggregationMethod === 'weighted_borda' && (
                         <>
                           <label style={{ fontWeight: 600 }}>weights (JSON)</label>
-                          <input type="text" value={aggregationWeights} onChange={(e) => setAggregationWeights(e.target.value)} placeholder='{"shap":1.5,"anova":1.0,"t_test":1.0,"lime":1.2}' style={{ minWidth: 280 }} />
+                          <input type="text" value={aggregationWeights} onChange={(e) => setAggregationWeights(e.target.value)} placeholder='{"shap":1.5,"anova":1.0,"t_test":1.0,"lime":1.2}' style={{ minWidth: 350, fontSize: 16 }} />
                         </>
                       )}
                       {aggregationMethod === 'rrf' && (
