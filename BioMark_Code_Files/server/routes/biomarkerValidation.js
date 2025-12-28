@@ -1,15 +1,28 @@
 const express = require('express');
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 const db = require('../db/database');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
 const PYTHON_SCRIPT = path.join(__dirname, '..', 'services', 'biomarker_validation.py');
+const VALIDATION_LOG = path.join(__dirname, '..', 'logs', 'biomarker_validation.log');
 const getPythonCommand = () => (process.platform === 'win32' ? 'python' : 'python3');
 const VALIDATION_GENE_CAP_OPTIONS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 const FALLBACK_GENE_CAP = VALIDATION_GENE_CAP_OPTIONS[0];
+
+const appendValidationLog = (lines) => {
+  try {
+    fs.mkdirSync(path.dirname(VALIDATION_LOG), { recursive: true });
+    const payload = Array.isArray(lines) ? lines : [lines];
+    const stamped = payload.map((line) => `${new Date().toISOString()} ${line}`).join('\n');
+    fs.appendFileSync(VALIDATION_LOG, `${stamped}\n`, 'utf8');
+  } catch (err) {
+    console.error('Unable to write biomarker validation log:', err);
+  }
+};
 
 const runPythonValidation = (genes, maxGenes) => new Promise((resolve, reject) => {
   const python = spawn(getPythonCommand(), ['-Xfrozen_modules=off', PYTHON_SCRIPT], {
@@ -32,26 +45,46 @@ const runPythonValidation = (genes, maxGenes) => new Promise((resolve, reject) =
   });
 
   python.on('close', (code) => {
+    const logLines = [
+      `[input] ${inputPayload}`,
+      `[exit] code=${code}`,
+    ];
     if (code !== 0) {
       const err = new Error('Python biomarker validation failed');
       err.details = stderr || stdout;
+      if (stderr.trim()) logLines.push(`[stderr] ${stderr.trim()}`);
+      if (stdout.trim()) logLines.push(`[stdout] ${stdout.trim()}`);
+      appendValidationLog(logLines);
       return reject(err);
     }
     try {
       const parsed = JSON.parse(stdout.trim() || '{}');
       if (!parsed || parsed.success === false) {
         const err = new Error(parsed?.message || 'Python biomarker validation returned an error');
+        if (stderr.trim()) logLines.push(`[stderr] ${stderr.trim()}`);
+        if (stdout.trim()) logLines.push(`[stdout] ${stdout.trim()}`);
+        appendValidationLog(logLines);
         return reject(err);
       }
+      if (stderr.trim()) logLines.push(`[stderr] ${stderr.trim()}`);
+      if (stdout.trim()) logLines.push(`[stdout] ${stdout.trim()}`);
+      if (logLines.length) appendValidationLog(logLines);
       return resolve(parsed);
     } catch (parseErr) {
       const err = new Error('Unable to parse biomarker validation response');
       err.details = stdout;
+      if (stderr.trim()) logLines.push(`[stderr] ${stderr.trim()}`);
+      if (stdout.trim()) logLines.push(`[stdout] ${stdout.trim()}`);
+      appendValidationLog(logLines);
       return reject(err);
     }
   });
 
   python.on('error', (err) => {
+    appendValidationLog([
+      `[input] ${inputPayload}`,
+      `[spawn-error] ${err.message}`,
+    ]);
     reject(err);
   });
 

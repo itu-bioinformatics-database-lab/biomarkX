@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -12,6 +13,7 @@ import requests
 
 MYGENE_ENDPOINT = "https://mygene.info/v3/query"
 OPEN_TARGETS_ENDPOINT = "https://api.platform.opentargets.org/api/v4/graphql"
+
 OPEN_TARGETS_QUERY = (
 	"""
 	query targetAssociations($ensemblId: String!, $size: Int!) {
@@ -88,19 +90,44 @@ def _sanitize_max_genes(value: Any) -> int:
 	return min(parsed, ABSOLUTE_MAX_GENES)
 
 
+def _is_mirna(symbol: str) -> bool:
+	"""Check if symbol matches miRNA pattern (e.g., hsa-miR-22-3p, mmu-miR-100)."""
+	return bool(re.match(r"^[a-z]+-miR-\d+", symbol, re.IGNORECASE))
+
+
+def _strip_mirna_suffix(symbol: str) -> str:
+	"""Strip arm suffix from miRNA (e.g., hsa-miR-22-3p -> hsa-miR-22, hsa-miR-181b-5p -> hsa-miR-181b)."""
+	# Remove -3p or -5p or -3p/5p variants at the end
+	return re.sub(r"-(3p|5p|3p/5p)$", "", symbol, flags=re.IGNORECASE)
+
+
 def _fetch_gene(symbol: str) -> Optional[Dict[str, Any]]:
+	"""Fetch gene data from MyGene."""
+	query_symbol = symbol
+	is_mirna = _is_mirna(symbol)
+	if is_mirna:
+		query_symbol = _strip_mirna_suffix(symbol)
+		sys.stderr.write(f"[MyGene API] Detected miRNA, stripping suffix: {symbol} -> {query_symbol}\n")
+	
+	# Try MyGene
 	params = {
-		"q": symbol,
+		"q": query_symbol,
 		"species": "human",
 		"size": 1,
 		"fields": "symbol,name,ensembl.gene",
 	}
-	response = requests.get(MYGENE_ENDPOINT, params=params, timeout=12)
-	response.raise_for_status()
-	payload = response.json()
-	hits = payload.get("hits")
-	if isinstance(hits, list) and hits:
-		return hits[0]
+	sys.stderr.write(f"[MyGene API] Sending request with params: {json.dumps(params, ensure_ascii=False)}\n")
+	try:
+		response = requests.get(MYGENE_ENDPOINT, params=params, timeout=12)
+		response.raise_for_status()
+		payload = response.json()
+		sys.stderr.write(f"[MyGene API] Response received: {json.dumps(payload, ensure_ascii=False)}\n")
+		hits = payload.get("hits")
+		if isinstance(hits, list) and hits:
+			return hits[0]
+	except Exception as exc:
+		sys.stderr.write(f"[MyGene API] Error: {exc}\n")
+	
 	return None
 
 
@@ -132,9 +159,12 @@ def _build_table_rows(
 	# Show the gene exactly as provided by the user; keep API-resolved name separately.
 	gene_symbol = input_symbol
 	gene_name = hit.get("name") or ""
-	ensembl = hit.get("ensembl") or {}
+	ensembl = hit.get("ensembl")
 	if isinstance(ensembl, dict):
 		ensembl_id = ensembl.get("gene")
+	elif isinstance(ensembl, list) and ensembl:
+		# Take first element if ensembl is a list
+		ensembl_id = ensembl[0].get("gene") if isinstance(ensembl[0], dict) else None
 	else:
 		ensembl_id = None
 	rows: List[Dict[str, Any]] = []
@@ -166,15 +196,30 @@ def _build_response_rows(genes: List[str]) -> Dict[str, Any]:
 	for symbol in genes:
 		rows: List[Dict[str, Any]] = []
 		try:
+			# Gene/miRNA pipeline: MyGene -> Open Targets
 			hit = _fetch_gene(symbol)
 			if hit:
-				ensembl = hit.get("ensembl") or {}
+				ensembl = hit.get("ensembl")
 				if isinstance(ensembl, dict):
 					ensembl_id = ensembl.get("gene")
+				elif isinstance(ensembl, list) and ensembl:
+					# Take first element if ensembl is a list
+					ensembl_id = ensembl[0].get("gene") if isinstance(ensembl[0], dict) else None
 				else:
 					ensembl_id = None
 				associations = _fetch_open_targets_rows(ensembl_id) if ensembl_id else []
-				rows = _build_table_rows(symbol, hit, associations)
+				# If Open Targets returns no associations but we have an Ensembl ID, add a "no results" row
+				if ensembl_id and not associations:
+					gene_name = hit.get("name") or ""
+					rows = [{
+						"geneSymbol": symbol,
+						"geneName": gene_name,
+						"disease": "No associated diseases found",
+						"score": None,
+						"link": f"https://platform.opentargets.org/target/{ensembl_id}/associations",
+					}]
+				else:
+					rows = _build_table_rows(symbol, hit, associations)
 		except (requests.RequestException, ValueError) as exc:
 			rows = []
 			sys.stderr.write(f"[biomarker_validation] Lookup failed for {symbol}: {exc}\n")
