@@ -63,7 +63,7 @@ router.post('/biomarker-validation', async (req, res) => {
   try {
     const genes = Array.isArray(req.body?.genes) ? req.body.genes : [];
     if (!genes.length) {
-      return res.status(400).json({ success: false, message: 'Please provide at least one gene symbol.' });
+      return res.status(400).json({ success: false, message: 'Please provide at least one biomarker symbol.' });
     }
     const requestedMax = Number(req.body?.maxGenes);
     const maxGenes = VALIDATION_GENE_CAP_OPTIONS.includes(requestedMax) ? requestedMax : FALLBACK_GENE_CAP;

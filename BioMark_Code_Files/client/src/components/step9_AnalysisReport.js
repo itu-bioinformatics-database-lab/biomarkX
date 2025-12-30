@@ -157,17 +157,18 @@ const AnalysisReport = ({
     const detailedTableColumns = Array.isArray(validationTable?.columns) && validationTable.columns.length > 0
       ? validationTable.columns
       : [
-          { key: 'geneSymbol', label: 'Gene' },
-          { key: 'geneName', label: 'Gene Name' },
+          { key: 'biomarkerSymbol', label: 'Biomarker' },
+          { key: 'biomarkerType', label: 'Type' },
+          { key: 'biomarkerName', label: 'Name' },
           { key: 'disease', label: 'Disease / Condition' },
           { key: 'score', label: 'Association Score' },
-          { key: 'link', label: 'Link' }
+          { key: 'source', label: 'Source' },
         ];
 
     const detailedTableRows = (!validationTable || !Array.isArray(validationTable.rows))
       ? []
       : validationTable.rows.map((row, index) => ({
-          __rowId: `${row.geneSymbol || 'gene'}-${index}`,
+          __rowId: `${row.biomarkerSymbol || row.geneSymbol || 'biomarker'}-${index}`,
           ...row,
         }));
 
@@ -175,7 +176,7 @@ const AnalysisReport = ({
     const diseaseMap = new Map();
     detailedTableRows.forEach((row) => {
       const diseaseName = row.disease || 'Unknown disease';
-      const biomarkerName = row.geneSymbol || row.geneName || 'Unknown biomarker';
+      const biomarkerName = row.biomarkerSymbol || row.geneSymbol || row.biomarkerName || row.geneName || 'Unknown biomarker';
       const score = normalizeScoreValue(row.score);
       if (!diseaseMap.has(diseaseName)) {
         diseaseMap.set(diseaseName, new Map());
@@ -209,15 +210,17 @@ const AnalysisReport = ({
       .map((row) => String(row?.disease ?? '').trim())
       .filter(Boolean);
 
-    // Biomarker view
+    // Biomarker view - group by biomarker symbol and type
     const biomarkerMap = new Map();
     detailedTableRows.forEach((row) => {
-      const biomarkerKey = row.geneSymbol || row.geneName || 'Unknown biomarker';
+      const biomarkerKey = row.biomarkerSymbol || row.geneSymbol || row.biomarkerName || row.geneName || 'Unknown biomarker';
       if (!biomarkerMap.has(biomarkerKey)) {
         biomarkerMap.set(biomarkerKey, {
-          geneSymbol: row.geneSymbol || biomarkerKey,
-          geneName: row.geneName || '',
+          biomarkerSymbol: row.biomarkerSymbol || row.geneSymbol || biomarkerKey,
+          biomarkerType: row.biomarkerType || 'Gene',
+          biomarkerName: row.biomarkerName || row.geneName || '',
           diseases: new Map(),
+          source: row.source || 'Open Targets',
           link: row.link || '',
         });
       }
@@ -234,11 +237,13 @@ const AnalysisReport = ({
 
     const biomarkerViewRows = Array.from(biomarkerMap.values()).map((entry, index) => ({
       __rowId: `biomarker-${index}`,
-      geneSymbol: entry.geneSymbol,
-      geneName: entry.geneName,
+      biomarkerSymbol: entry.biomarkerSymbol,
+      biomarkerType: entry.biomarkerType,
+      biomarkerName: entry.biomarkerName,
       diseases: Array.from(entry.diseases.entries())
         .map(([disease, score]) => ({ label: disease, score }))
         .sort((a, b) => a.label.localeCompare(b.label)),
+      source: entry.source,
       link: entry.link,
     }));
 
@@ -246,16 +251,19 @@ const AnalysisReport = ({
       classPairLabel: validationResult.classPair ? friendlyClassPair(validationResult.classPair) : null,
       timestamp: validationResult.timestamp ? new Date(validationResult.timestamp).toLocaleString() : null,
       geneCount: validationResult.geneCount,
+      biomarkerCount: validationResult.biomarkerCount,
+      mirnaCount: validationResult.mirnaCount,
       maxGenes: validationResult.maxGenes,
       topDiseases,
       views: {
         biomarkers: {
           label: 'Biomarker view',
           columns: [
-            { key: 'geneSymbol', label: 'Biomarker' },
-            { key: 'geneName', label: 'Gene Name' },
+            { key: 'biomarkerSymbol', label: 'Biomarker' },
+            { key: 'biomarkerType', label: 'Type' },
+            { key: 'biomarkerName', label: 'Name' },
             { key: 'diseases', label: 'Diseases' },
-            { key: 'link', label: 'Link' },
+            { key: 'source', label: 'Source' },
           ],
           rows: biomarkerViewRows,
         },
@@ -1399,7 +1407,7 @@ const AnalysisReport = ({
               ))}
             </div>
             <p className="validation-score-note">
-              Association score comes from Open Targets and reflects the strength of evidence linking a biomarker to a disease. Higher scores indicate stronger evidence.  
+              Association scores come from Open Targets (for genes) and JensenLab DISEASES (for microRNAs). Higher scores indicate stronger evidence linking a biomarker to a disease. Scores are normalized to a 0-1 scale for comparison.
             </p>
             {hasRowsInView ? (
               <div className="validation-table-wrapper">
@@ -1434,13 +1442,14 @@ const AnalysisReport = ({
                             });
                             value = sortedBiomarkers;
                           }
-                          if (column.key === 'link') {
+                          if (column.key === 'source') {
+                            const link = row.link;
                             return (
                               <td key={`${row.__rowId}-${column.key}`}>
-                                {value ? (
-                                  <a href={value} target="_blank" rel="noreferrer">Open</a>
+                                {link ? (
+                                  <a href={link} target="_blank" rel="noreferrer">{value || 'Source'}</a>
                                 ) : (
-                                  '-'
+                                  value || '-'
                                 )}
                               </td>
                             );

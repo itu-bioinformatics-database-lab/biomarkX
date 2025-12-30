@@ -1372,6 +1372,12 @@ function App() {
     }));
 
     const sampleForComparison = sampleValue !== undefined ? sampleValue : selectedSampleColumn;
+
+    // Auto-advance if no merge is required and both columns are selected
+    if (!skipMergeGuard && !requiresMerge && normalizedIllness && sampleForComparison && !mergeCompleted && !mergeInProgress) {
+      await handleMergeFiles();
+    }
+
     const includedCount = includedUploads.length;
     const canAdvanceToStepFour = (candidateSample) => {
       if (!normalizedIllness || !candidateSample) return false;
@@ -1534,6 +1540,11 @@ function App() {
       ...prev,
       sampleColumn
     }));
+
+    // Auto-advance if no merge is required and both columns are selected
+    if (!skipMergeGuard && !requiresMerge && sampleColumn && illnessForComparison && !mergeCompleted && !mergeInProgress) {
+      handleMergeFiles();
+    }
 
     const includedCount = includedUploads.length;
     const canAdvanceToStepFour = () => {
