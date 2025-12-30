@@ -1378,11 +1378,8 @@ const AnalysisReport = ({
                 )}
               </div>
               <div className="validation-results-meta">
-                {validation.geneCount && (
-                  <span>{validation.geneCount} genes checked</span>
-                )}
                 {validation.maxGenes && (
-                  <span>Limit: {validation.maxGenes}</span>
+                  <span>Biomarker Count: {validation.maxGenes}</span>
                 )}
                 {hasRowsInView && (
                   <button className="validation-download-button" onClick={() => handleDownloadValidationCsv(valIndex)}>
@@ -1407,7 +1404,7 @@ const AnalysisReport = ({
               ))}
             </div>
             <p className="validation-score-note">
-              Association scores come from Open Targets (for genes) and JensenLab DISEASES (for microRNAs). Higher scores indicate stronger evidence linking a biomarker to a disease. Scores are normalized to a 0-1 scale for comparison.
+              Association scores come from Open Targets (genes), JensenLab DISEASES (microRNAs), and EWAS Atlas (DNA methylation). Higher scores indicate stronger evidence. Scores are normalized to a 0-1 scale.
             </p>
             {hasRowsInView ? (
               <div className="validation-table-wrapper">

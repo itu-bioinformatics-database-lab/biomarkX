@@ -43,6 +43,10 @@ OPEN_TARGETS_QUERY = (
 JENSENLAB_DATA_FILE = os.path.join(os.path.dirname(__file__), "jensenlab_diseases.tsv")
 JENSENLAB_MAX_ZSCORE = 10.0  # JensenLab z-scores typically range 0-10
 
+# EWAS Atlas API for DNA methylation CpG sites
+EWAS_ATLAS_API = "https://ngdc.cncb.ac.cn/ewas/rest/probe"
+EWAS_ATLAS_BROWSE_URL = "https://ngdc.cncb.ac.cn/ewas/browse?probeId="
+
 # miRBase fallback URL
 MIRBASE_SEARCH_URL = "https://www.mirbase.org/results/?query="
 
@@ -271,6 +275,199 @@ def _get_jensenlab_link(mirna_id: str) -> str:
 	return f"https://diseases.jensenlab.org/Entity?order=textmining,knowledge,experiments&textmining=10&knowledge=10&experiments=10&type1=9606&type2=-26&id1={mirna_id}"
 
 
+def _get_ewas_atlas_link(probe_id: str) -> str:
+	"""Generate an EWAS Atlas link for the CpG probe."""
+	return f"{EWAS_ATLAS_BROWSE_URL}{probe_id}"
+
+
+def _normalize_trait_name(trait: str) -> Tuple[str, str]:
+	"""
+	Normalize EWAS Atlas trait names to group similar diseases.
+	Returns (normalized_key, display_name).
+	"""
+	if not trait:
+		return ("unknown", "Unknown")
+	
+	original = trait.strip()
+	
+	# Lowercase for comparison
+	normalized = original.lower()
+	
+	# Remove parenthetical abbreviations like (AD), (BMI), (PD), (WC), etc.
+	normalized = re.sub(r'\s*\([^)]{1,10}\)\s*$', '', normalized)
+	
+	# Normalize special characters (curly quotes, backticks, acute accents to straight apostrophe)
+	normalized = normalized.replace("\u2019", "'").replace("\u2018", "'")  # Right/left single quotes
+	normalized = normalized.replace("`", "'").replace("\u00b4", "'")  # Backtick and acute accent
+	
+	# Remove trailing/leading whitespace
+	normalized = normalized.strip()
+	
+	# Common disease name mappings
+	disease_mappings = {
+		"alzheimer's disease": "Alzheimer's disease",
+		"alzheimer disease": "Alzheimer's disease",
+		"alzheimers disease": "Alzheimer's disease",
+		"parkinson's disease": "Parkinson's disease",
+		"parkinson disease": "Parkinson's disease",
+		"parkinsons disease": "Parkinson's disease",
+		"type 2 diabetes": "Type 2 diabetes",
+		"type 2 diabetes mellitus": "Type 2 diabetes",
+		"t2d": "Type 2 diabetes",
+		"type 1 diabetes": "Type 1 diabetes",
+		"type 1 diabetes mellitus": "Type 1 diabetes",
+		"t1d": "Type 1 diabetes",
+		"body mass index": "Body mass index (BMI)",
+		"bmi": "Body mass index (BMI)",
+		"breast cancer": "Breast cancer",
+		"breast carcinoma": "Breast cancer",
+		"lung cancer": "Lung cancer",
+		"lung carcinoma": "Lung cancer",
+		"colorectal cancer": "Colorectal cancer",
+		"colon cancer": "Colorectal cancer",
+		"mild cognitive impairment": "Mild cognitive impairment",
+		"mci": "Mild cognitive impairment",
+		"rheumatoid arthritis": "Rheumatoid arthritis",
+		"ra": "Rheumatoid arthritis",
+		"systemic lupus erythematosus": "Systemic lupus erythematosus",
+		"sle": "Systemic lupus erythematosus",
+		"lupus": "Systemic lupus erythematosus",
+		"major depressive disorder": "Major depressive disorder",
+		"depression": "Major depressive disorder",
+		"mdd": "Major depressive disorder",
+		"schizophrenia": "Schizophrenia",
+		"scz": "Schizophrenia",
+		"aging": "Aging",
+		"age": "Aging",
+		"ageing": "Aging",
+		"smoking": "Smoking",
+		"cigarette smoking": "Smoking",
+		"tobacco smoking": "Smoking",
+		"alcohol consumption": "Alcohol consumption",
+		"alcohol": "Alcohol consumption",
+	}
+	
+	# Check for exact match in mappings
+	if normalized in disease_mappings:
+		display = disease_mappings[normalized]
+		return (display.lower(), display)
+	
+	# Return normalized version with original capitalization preserved where possible
+	# Use original if it looks properly capitalized, otherwise title case the normalized
+	if original[0].isupper():
+		return (normalized, original)
+	else:
+		return (normalized, normalized.title())
+
+
+def _fetch_ewas_atlas(probe_id: str) -> Optional[Dict[str, Any]]:
+	"""
+	Fetch DNA methylation probe information from EWAS Atlas API.
+	Returns probe data including trait/disease associations.
+	"""
+	try:
+		response = requests.get(
+			EWAS_ATLAS_API,
+			params={"probeId": probe_id},
+			timeout=15
+		)
+		response.raise_for_status()
+		data = response.json()
+		
+		if data.get("code") == 0 and data.get("data"):
+			return data["data"]
+		return None
+	except (requests.RequestException, ValueError, json.JSONDecodeError) as exc:
+		sys.stderr.write(f"[biomarker_validation] EWAS Atlas lookup failed for {probe_id}: {exc}\n")
+		return None
+
+
+def _build_methylation_table_rows(input_symbol: str) -> List[Dict[str, Any]]:
+	"""
+	Build table rows for DNA methylation biomarkers using EWAS Atlas.
+	Fetches trait/disease associations for CpG probes.
+	"""
+	rows: List[Dict[str, Any]] = []
+	probe_id = input_symbol
+	
+	# Fetch from EWAS Atlas API
+	ewas_data = _fetch_ewas_atlas(probe_id)
+	ewas_link = _get_ewas_atlas_link(probe_id)
+	
+	if ewas_data and ewas_data.get("associationList"):
+		associations = ewas_data["associationList"]
+		
+		# Get related gene if available
+		related_genes = ewas_data.get("relatedTranscription", [])
+		gene_name = related_genes[0].get("geneName", "") if related_genes else ""
+		probe_name = f"{probe_id} ({gene_name})" if gene_name else probe_id
+		
+		# Group by NORMALIZED trait: count studies and track best rank for each
+		# This groups variations like "Alzheimer's Disease" and "Alzheimer's disease (AD)"
+		trait_data: Dict[str, Dict[str, Any]] = {}
+		for assoc in associations:
+			raw_trait = assoc.get("trait", "Unknown")
+			norm_key, display_name = _normalize_trait_name(raw_trait)
+			rank = assoc.get("rank")
+			# Skip if rank is None or not a number
+			if rank is None or not isinstance(rank, (int, float)):
+				rank = 99999
+			
+			if norm_key not in trait_data:
+				trait_data[norm_key] = {"display_name": display_name, "count": 0, "best_rank": rank}
+			
+			trait_data[norm_key]["count"] += 1
+			if rank < trait_data[norm_key]["best_rank"]:
+				trait_data[norm_key]["best_rank"] = rank
+		
+		# Calculate score based on study count and best rank
+		# More studies and better ranks = higher score
+		import math
+		scored_traits = []
+		for norm_key, data in trait_data.items():
+			display_name = data["display_name"]
+			count = data["count"]
+			best_rank = data["best_rank"]
+			
+			# Base score from study count (max ~0.5 for many studies)
+			# 1 study = 0.1, 2 = 0.18, 5 = 0.35, 10 = 0.5
+			count_score = min(0.5, 0.1 * math.log2(count + 1))
+			
+			# Rank bonus (max ~0.5 for rank 1)
+			# Rank 1 = 0.5, rank 10 = 0.25, rank 100 = 0.17, rank 1000 = 0.125
+			rank_score = 0.5 / (1 + math.log10(max(best_rank, 1)))
+			
+			total_score = round(count_score + rank_score, 2)
+			scored_traits.append((display_name, total_score, count, best_rank))
+		
+		# Sort by score (higher is better) and take top 10
+		sorted_traits = sorted(scored_traits, key=lambda x: x[1], reverse=True)[:10]
+		
+		for display_name, score, count, best_rank in sorted_traits:
+			rows.append({
+				"biomarkerSymbol": probe_id,
+				"biomarkerType": "DNA Methylation",
+				"biomarkerName": probe_name,
+				"disease": display_name,
+				"score": score,
+				"source": "EWAS Atlas",
+				"link": ewas_link,
+			})
+	else:
+		# No EWAS Atlas data - add a fallback row
+		rows.append({
+			"biomarkerSymbol": probe_id,
+			"biomarkerType": "DNA Methylation",
+			"biomarkerName": probe_id,
+			"disease": "No associations found in EWAS Atlas",
+			"score": None,
+			"source": "EWAS Atlas",
+			"link": ewas_link,
+		})
+	
+	return rows
+
+
 def _build_table_rows(
 	input_symbol: str,
 	hit: Dict[str, Any],
@@ -363,6 +560,7 @@ def _build_response_rows(genes: List[str]) -> Dict[str, Any]:
 	unmatched: List[str] = []
 	mirna_count = 0
 	gene_count = 0
+	methylation_count = 0
 
 	for symbol in genes:
 		rows: List[Dict[str, Any]] = []
@@ -375,9 +573,10 @@ def _build_response_rows(genes: List[str]) -> Dict[str, Any]:
 				if rows:
 					mirna_count += 1
 			elif biomarker_type == "DNA Methylation":
-				# DNA methylation probes - mark as unmatched for now
-				# Could add EWAS/methylation databases in the future
-				rows = []
+				# Handle DNA methylation probes with EWAS Atlas
+				rows = _build_methylation_table_rows(symbol)
+				if rows:
+					methylation_count += 1
 			else:
 				# Handle genes and miRNA genes with Open Targets
 				hit = _fetch_gene(symbol)
@@ -410,6 +609,7 @@ def _build_response_rows(genes: List[str]) -> Dict[str, Any]:
 		"unmatched": unmatched,
 		"mirnaCount": mirna_count,
 		"geneCount": gene_count,
+		"methylationCount": methylation_count,
 	}
 
 
@@ -430,6 +630,7 @@ def main() -> None:
 		"biomarkerCount": len(limited_symbols),
 		"geneCount": result.get("geneCount", 0),
 		"mirnaCount": result.get("mirnaCount", 0),
+		"methylationCount": result.get("methylationCount", 0),
 		"maxGenes": max_genes,
 		"table": {
 			"columns": TABLE_COLUMNS,
