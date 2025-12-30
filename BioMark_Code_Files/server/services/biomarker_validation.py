@@ -303,22 +303,28 @@ def _normalize_trait_name(trait: str) -> Tuple[str, str]:
 	# Remove trailing/leading whitespace
 	normalized = normalized.strip()
 	
-	# Common disease name mappings
+	# Common disease name mappings (without apostrophes for cleaner display)
 	disease_mappings = {
-		"alzheimer's disease": "Alzheimer's disease",
-		"alzheimer disease": "Alzheimer's disease",
-		"alzheimers disease": "Alzheimer's disease",
-		"parkinson's disease": "Parkinson's disease",
-		"parkinson disease": "Parkinson's disease",
-		"parkinsons disease": "Parkinson's disease",
+		"alzheimer's disease": "Alzheimer disease",
+		"alzheimer disease": "Alzheimer disease",
+		"alzheimers disease": "Alzheimer disease",
+		"parkinson's disease": "Parkinson disease",
+		"parkinson disease": "Parkinson disease",
+		"parkinsons disease": "Parkinson disease",
+		"huntington's disease": "Huntington disease",
+		"huntington disease": "Huntington disease",
+		"huntingtons disease": "Huntington disease",
+		"crohn's disease": "Crohn disease",
+		"crohn disease": "Crohn disease",
+		"crohns disease": "Crohn disease",
 		"type 2 diabetes": "Type 2 diabetes",
 		"type 2 diabetes mellitus": "Type 2 diabetes",
 		"t2d": "Type 2 diabetes",
 		"type 1 diabetes": "Type 1 diabetes",
 		"type 1 diabetes mellitus": "Type 1 diabetes",
 		"t1d": "Type 1 diabetes",
-		"body mass index": "Body mass index (BMI)",
-		"bmi": "Body mass index (BMI)",
+		"body mass index": "Body mass index",
+		"bmi": "Body mass index",
 		"breast cancer": "Breast cancer",
 		"breast carcinoma": "Breast cancer",
 		"lung cancer": "Lung cancer",
@@ -350,14 +356,11 @@ def _normalize_trait_name(trait: str) -> Tuple[str, str]:
 	# Check for exact match in mappings
 	if normalized in disease_mappings:
 		display = disease_mappings[normalized]
-		return (display.lower(), display)
+		return (display.lower().replace("'", ""), display)
 	
-	# Return normalized version with original capitalization preserved where possible
-	# Use original if it looks properly capitalized, otherwise title case the normalized
-	if original[0].isupper():
-		return (normalized, original)
-	else:
-		return (normalized, normalized.title())
+	# Remove apostrophes from display name
+	display_name = original.replace("'", "") if original[0].isupper() else normalized.title().replace("'", "")
+	return (normalized.replace("'", ""), display_name)
 
 
 def _fetch_ewas_atlas(probe_id: str) -> Optional[Dict[str, Any]]:
