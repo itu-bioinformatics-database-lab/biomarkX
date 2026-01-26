@@ -27,6 +27,16 @@ _METHOD_NAME_MAP = {
     'rank_product': 'Rank Product',
     'weighted_borda': 'Weighted Borda Count',
     'sum': 'Simple Sum',
+    'mean_weight': 'Mean Weight',
+    'median_weight': 'Median Weight',
+    'max_weight': 'Max Weight',
+    'geometric_mean_weight': 'Geometric Mean Weight',
+    'ta': 'Threshold Algorithm (TA)',
+    'median_rank': 'Median Rank',
+    'min_rank': 'Minimum (Best) Rank',
+    'mra': 'Median Rank Algorithm (MRA)',
+    'stuart': 'Stuart Rank Aggregation',
+    'rra': 'Robust Rank Aggregation (RRA)',
 }
 
 def _humanize_agg_label(label: str) -> str:

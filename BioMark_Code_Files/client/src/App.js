@@ -308,7 +308,7 @@ function App() {
   const [featureImportanceFinetune, setFeatureImportanceFinetune] = useState(false);
   const [numTopFeatures, setNumTopFeatures] = useState(20);
   // Aggregation for Combine step
-  const [aggregationMethod, setAggregationMethod] = useState('rrf');
+  const [aggregationMethod, setAggregationMethod] = useState('sum');
   const [aggregationWeights, setAggregationWeights] = useState('');
   const [rrfK, setRrfK] = useState(60);
   // Clustering Analysis Parameters
@@ -1675,6 +1675,12 @@ function App() {
     }));
 
     const sampleForComparison = sampleValue !== undefined ? sampleValue : selectedSampleColumn;
+
+    // Auto-advance if no merge is required and both columns are selected
+    if (!skipMergeGuard && !requiresMerge && normalizedIllness && sampleForComparison && !mergeCompleted && !mergeInProgress) {
+      await handleMergeFiles();
+    }
+
     const includedCount = includedUploads.length;
     const canAdvanceToStepFour = (candidateSample) => {
       if (!normalizedIllness || !candidateSample) return false;
@@ -1837,6 +1843,11 @@ function App() {
       ...prev,
       sampleColumn
     }));
+
+    // Auto-advance if no merge is required and both columns are selected
+    if (!skipMergeGuard && !requiresMerge && sampleColumn && illnessForComparison && !mergeCompleted && !mergeInProgress) {
+      handleMergeFiles();
+    }
 
     const includedCount = includedUploads.length;
     const canAdvanceToStepFour = () => {
@@ -3344,7 +3355,7 @@ function App() {
       <header className="app-header">
         <div className="app-version" aria-label="Application version">v2.3.0</div>
         <img src={process.env.PUBLIC_URL + "/logo192.png"} alt="Logo" />
-        <span>BIOMARKER ANALYSIS TOOL</span>
+        <span>BIOMARK-X: Biomarker Analysis Tool</span>
         
         <div className="header-buttons">
           <UserMenu 
@@ -4294,15 +4305,29 @@ function App() {
                         <HelpTooltip placement="right" text={<AggregationHelpContent />}>info</HelpTooltip>
                       </label>
                       <select value={aggregationMethod} onChange={(e) => setAggregationMethod(e.target.value)}>
-                        <option value="rrf">Reciprocal Rank Fusion</option>
-                        <option value="rank_product">Rank Product</option>
-                        <option value="weighted_borda">Weighted Borda Count</option>
-                        <option value="sum">Simple Sum</option>
+                        <optgroup label="Rank-based methods">
+                          <option value="sum">Mean Rank</option>
+                          <option value="weighted_borda">Weighted Borda Count (Weighted Mean Rank)</option>
+                          <option value="median_rank">Median Rank</option>
+                          <option value="mra">Median Rank Algorithm (MRA)</option>
+                          <option value="min_rank">Minimum (Best) Rank</option>
+                          <option value="rank_product">Geometric Mean Rank</option>
+                          <option value="stuart">Stuart Rank Aggregation</option>
+                          <option value="rra">Robust Rank Aggregation (RRA)</option>
+                          <option value="rrf">Reciprocal Rank Fusion (RRF)</option>
+                        </optgroup>
+                        <optgroup label="Weight-based methods">
+                          <option value="mean_weight">Mean Weight</option>
+                          <option value="median_weight">Median Weight</option>
+                          <option value="max_weight">Max Weight</option>
+                          <option value="geometric_mean_weight">Geometric Mean Weight</option>
+                          <option value="ta">Threshold Algorithm (TA)</option>
+                        </optgroup>
                       </select>
                       {aggregationMethod === 'weighted_borda' && (
                         <>
                           <label style={{ fontWeight: 600 }}>weights (JSON)</label>
-                          <input type="text" value={aggregationWeights} onChange={(e) => setAggregationWeights(e.target.value)} placeholder='{"shap":1.5,"anova":1.0,"t_test":1.0,"lime":1.2}' style={{ minWidth: 280 }} />
+                          <input type="text" value={aggregationWeights} onChange={(e) => setAggregationWeights(e.target.value)} placeholder='{"shap":1.5,"anova":1.0,"t_test":1.0,"lime":1.2}' style={{ minWidth: 350, fontSize: 16 }} />
                         </>
                       )}
                       {aggregationMethod === 'rrf' && (

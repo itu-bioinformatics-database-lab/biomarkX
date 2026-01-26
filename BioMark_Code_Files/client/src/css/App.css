@@ -3,6 +3,19 @@ body {
   font-family: Arial, sans-serif;
 }
 
+/* Global Dropdown Styles */
+select, option {
+  font-size: 16px;
+}
+
+.combine-aggregation-controls select {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background-color: white;
+  font-size: 16px;
+}
+
 @import './spinner.css';
 @import './step0-header.css';
 @import './step1-browseFile.css';

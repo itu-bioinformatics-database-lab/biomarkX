@@ -40,7 +40,7 @@ export default function Header({ onOpenUserGuide, onLogout, username, onViewGues
   return (
     <header className="app-header">
       <img src={process.env.PUBLIC_URL + "/logo192.png"} alt="Logo" />
-      <span>BIOMARKER ANALYSIS TOOL</span>
+      <span>BIOMARK-X: Biomarker Analysis Tool</span>
       
       <div className="header-buttons">
         <UserMenu 

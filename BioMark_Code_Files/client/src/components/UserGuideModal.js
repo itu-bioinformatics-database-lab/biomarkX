@@ -29,7 +29,7 @@ const UserGuideModal = ({ onClose }) => {
           {/* Additional tutorial text requested by the user */}
           <div className="guide-steps">
             <p>
-              ➡️ Access the source code on GitHub:
+              &#10145;&#65039; Access the source code on GitHub:
               {' '}
               <a
                 href="https://github.com/itu-bioinformatics-database-lab/biomark"
@@ -41,7 +41,7 @@ const UserGuideModal = ({ onClose }) => {
             </p>
 
             <p>
-              ➡️ Access the analysis report:
+              &#10145;&#65039; Access the analysis report:
               {' '}
               <a
                 href={buildUrl('/analysis-report')}
@@ -110,7 +110,7 @@ const UserGuideModal = ({ onClose }) => {
               <li>
                 <strong>Combine Biomarker Lists</strong>
                 <br />
-                After running at least two biomarker‑producing analyses (e.g., SHAP + ANOVA), set Top‑N and choose an aggregation method (RRF, Rank Product, Weighted Borda with JSON weights, or Sum), then click "Combine the above biomarker list in to one list". If multiple class pairs exist, select one. A summary heatmap and CSV download will be produced.
+                After running at least two biomarker‑producing analyses (e.g., SHAP + ANOVA), set Top‑N and choose an aggregation method, then click "Combine the above biomarker list in to one list". If multiple class pairs exist, select one. A summary heatmap and CSV download will be produced.
               </li>
 
               <li>

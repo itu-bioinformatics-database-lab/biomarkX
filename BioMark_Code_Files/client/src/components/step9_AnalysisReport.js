@@ -142,6 +142,13 @@ const AnalysisReport = ({
     return `hsl(205, 60%, ${lightness}%)`;
   };
 
+  const formatTotalScore = (score) => {
+    if (typeof score !== 'number' || Number.isNaN(score)) {
+      return null;
+    }
+    return String(Number(score.toFixed(4)));
+  };
+
   // Helper function to create validation views for a single validation result
   const createValidationViews = useCallback((validationResult) => {
     if (!validationResult) return null;
@@ -150,17 +157,18 @@ const AnalysisReport = ({
     const detailedTableColumns = Array.isArray(validationTable?.columns) && validationTable.columns.length > 0
       ? validationTable.columns
       : [
-          { key: 'geneSymbol', label: 'Gene' },
-          { key: 'geneName', label: 'Gene Name' },
+          { key: 'biomarkerSymbol', label: 'Biomarker' },
+          { key: 'biomarkerType', label: 'Type' },
+          { key: 'biomarkerName', label: 'Name' },
           { key: 'disease', label: 'Disease / Condition' },
           { key: 'score', label: 'Association Score' },
-          { key: 'link', label: 'Link' }
+          { key: 'source', label: 'Source' },
         ];
 
     const detailedTableRows = (!validationTable || !Array.isArray(validationTable.rows))
       ? []
       : validationTable.rows.map((row, index) => ({
-          __rowId: `${row.geneSymbol || 'gene'}-${index}`,
+          __rowId: `${row.biomarkerSymbol || row.geneSymbol || 'biomarker'}-${index}`,
           ...row,
         }));
 
@@ -168,7 +176,7 @@ const AnalysisReport = ({
     const diseaseMap = new Map();
     detailedTableRows.forEach((row) => {
       const diseaseName = row.disease || 'Unknown disease';
-      const biomarkerName = row.geneSymbol || row.geneName || 'Unknown biomarker';
+      const biomarkerName = row.biomarkerSymbol || row.geneSymbol || row.biomarkerName || row.geneName || 'Unknown biomarker';
       const score = normalizeScoreValue(row.score);
       if (!diseaseMap.has(diseaseName)) {
         diseaseMap.set(diseaseName, new Map());
@@ -185,17 +193,34 @@ const AnalysisReport = ({
       biomarkers: Array.from(biomarkersMap.entries())
         .map(([biomarker, score]) => ({ label: biomarker, score }))
         .sort((a, b) => a.label.localeCompare(b.label)),
+      totalScore: Array.from(biomarkersMap.values()).reduce((sum, value) => (
+        typeof value === 'number' && !Number.isNaN(value) ? sum + value : sum
+      ), 0),
     }));
 
-    // Biomarker view
+    diseasesViewRows.sort((a, b) => {
+      const scoreA = typeof a?.totalScore === 'number' ? a.totalScore : 0;
+      const scoreB = typeof b?.totalScore === 'number' ? b.totalScore : 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return String(a?.disease ?? '').localeCompare(String(b?.disease ?? ''));
+    });
+
+    const topDiseases = diseasesViewRows
+      .slice(0, 5)
+      .map((row) => String(row?.disease ?? '').trim())
+      .filter(Boolean);
+
+    // Biomarker view - group by biomarker symbol and type
     const biomarkerMap = new Map();
     detailedTableRows.forEach((row) => {
-      const biomarkerKey = row.geneSymbol || row.geneName || 'Unknown biomarker';
+      const biomarkerKey = row.biomarkerSymbol || row.geneSymbol || row.biomarkerName || row.geneName || 'Unknown biomarker';
       if (!biomarkerMap.has(biomarkerKey)) {
         biomarkerMap.set(biomarkerKey, {
-          geneSymbol: row.geneSymbol || biomarkerKey,
-          geneName: row.geneName || '',
+          biomarkerSymbol: row.biomarkerSymbol || row.geneSymbol || biomarkerKey,
+          biomarkerType: row.biomarkerType || 'Gene',
+          biomarkerName: row.biomarkerName || row.geneName || '',
           diseases: new Map(),
+          source: row.source || 'Open Targets',
           link: row.link || '',
         });
       }
@@ -212,11 +237,13 @@ const AnalysisReport = ({
 
     const biomarkerViewRows = Array.from(biomarkerMap.values()).map((entry, index) => ({
       __rowId: `biomarker-${index}`,
-      geneSymbol: entry.geneSymbol,
-      geneName: entry.geneName,
+      biomarkerSymbol: entry.biomarkerSymbol,
+      biomarkerType: entry.biomarkerType,
+      biomarkerName: entry.biomarkerName,
       diseases: Array.from(entry.diseases.entries())
         .map(([disease, score]) => ({ label: disease, score }))
         .sort((a, b) => a.label.localeCompare(b.label)),
+      source: entry.source,
       link: entry.link,
     }));
 
@@ -224,15 +251,19 @@ const AnalysisReport = ({
       classPairLabel: validationResult.classPair ? friendlyClassPair(validationResult.classPair) : null,
       timestamp: validationResult.timestamp ? new Date(validationResult.timestamp).toLocaleString() : null,
       geneCount: validationResult.geneCount,
+      biomarkerCount: validationResult.biomarkerCount,
+      mirnaCount: validationResult.mirnaCount,
       maxGenes: validationResult.maxGenes,
+      topDiseases,
       views: {
         biomarkers: {
           label: 'Biomarker view',
           columns: [
-            { key: 'geneSymbol', label: 'Biomarker' },
-            { key: 'geneName', label: 'Gene Name' },
+            { key: 'biomarkerSymbol', label: 'Biomarker' },
+            { key: 'biomarkerType', label: 'Type' },
+            { key: 'biomarkerName', label: 'Name' },
             { key: 'diseases', label: 'Diseases' },
-            { key: 'link', label: 'Link' },
+            { key: 'source', label: 'Source' },
           ],
           rows: biomarkerViewRows,
         },
@@ -241,6 +272,7 @@ const AnalysisReport = ({
           columns: [
             { key: 'disease', label: 'Disease / Condition' },
             { key: 'biomarkers', label: 'Biomarkers' },
+            { key: 'totalScore', label: 'Total Score' },
           ],
           rows: diseasesViewRows,
         },
@@ -333,6 +365,11 @@ const AnalysisReport = ({
         }
         if (key === 'score' && row[key] != null) {
           return toCsvValue(row[key]);
+        }
+        if (key === 'totalScore' && row[key] != null) {
+          const total = row[key];
+          const formatted = typeof total === 'number' ? formatTotalScore(total) : String(total);
+          return toCsvValue(formatted);
         }
         return toCsvValue(row[key]);
       }).join(';')
@@ -1319,6 +1356,11 @@ const AnalysisReport = ({
       {showValidationSection && processedValidations.map((validation, valIndex) => {
         const currentView = validation.views[activeValidationView] || validation.views.detailed;
         const hasRowsInView = currentView.rows.length > 0;
+        const topDiseaseSet = new Set(
+          (Array.isArray(validation.topDiseases) ? validation.topDiseases : [])
+            .map((name) => String(name ?? '').trim().toLowerCase())
+            .filter(Boolean)
+        );
         
         return (
           <div key={`validation-${valIndex}`} className="validation-results-panel">
@@ -1336,11 +1378,8 @@ const AnalysisReport = ({
                 )}
               </div>
               <div className="validation-results-meta">
-                {validation.geneCount && (
-                  <span>{validation.geneCount} genes checked</span>
-                )}
                 {validation.maxGenes && (
-                  <span>Limit: {validation.maxGenes}</span>
+                  <span>Biomarker Count: {validation.maxGenes}</span>
                 )}
                 {hasRowsInView && (
                   <button className="validation-download-button" onClick={() => handleDownloadValidationCsv(valIndex)}>
@@ -1365,7 +1404,7 @@ const AnalysisReport = ({
               ))}
             </div>
             <p className="validation-score-note">
-              Association score comes from Open Targets and reflects the strength of evidence linking a biomarker to a disease. Higher scores indicate stronger evidence.  
+              Association scores come from Open Targets (genes), JensenLab DISEASES (microRNAs), and EWAS Atlas (DNA methylation). Higher scores indicate stronger evidence. Scores are normalized to a 0-1 scale.
             </p>
             {hasRowsInView ? (
               <div className="validation-table-wrapper">
@@ -1400,13 +1439,14 @@ const AnalysisReport = ({
                             });
                             value = sortedBiomarkers;
                           }
-                          if (column.key === 'link') {
+                          if (column.key === 'source') {
+                            const link = row.link;
                             return (
                               <td key={`${row.__rowId}-${column.key}`}>
-                                {value ? (
-                                  <a href={value} target="_blank" rel="noreferrer">Open</a>
+                                {link ? (
+                                  <a href={link} target="_blank" rel="noreferrer">{value || 'Source'}</a>
                                 ) : (
-                                  '-'
+                                  value || '-'
                                 )}
                               </td>
                             );
@@ -1421,6 +1461,28 @@ const AnalysisReport = ({
                               </td>
                             );
                           }
+                          if (column.key === 'totalScore') {
+                            const display = typeof value === 'number' ? formatTotalScore(value) : null;
+                            return (
+                              <td
+                                key={`${row.__rowId}-${column.key}`}
+                              >
+                                {display ?? '-'}
+                              </td>
+                            );
+                          }
+                          if (column.key === 'disease') {
+                            const diseaseLabel = String(value ?? '');
+                            const isDiseasesView = activeValidationView === 'diseases';
+                            const isTopDisease = isDiseasesView && topDiseaseSet.has(diseaseLabel.trim().toLowerCase());
+                            return (
+                              <td key={`${row.__rowId}-${column.key}`}>
+                                <span style={isTopDisease ? { color: '#CC0011' } : undefined}>
+                                  {diseaseLabel || '-'}
+                                </span>
+                              </td>
+                            );
+                          }
                           if (Array.isArray(value)) {
                             const hasScoredObjects = value.some((item) => item && typeof item === 'object');
                             if (hasScoredObjects) {
@@ -1430,9 +1492,11 @@ const AnalysisReport = ({
                                     const label = item?.label ?? String(item ?? '');
                                     const score = item?.score;
                                     const displayScore = score != null ? formatScore(score) : null;
+                                    const isBiomarkerViewDisease = activeValidationView === 'biomarkers' && column.key === 'diseases';
+                                    const isTopDisease = isBiomarkerViewDisease && topDiseaseSet.has(String(label).trim().toLowerCase());
                                     return (
                                       <React.Fragment key={`${row.__rowId}-${column.key}-${idx}`}>
-                                        <span>{label}</span>
+                                        <span style={isTopDisease ? { color: '#CC0011' } : undefined}>{label}</span>
                                         {displayScore ? (
                                           <span style={{ color: getScoreColor(score) }}>{` (${displayScore})`}</span>
                                         ) : null}
@@ -1451,7 +1515,7 @@ const AnalysisReport = ({
                           }
                           return (
                             <td key={`${row.__rowId}-${column.key}`}>
-                              {value || '-'}
+                              {value === 0 ? '0' : (value || '-')}
                             </td>
                           );
                         })}
