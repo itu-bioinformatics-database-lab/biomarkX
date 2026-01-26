@@ -538,79 +538,14 @@ app.post('/analyze', async (req, res) => {
         }
     }
 
-    // Check for existing analyses on the same dataset to establish parent-child relationship
-    let parentAnalysisId = null;
-    console.log('[Analyze] Looking for parent analysis...');
-    try {
-        let existingAnalysisQuery;
-        if (isMergedFile && sourceUploadIds && sourceUploadIds.length > 0) {
-            // For merged files, find the most recent analysis using the SAME SOURCE FILES
-            // This works even when re-merging generates a new UUID
-            console.log('[Analyze] Searching for existing merged analysis with sourceUploadIds:', sourceUploadIds);
-            if (req.userId) {
-                existingAnalysisQuery = await db.query(
-                    `SELECT id, parent_analysis_id FROM analyses 
-                     WHERE source_upload_ids = $1 
-                     AND user_id = $2 
-                     AND status IN ('finished', 'running', 'queued')
-                     ORDER BY created_at DESC 
-                     LIMIT 1`,
-                    [sourceUploadIds, req.userId]
-                );
-            } else {
-                existingAnalysisQuery = await db.query(
-                    `SELECT id, parent_analysis_id FROM analyses 
-                     WHERE source_upload_ids = $1 
-                     AND session_id = $2 
-                     AND user_id IS NULL
-                     AND status IN ('finished', 'running', 'queued')
-                     ORDER BY created_at DESC 
-                     LIMIT 1`,
-                    [sourceUploadIds, req.sessionId]
-                );
-            }
-            console.log('[Analyze] Found existing merged analysis:', existingAnalysisQuery?.rows?.length > 0 ? existingAnalysisQuery.rows[0] : 'none');
-        } else if (derivedUploadIdForInsert) {
-            // For single files, find the most recent analysis using this upload ID
-            console.log('[Analyze] Searching for existing single file analysis with uploadId:', derivedUploadIdForInsert);
-            if (req.userId) {
-                existingAnalysisQuery = await db.query(
-                    `SELECT id, parent_analysis_id FROM analyses 
-                     WHERE upload_id = $1 
-                     AND user_id = $2 
-                     AND status IN ('finished', 'running', 'queued')
-                     ORDER BY created_at DESC 
-                     LIMIT 1`,
-                    [derivedUploadIdForInsert, req.userId]
-                );
-            } else {
-                existingAnalysisQuery = await db.query(
-                    `SELECT id, parent_analysis_id FROM analyses 
-                     WHERE upload_id = $1 
-                     AND session_id = $2 
-                     AND user_id IS NULL
-                     AND status IN ('finished', 'running', 'queued')
-                     ORDER BY created_at DESC 
-                     LIMIT 1`,
-                    [derivedUploadIdForInsert, req.sessionId]
-                );
-            }
-            console.log('[Analyze] Found existing single file analysis:', existingAnalysisQuery?.rows?.length > 0 ? existingAnalysisQuery.rows[0] : 'none');
-        }
-
-        // If we found an existing analysis, either use it as parent or find its root parent
-        if (existingAnalysisQuery && existingAnalysisQuery.rows.length > 0) {
-            const existingAnalysis = existingAnalysisQuery.rows[0];
-            
-            // If existing analysis has a parent, use that parent; otherwise use the existing analysis as parent
-            parentAnalysisId = existingAnalysis.parent_analysis_id || existingAnalysis.id;
-            console.log(`[Analyze] Linking new analysis ${analysisId} to parent ${parentAnalysisId}`);
-            console.log(`[Analyze] Parent analysis details:`, existingAnalysis);
-        } else {
-            console.log('[Analyze] No existing analysis found - this will be a parent analysis');
-        }
-    } catch (err) {
-        console.error('[Analyze] Error checking for parent analysis:', err);
+    // Parent-child relationship should ONLY be established if explicitly provided
+    // This happens when user clicks "Continue on this analysis" or "Perform Another Analysis"
+    let parentAnalysisId = req.body.parentAnalysisId || null;
+    
+    if (parentAnalysisId) {
+        console.log('[Analyze] Explicit parent analysis provided:', parentAnalysisId);
+    } else {
+        console.log('[Analyze] No parent analysis - this will be a standalone analysis');
     }
 
     // Record analysis start with metadata

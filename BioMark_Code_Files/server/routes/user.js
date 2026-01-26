@@ -152,6 +152,21 @@ router.get('/analyses', authMiddleware, async (req, res) => {
         }
         
         processedIds.add(analysis.id);
+      } else {
+        // This is a child analysis - check if parent exists in our list
+        const parentExists = enhancedAnalyses.some(a => a.id === analysis.parent_analysis_id);
+        
+        if (!parentExists) {
+          // Parent doesn't exist - treat this as a standalone analysis
+          console.log(`[User Analyses] Orphaned child analysis ${analysis.id} - treating as standalone`);
+          groupedAnalyses.push({
+            ...analysis,
+            isGroup: false,
+            parent_analysis_id: null // Clear parent reference since parent doesn't exist
+          });
+          processedIds.add(analysis.id);
+        }
+        // If parent exists, it will be processed when we encounter the parent
       }
     });
     
@@ -347,6 +362,172 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Error fetching analysis:', err);
     return res.status(500).json({ success: false, message: 'Failed to fetch analysis' });
+  }
+});
+
+// Get analysis continuation data - returns all info needed to restore the analysis state
+router.get('/analyses/:id/continue', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const sessionId = req.session_id;
+    const analysisId = req.params.id;
+    
+    // Get the main analysis
+    let analysis;
+    if (userId) {
+      const result = await db.query(`
+        SELECT 
+          a.id,
+          a.upload_id,
+          a.merged_file_id,
+          a.result_path,
+          a.status,
+          a.created_at,
+          a.analysis_metadata,
+          a.parent_analysis_id
+        FROM analyses a
+        WHERE a.id = $1 AND a.user_id = $2
+      `, [analysisId, userId]);
+      analysis = result.rows[0];
+    } else if (sessionId) {
+      const result = await db.query(`
+        SELECT 
+          a.id,
+          a.upload_id,
+          a.merged_file_id,
+          a.result_path,
+          a.status,
+          a.created_at,
+          a.analysis_metadata,
+          a.parent_analysis_id
+        FROM analyses a
+        WHERE a.id = $1 AND a.session_id = $2 AND a.user_id IS NULL
+      `, [analysisId, sessionId]);
+      analysis = result.rows[0];
+    } else {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+    
+    if (!analysis) {
+      return res.status(404).json({ success: false, message: 'Analysis not found' });
+    }
+    
+    // Get child analyses if this is a parent
+    let childAnalyses = [];
+    if (!analysis.parent_analysis_id) {
+      let childResult;
+      if (userId) {
+        childResult = await db.query(`
+          SELECT 
+            a.id,
+            a.upload_id,
+            a.merged_file_id,
+            a.result_path,
+            a.status,
+            a.created_at,
+            a.analysis_metadata,
+            a.parent_analysis_id
+          FROM analyses a
+          WHERE a.parent_analysis_id = $1 AND a.user_id = $2
+          ORDER BY a.created_at ASC
+        `, [analysisId, userId]);
+      } else if (sessionId) {
+        childResult = await db.query(`
+          SELECT 
+            a.id,
+            a.upload_id,
+            a.merged_file_id,
+            a.result_path,
+            a.status,
+            a.created_at,
+            a.analysis_metadata,
+            a.parent_analysis_id
+          FROM analyses a
+          WHERE a.parent_analysis_id = $1 AND a.session_id = $2 AND a.user_id IS NULL
+          ORDER BY a.created_at ASC
+        `, [analysisId, sessionId]);
+      }
+      if (childResult) {
+        childAnalyses = childResult.rows;
+      }
+    }
+    
+    // Parse metadata for all analyses
+    const allAnalyses = [analysis, ...childAnalyses];
+    const analysesData = allAnalyses.map(a => {
+      let meta = {};
+      if (a.analysis_metadata) {
+        try {
+          meta = JSON.parse(a.analysis_metadata);
+        } catch (err) {
+          console.error('Error parsing analysis metadata:', err);
+        }
+      }
+      
+      const imagePaths = a.result_path ? a.result_path.split(',').filter(p => p.trim()) : [];
+      const hasAfterFSFolder = imagePaths.some(p => /AfterFeatureSelection/i.test(p));
+      const producedFeatureScores = imagePaths.some(p => /(feature_importance|anova|t_test|shap|lime|feature_ranking)/i.test(p));
+      
+      return {
+        analysisId: a.id,
+        metadata: meta,
+        resultPath: a.result_path,
+        hasAfterFSFolder,
+        producedFeatureScores,
+        createdAt: a.created_at
+      };
+    });
+    
+    // Parse metadata for the main analysis (for file info)
+    let metadata = {};
+    if (analysis.analysis_metadata) {
+      try {
+        metadata = JSON.parse(analysis.analysis_metadata);
+      } catch (err) {
+        console.error('Error parsing analysis metadata:', err);
+      }
+    }
+    
+    // Get the upload/merged file info
+    let fileInfo = null;
+    if (analysis.merged_file_id) {
+      const fileResult = await db.query(
+        'SELECT id, original_name, server_path FROM uploads WHERE id = $1',
+        [analysis.merged_file_id]
+      );
+      if (fileResult.rows.length > 0) {
+        fileInfo = {
+          id: fileResult.rows[0].id,
+          filename: fileResult.rows[0].original_name,
+          filepath: fileResult.rows[0].server_path,
+          isMerged: true
+        };
+      }
+    } else if (analysis.upload_id) {
+      const fileResult = await db.query(
+        'SELECT id, original_name, server_path FROM uploads WHERE id = $1',
+        [analysis.upload_id]
+      );
+      if (fileResult.rows.length > 0) {
+        fileInfo = {
+          id: fileResult.rows[0].id,
+          filename: fileResult.rows[0].original_name,
+          filepath: fileResult.rows[0].server_path,
+          isMerged: false
+        };
+      }
+    }
+    
+    return res.json({
+      success: true,
+      continuationData: {
+        fileInfo,
+        analyses: analysesData // Return all analyses (parent + children)
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching analysis continuation data:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch analysis continuation data' });
   }
 });
 

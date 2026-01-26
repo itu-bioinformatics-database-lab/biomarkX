@@ -17,6 +17,7 @@ export default function AnalysisDetailPage() {
   const [analysisResults, setAnalysisResults] = useState([]);
   const [enrichmentAnalyses, setEnrichmentAnalyses] = useState([]);
   const [biomarkerValidations, setBiomarkerValidations] = useState([]);
+  const [continueLoading, setContinueLoading] = useState(false);
 
   // Function to fetch and parse CSV data for enrichment analyses
   const fetchEnrichmentResultTable = async (relativePath) => {
@@ -245,6 +246,31 @@ export default function AnalysisDetailPage() {
       return payload.isGuest === true;
     } catch (e) {
       return true;
+    }
+  };
+
+  const handleContinueAnalysis = async () => {
+    setContinueLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get(`/api/user/analyses/${analysisId}/continue`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data.success) {
+        const { continuationData } = response.data;
+        
+        // Store continuation data in localStorage to be picked up by App.js
+        localStorage.setItem('continuationData', JSON.stringify(continuationData));
+        
+        // Navigate to home page with a flag to continue
+        navigate('/?continue=true');
+      }
+    } catch (error) {
+      console.error('Error loading continuation data:', error);
+      alert('Failed to load analysis data. Please try again.');
+    } finally {
+      setContinueLoading(false);
     }
   };
 
@@ -703,6 +729,73 @@ export default function AnalysisDetailPage() {
                   biomarkerValidationResults={biomarkerValidations}
                   canValidateBiomarkers={false}
                 />
+              </div>
+              
+              {/* Continue Analysis Button */}
+              <div className="continue-analysis-section" style={{ 
+                marginTop: '30px', 
+                padding: '20px', 
+                background: '#f8f9fa', 
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
+                <p style={{ 
+                  marginBottom: '15px', 
+                  fontSize: '16px', 
+                  color: '#495057',
+                  fontWeight: '500'
+                }}>
+                  Want to perform additional analyses on this dataset?
+                </p>
+                <button 
+                  className="continue-analysis-button"
+                  onClick={handleContinueAnalysis}
+                  disabled={continueLoading}
+                  style={{
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '14px 32px',
+                    borderRadius: '8px',
+                    cursor: continueLoading ? 'not-allowed' : 'pointer',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                    transition: 'all 0.3s ease',
+                    opacity: continueLoading ? 0.7 : 1
+                  }}
+                  onMouseOver={(e) => {
+                    if (!continueLoading) {
+                      e.target.style.transform = 'translateY(-2px)';
+                      e.target.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)';
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    e.target.style.transform = 'translateY(0)';
+                    e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)';
+                  }}
+                >
+                  {continueLoading ? (
+                    <>
+                      <span className="spinner" style={{
+                        display: 'inline-block',
+                        width: '16px',
+                        height: '16px',
+                        border: '2px solid rgba(255, 255, 255, 0.3)',
+                        borderTopColor: 'white',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite',
+                        marginRight: '8px',
+                        verticalAlign: 'middle'
+                      }}></span>
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      🔄 Continue on this Analysis
+                    </>
+                  )}
+                </button>
               </div>
             </>
           );

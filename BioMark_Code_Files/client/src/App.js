@@ -546,6 +546,299 @@ function App() {
       if (saved) setDefaultNotifyEmail(saved);
     } catch (e) {}
   }, []);
+  
+  // Handle continuation from Analysis Detail page
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const shouldContinue = params.get('continue') === 'true';
+    
+    if (shouldContinue) {
+      const continuationDataStr = localStorage.getItem('continuationData');
+      if (continuationDataStr) {
+        // Use IIFE for async operations inside useEffect
+        (async () => {
+        try {
+          const continuationData = JSON.parse(continuationDataStr);
+          const { analyses, fileInfo } = continuationData;
+          
+          // Clear the continuation data from localStorage
+          localStorage.removeItem('continuationData');
+          
+          // Remove the continue parameter from URL
+          navigate('/', { replace: true });
+          
+          // Process all analyses (parent + children)
+          if (analyses && analyses.length > 0) {
+            let hasAfterFS = false;
+            let canProduceFS = false;
+            
+            // Add all analyses to previousAnalyses
+            analyses.forEach(analysisData => {
+              const { metadata, resultPath, hasAfterFSFolder, producedFeatureScores } = analysisData;
+              
+              // Parse result paths - filter out:
+              // 1. CSV files (they should not be shown as images)
+              // 2. Summary of statistical methods plots (handled by summarizeAnalyses)
+              const allPaths = resultPath ? resultPath.split(',').filter(p => p.trim()) : [];
+              const imagePaths = allPaths.filter(p => {
+                const lowerPath = p.toLowerCase();
+                // Exclude CSV files
+                if (lowerPath.endsWith('.csv')) return false;
+                // Exclude summary of statistical methods plots (they're shown in biomarker summary section)
+                if (lowerPath.includes('summarystatisticalmethods') || lowerPath.includes('summary_of_statistical_methods')) return false;
+                return true;
+              });
+              
+              // Construct analysis object similar to what openAnalysisResults does
+              const newAnalysis = {
+                results: imagePaths,
+                time: metadata?.executionTime || "N/A",
+                date: new Date(analysisData.createdAt).toLocaleString('en-GB'),
+                parameters: metadata,
+                analysisInfo: {
+                  statisticalTest: metadata?.analysisMethods?.differential || [],
+                  dimensionalityReduction: metadata?.analysisMethods?.clustering || [],
+                  classificationAnalysis: metadata?.analysisMethods?.classification || [],
+                  modelExplanation: []
+                },
+                bestParams: metadata?.bestParams || null,
+                analysisId: analysisData.analysisId
+              };
+              
+              // Update feature selection flags
+              if (producedFeatureScores) canProduceFS = true;
+              if (hasAfterFSFolder) hasAfterFS = true;
+              
+              // Add to previous analyses
+              setPreviousAnalyses((prev) => [...prev, newAnalysis]);
+              setAnalysisInformation((prev) => [...prev, metadata]);
+              
+              // Check if pathway analysis can be run (check original paths for CSV)
+              const hasFeatureRanking = allPaths.some(p => /feature_ranking.*\.csv$/i.test(p));
+              if (hasFeatureRanking) setCanRunPathwayAnalysis(true);
+            });
+            
+            // Set feature selection flags based on all analyses
+            if (canProduceFS) setCanUseAfterFS(true);
+            if (hasAfterFS) { 
+              setAfterFeatureSelection(true); 
+              setCanUseAfterFS(true); 
+            }
+            
+            // Set the current analysis ID (use the first/parent analysis)
+            setCurrentAnalysisId(analyses[0].analysisId);
+            
+            // Restore Step 3 & 4 information from metadata (but don't show steps yet)
+            // Use the first analysis metadata for the file info
+            const firstMetadata = analyses[0]?.metadata || {};
+            if (fileInfo && firstMetadata) {
+              const filePath = fileInfo.filepath;
+            
+              // Restore file info
+              if (fileInfo.isMerged) {
+                // For merged files, restore merge metadata
+                setMergeMetadata({
+                  filePath: filePath,
+                  fileName: fileInfo.filename
+                });
+                setMergeCompleted(true);
+              } else {
+                // For single files, restore uploadedInfo
+                setUploadedInfo({
+                  filePath: filePath,
+                  name: fileInfo.filename
+                });
+              }
+              
+              // Fetch columns for the file to ensure they're available
+              // This is async but we don't wait for it - it will populate uploadContexts
+              fetchAllColumnsInBackground(filePath, { silent: true }).catch(err => {
+                console.warn('[Continuation] Failed to fetch columns:', err);
+              });
+              
+              // Restore columns from metadata (silently, for when user clicks "Perform Another Analysis")
+              if (firstMetadata.illnessColumn) {
+                setSelectedIllnessColumn(firstMetadata.illnessColumn);
+              }
+              if (firstMetadata.sampleColumn) {
+                setSelectedSampleColumn(firstMetadata.sampleColumn);
+              }
+              if (firstMetadata.nonFeatureColumns) {
+                setNonFeatureColumns(firstMetadata.nonFeatureColumns);
+              }
+              
+              // Restore selected classes (silently, for when user clicks "Perform Another Analysis")
+              if (firstMetadata.selectedClasses && Array.isArray(firstMetadata.selectedClasses)) {
+                setselectedClasses(firstMetadata.selectedClasses);
+              }
+              
+              // Update upload context with the file information
+              // Note: columns will be populated by fetchAllColumnsInBackground
+              updateUploadContext(filePath, (prev) => ({
+                ...prev,
+                illnessColumn: firstMetadata.illnessColumn || '',
+                sampleColumn: firstMetadata.sampleColumn || '',
+                nonFeatureColumns: firstMetadata.nonFeatureColumns || []
+                // Don't set classTable here - it will be fetched when needed
+              }));
+              
+              // Trigger class fetch in background (non-blocking)
+              if (firstMetadata.illnessColumn) {
+                handleIllnessColumnSelection(firstMetadata.illnessColumn, {
+                  skipSampleReset: true,
+                  sampleValue: firstMetadata.sampleColumn,
+                  skipMergeGuard: true,
+                  overrideFilePath: filePath,
+                  allowStepFour: true,
+                  forceFetch: true
+                }).catch(err => {
+                  console.error('[Continuation] Error fetching classes:', err);
+                });
+              }
+              
+              console.log('[Continuation] Restored Step 3 & 4 info (silently):', {
+                filePath,
+                illnessColumn: firstMetadata.illnessColumn,
+                sampleColumn: firstMetadata.sampleColumn,
+                selectedClasses: firstMetadata.selectedClasses,
+                totalAnalyses: analyses.length
+              });
+            }
+            
+            // Set up anotherAnalysis array to render all analyses
+            // anotherAnalysis controls which sections are rendered
+            const analysisIndices = analyses.map((_, idx) => idx);
+            setAnotherAnalysis(analysisIndices);
+            
+            // Restore pathway enrichment analyses from all analyses
+            const allEnrichmentAnalyses = [];
+            const allBiomarkerSummaries = [];
+            const allBiomarkerValidations = [];
+            
+            for (const analysisData of analyses) {
+              const meta = analysisData.metadata || {};
+              
+              // Restore pathway analyses (enrichment)
+              if (meta.pathwayAnalyses && Array.isArray(meta.pathwayAnalyses)) {
+                for (const pathway of meta.pathwayAnalyses) {
+                  // Fetch the enrichment table data
+                  let table = null;
+                  if (pathway.resultPath) {
+                    try {
+                      const url = buildUrl(`/${pathway.resultPath}`);
+                      const response = await apiFetch(url);
+                      if (response.ok) {
+                        const rawText = (await response.text()).replace(/^\uFEFF/, '').trim();
+                        if (rawText) {
+                          const lines = rawText.split(/\r?\n/).filter((line) => line.trim().length > 0);
+                          if (lines.length > 0) {
+                            const delimiter = [';', '\t', ','].find((del) => lines[0].includes(del)) || ',';
+                            const cleanCell = (value) => value.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
+                            const headers = lines[0].split(delimiter).map(cleanCell);
+                            const rows = lines.slice(1).map((line) => line.split(delimiter).map(cleanCell));
+                            table = { headers, rows, delimiter };
+                          }
+                        }
+                      }
+                    } catch (err) {
+                      console.warn('[Continuation] Failed to load enrichment table:', err);
+                    }
+                  }
+                  
+                  allEnrichmentAnalyses.push({
+                    id: pathway.runId || Date.now(),
+                    analysisType: pathway.type,
+                    analysisLabel: pathway.label || pathway.type,
+                    analysisDisplayName: pathway.displayName,
+                    geneSet: pathway.geneSet || '',
+                    summary: pathway.summary || '',
+                    significantPathwayCount: pathway.significantPathwayCount || 0,
+                    totalPathways: pathway.totalPathways || 0,
+                    inputGeneCount: pathway.inputGeneCount || 0,
+                    classPair: pathway.classPair || null,
+                    downloadUrl: pathway.resultPath ? buildUrl(`/${pathway.resultPath}`) : null,
+                    rawPath: pathway.resultPath || null,
+                    table,
+                    timestamp: pathway.timestamp || Date.now(),
+                  });
+                }
+              }
+              
+              // Restore biomarker summaries
+              if (meta.biomarkerSummaries && Array.isArray(meta.biomarkerSummaries)) {
+                for (const summary of meta.biomarkerSummaries) {
+                  allBiomarkerSummaries.push({
+                    classPair: summary.classPair,
+                    imagePath: summary.imagePath,
+                    csvPath: summary.csvPath,
+                    featureCount: summary.featureCount,
+                    aggregationLabel: summary.aggregationLabel || '',
+                    timestamp: summary.timestamp || Date.now(),
+                    version: 1
+                  });
+                }
+              }
+              
+              // Restore biomarker validations
+              if (meta.biomarkerValidations && Array.isArray(meta.biomarkerValidations)) {
+                allBiomarkerValidations.push(...meta.biomarkerValidations);
+              } else if (meta.biomarkerValidation) {
+                // Legacy support: single validation object
+                allBiomarkerValidations.push(meta.biomarkerValidation);
+              }
+            }
+            
+            // Set the restored enrichment analyses
+            if (allEnrichmentAnalyses.length > 0) {
+              setEnrichmentAnalyses(allEnrichmentAnalyses);
+              // Mark the completed enrichment types
+              const completedTypes = {};
+              allEnrichmentAnalyses.forEach(e => {
+                if (e.analysisType) completedTypes[e.analysisType] = true;
+              });
+              setCompletedEnrichmentTypes(completedTypes);
+            }
+            
+            // Set the restored biomarker summaries
+            if (allBiomarkerSummaries.length > 0) {
+              setSummarizeAnalyses(allBiomarkerSummaries);
+              setCanRunPathwayAnalysis(true);
+            }
+            
+            // Set the most recent biomarker validation result
+            if (allBiomarkerValidations.length > 0) {
+              // Use the most recent validation
+              const latestValidation = allBiomarkerValidations[allBiomarkerValidations.length - 1];
+              setValidationResult(latestValidation);
+            }
+          }
+          
+          // Hide all steps initially - only show results
+          setShowStepOne(false);
+          setShowStepTwo(false);
+          setShowStepThree(false);
+          setShowStepFour(false);
+          setShowStepFive(false);
+          setShowStepSix(false);
+          setShowStepAnalysis(false);
+          
+          // Scroll to results
+          setTimeout(() => { 
+            if (pageRef.current) {
+              pageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }, 300);
+          
+          console.log('[Continuation] Analysis loaded successfully');
+        } catch (error) {
+          console.error('[Continuation] Error parsing continuation data:', error);
+          setError('Failed to load analysis data. Please try again from My Analysis Results.');
+        }
+        })();
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, navigate, updateUploadContext]);
 
   useEffect(() => {
     if (requiresMerge) {
@@ -1952,6 +2245,23 @@ function App() {
   };
 
   const buildRunPayload = async () => {
+    // Determine if this is a child analysis
+    // It's a child if we have previous analyses and they have the same file
+    // Always use the FIRST (root/parent) analysis ID, not the last child
+    let parentId = null;
+    if (previousAnalyses.length > 0) {
+      // Use the first analysis as the parent (root analysis)
+      const firstAnalysis = previousAnalyses[0];
+      const firstInfo = analysisInformation[0];
+      
+      // Check if we're analyzing the same file
+      if (firstInfo && firstInfo.filePath === analysisFilePath) {
+        // This is a child analysis - use the analysisId from the first/root analysis
+        parentId = firstAnalysis.analysisId;
+        console.log('[buildRunPayload] This is a child analysis, parent (root):', parentId);
+      }
+    }
+    
     return {
       filePath: analysisFilePath,
       IlnessColumnName: selectedIllnessColumn,
@@ -1984,7 +2294,8 @@ function App() {
       verbose: verbose,
       testSize: testSize,
       nFolds: nFolds,
-      datasetNames: datasetNamesForReport // Add dataset names for PDF filename
+      datasetNames: datasetNamesForReport, // Add dataset names for PDF filename
+      parentAnalysisId: parentId // Include parent ID if this is a child analysis
     };
   };
 
@@ -2174,6 +2485,27 @@ function App() {
     if (!pendingAnalysis) return;
     
     const { analysis, payload, hasAfterFSFolder, producedFeatureScores } = pendingAnalysis;
+    
+    // Restore the file path from the payload so analysisFilePath will be available
+    // This is needed because we clear uploadedInfo and mergeMetadata when analysis is queued
+    if (payload?.filePath) {
+      const isMergedFile = payload.filePath.includes('_merged_dataset');
+      if (isMergedFile) {
+        // Restore merge metadata for merged files
+        setMergeMetadata({
+          filePath: payload.filePath,
+          name: payload.datasetNames?.[0] || 'Merged Dataset',
+          size: null
+        });
+      } else {
+        // Restore uploadedInfo for single files
+        setUploadedInfo({
+          filePath: payload.filePath,
+          name: payload.datasetNames?.[0] || 'Uploaded File',
+          size: null
+        });
+      }
+    }
     
     // Update feature selection flags
     if (producedFeatureScores) setCanUseAfterFS(true);
@@ -2636,12 +2968,28 @@ function App() {
         } else {
           console.log('[handlePerformAnotherAnalysis] Using existing columns from context:', hasContext.columns?.length, 'columns');
         }
+        
+        // Trigger class fetch if we have illness column
+        // This ensures the chart is fetched and shown in Step 4
+        // Don't await - let it load in background like the normal flow
+        if (savedIllnessColumn) {
+          console.log('[handlePerformAnotherAnalysis] Triggering class fetch for chart');
+          handleIllnessColumnSelection(savedIllnessColumn, {
+            skipSampleReset: true,
+            sampleValue: savedSampleColumn,
+            skipMergeGuard: true,
+            overrideFilePath: savedFilePath,
+            allowStepFour: true
+          }).catch(err => {
+            console.error('[handlePerformAnotherAnalysis] Error fetching classes:', err);
+          });
+        }
       }
     } else {
       console.log('[handlePerformAnotherAnalysis] No last payload found!');
     }
 
-    // Show steps 3-6 for re-analysis
+    // Show steps 3-6 for re-analysis immediately (don't wait for chart)
     // For merged files, skip Step 4 (merge step) since we're continuing with same dataset
     const skipMergeStep = savedFilePath?.includes('_merged_dataset');
     console.log('[handlePerformAnotherAnalysis] Skip merge step?', skipMergeStep);
@@ -2649,7 +2997,7 @@ function App() {
     setShowStepOne(false);
     setShowStepTwo(false);
     setShowStepThree(true);
-    setShowStepFour(!skipMergeStep); // Hide merge step for merged files
+    setShowStepFour(true); // Always show Step 4 (class selection) - it's not the merge step
     setShowStepFive(false);
     setShowStepSix(false);
     setShowStepAnalysis(false);
@@ -2754,15 +3102,13 @@ function App() {
 
   // Final Adımı Summarize: İstatistiksel yöntemleri özetle
   const handleSummarizeStatisticalMethods = async (selectedClassPair = null) => {
-    if (!analysisFilePath) {
-        setError("Cannot summarize: File path is missing.");
-    }
     // Synchronous guard against rapid double-clicks
     if (summarizeLockRef.current) return;
     summarizeLockRef.current = true;
-    if (!uploadedInfo?.filePath) {
+    
+    if (!analysisFilePath) {
         setCombineError("Cannot summarize: File path is missing.");
-      summarizeLockRef.current = false;
+        summarizeLockRef.current = false;
         return;
     }
 
@@ -3039,7 +3385,7 @@ function App() {
                 </div>
                 <div className="notification-text">
                   <strong>Analysis Running</strong>
-                  <p>Your analysis is currently being processed ({analysisProgress}%)</p>
+                  <p>Your analysis is currently being processed</p>
                 </div>
               </>
             )}
