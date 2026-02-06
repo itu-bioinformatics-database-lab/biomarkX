@@ -710,59 +710,15 @@ function App() {
             const analysisIndices = analyses.map((_, idx) => idx);
             setAnotherAnalysis(analysisIndices);
             
-            // Restore pathway enrichment analyses from all analyses
-            const allEnrichmentAnalyses = [];
+            // Restore biomarker summaries and validations from all analyses
+            // NOTE: We intentionally do NOT restore enrichment/pathway analyses when continuing
+            // This is by design - the user should not see previous pathway enrichment results
+            // in the continue screen. They can run new enrichment analyses if needed.
             const allBiomarkerSummaries = [];
             const allBiomarkerValidations = [];
             
             for (const analysisData of analyses) {
               const meta = analysisData.metadata || {};
-              
-              // Restore pathway analyses (enrichment)
-              if (meta.pathwayAnalyses && Array.isArray(meta.pathwayAnalyses)) {
-                for (const pathway of meta.pathwayAnalyses) {
-                  // Fetch the enrichment table data
-                  let table = null;
-                  if (pathway.resultPath) {
-                    try {
-                      const url = buildUrl(`/${pathway.resultPath}`);
-                      const response = await apiFetch(url);
-                      if (response.ok) {
-                        const rawText = (await response.text()).replace(/^\uFEFF/, '').trim();
-                        if (rawText) {
-                          const lines = rawText.split(/\r?\n/).filter((line) => line.trim().length > 0);
-                          if (lines.length > 0) {
-                            const delimiter = [';', '\t', ','].find((del) => lines[0].includes(del)) || ',';
-                            const cleanCell = (value) => value.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
-                            const headers = lines[0].split(delimiter).map(cleanCell);
-                            const rows = lines.slice(1).map((line) => line.split(delimiter).map(cleanCell));
-                            table = { headers, rows, delimiter };
-                          }
-                        }
-                      }
-                    } catch (err) {
-                      console.warn('[Continuation] Failed to load enrichment table:', err);
-                    }
-                  }
-                  
-                  allEnrichmentAnalyses.push({
-                    id: pathway.runId || Date.now(),
-                    analysisType: pathway.type,
-                    analysisLabel: pathway.label || pathway.type,
-                    analysisDisplayName: pathway.displayName,
-                    geneSet: pathway.geneSet || '',
-                    summary: pathway.summary || '',
-                    significantPathwayCount: pathway.significantPathwayCount || 0,
-                    totalPathways: pathway.totalPathways || 0,
-                    inputGeneCount: pathway.inputGeneCount || 0,
-                    classPair: pathway.classPair || null,
-                    downloadUrl: pathway.resultPath ? buildUrl(`/${pathway.resultPath}`) : null,
-                    rawPath: pathway.resultPath || null,
-                    table,
-                    timestamp: pathway.timestamp || Date.now(),
-                  });
-                }
-              }
               
               // Restore biomarker summaries
               if (meta.biomarkerSummaries && Array.isArray(meta.biomarkerSummaries)) {
@@ -786,17 +742,6 @@ function App() {
                 // Legacy support: single validation object
                 allBiomarkerValidations.push(meta.biomarkerValidation);
               }
-            }
-            
-            // Set the restored enrichment analyses
-            if (allEnrichmentAnalyses.length > 0) {
-              setEnrichmentAnalyses(allEnrichmentAnalyses);
-              // Mark the completed enrichment types
-              const completedTypes = {};
-              allEnrichmentAnalyses.forEach(e => {
-                if (e.analysisType) completedTypes[e.analysisType] = true;
-              });
-              setCompletedEnrichmentTypes(completedTypes);
             }
             
             // Set the restored biomarker summaries
@@ -2346,8 +2291,10 @@ function App() {
         
         console.log(`[Frontend] Analysis ${analysisId} queued. Starting polling...`);
         
-        // Show Step 1 so users can continue using the system while analysis runs
-        setShowStepOne(true);
+        // Only show Step 1 if there are no previous results to display
+        // If user already has results from earlier analyses, keep showing those instead
+        const hasExistingResults = previousAnalyses.length > 0;
+        setShowStepOne(!hasExistingResults);
         setShowStepTwo(false);
         setShowStepThree(false);
         setShowStepFour(false);

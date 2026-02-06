@@ -18,6 +18,8 @@ export default function AnalysisDetailPage() {
   const [enrichmentAnalyses, setEnrichmentAnalyses] = useState([]);
   const [biomarkerValidations, setBiomarkerValidations] = useState([]);
   const [continueLoading, setContinueLoading] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
 
   // Function to fetch and parse CSV data for enrichment analyses
   const fetchEnrichmentResultTable = async (relativePath) => {
@@ -274,6 +276,38 @@ export default function AnalysisDetailPage() {
     }
   };
 
+  const startEditingName = () => {
+    setEditingName(true);
+    setEditNameValue(analysis.display_name || analysis.filename || '');
+  };
+
+  const cancelEditingName = () => {
+    setEditingName(false);
+    setEditNameValue('');
+  };
+
+  const saveDisplayName = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.put(`/api/user/analyses/${analysisId}/display-name`,
+        { display_name: editNameValue },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.data.success) {
+        setAnalysis(prev => ({ ...prev, display_name: response.data.analysis.display_name }));
+        setEditingName(false);
+        setEditNameValue('');
+      }
+    } catch (err) {
+      console.error('Error updating display name:', err);
+    }
+  };
+
+  const getDisplayName = () => {
+    return analysis?.display_name || analysis?.filename || 'Unknown';
+  };
+
   if (loading) {
     return (
       <div className="analysis-detail-page">
@@ -361,7 +395,36 @@ export default function AnalysisDetailPage() {
         </div>
 
         <div className="detail-header">
-          <h1>Analysis Details</h1>
+          {editingName ? (
+            <div className="analysis-title-edit">
+              <input
+                type="text"
+                value={editNameValue}
+                onChange={(e) => setEditNameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveDisplayName();
+                  if (e.key === 'Escape') cancelEditingName();
+                }}
+                autoFocus
+                placeholder="Enter analysis name..."
+                className="analysis-title-input"
+                style={{ minWidth: '300px', width: `${Math.max(300, editNameValue.length * 18 + 40)}px` }}
+              />
+              <button className="title-save-btn" onClick={saveDisplayName} title="Save">✓</button>
+              <button className="title-cancel-btn" onClick={cancelEditingName} title="Cancel">✕</button>
+            </div>
+          ) : (
+            <h1>
+              <span className="analysis-title-text" onClick={startEditingName} title="Click to rename">
+                {getDisplayName()}
+              </span>
+              {!isGuestUser() && (
+                <button className="title-rename-btn" onClick={startEditingName} title="Rename analysis">
+                  ✏️
+                </button>
+              )}
+            </h1>
+          )}
         </div>
 
         {/* Analysis Information Card(s) - Show separately for each analysis in group */}
@@ -725,23 +788,22 @@ export default function AnalysisDetailPage() {
                   summaryImagePath=""
                   summarizeAnalyses={allBiomarkerSummaries}
                   enrichmentAnalyses={enrichmentAnalyses}
-                  datasetFileName={analysis.filename || 'Unknown'}
+                  datasetFileName={analysis.display_name || analysis.filename || 'Unknown'}
                   biomarkerValidationResults={biomarkerValidations}
                   canValidateBiomarkers={false}
                 />
               </div>
               
               {/* Continue Analysis Button */}
-              <div className="continue-analysis-section" style={{ 
-                marginTop: '30px', 
-                padding: '20px', 
+              <div className="continue-analysis-section" style={{                 marginTop: '4px', 
+                padding: '4px', 
                 background: '#f8f9fa', 
                 borderRadius: '8px',
                 textAlign: 'center'
               }}>
                 <p style={{ 
-                  marginBottom: '15px', 
-                  fontSize: '16px', 
+                  marginBottom: '12px', 
+                  fontSize: '15px', 
                   color: '#495057',
                   fontWeight: '500'
                 }}>

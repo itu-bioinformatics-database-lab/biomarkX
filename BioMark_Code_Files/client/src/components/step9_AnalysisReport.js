@@ -80,7 +80,7 @@ const AnalysisReport = ({
 
   const datasetNamesDisplay = datasetNameList.join(', ');
   const datasetSlug = datasetNameList.length > 0
-    ? datasetNameList.join('_').replace(/[\s,]+/g, '_').replace(/[^A-Za-z0-9_-]/g, '')
+    ? datasetNameList.join('_').replace(/[\s,]+/g, '_').replace(/[<>:"/\\|?*]/g, '')
     : 'Unknown_File';
 
   // Helper to render analysis type selections (supports old and new keys)

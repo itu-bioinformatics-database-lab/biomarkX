@@ -7,8 +7,12 @@ import json
 import os
 import re
 import sys
+import warnings
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
+# Suppress urllib3 SSL warnings (LibreSSL compatibility)
+warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
 import requests
 
@@ -173,7 +177,10 @@ def _read_payload() -> Dict[str, Any]:
 	if not raw:
 		raise ValueError("Input payload missing.")
 	try:
-		return json.loads(raw)
+		result = json.loads(raw)
+		if not isinstance(result, dict):
+			raise ValueError("Input payload must be a JSON object.")
+		return result
 	except json.JSONDecodeError as exc:  # pragma: no cover - defensive
 		raise ValueError("Input payload must be valid JSON.") from exc
 
@@ -239,6 +246,8 @@ def _fetch_gene(symbol: str) -> Optional[Dict[str, Any]]:
 	response = requests.get(MYGENE_ENDPOINT, params=params, timeout=12)
 	response.raise_for_status()
 	payload = response.json()
+	if not payload or not isinstance(payload, dict):
+		return None
 	hits = payload.get("hits")
 	if isinstance(hits, list) and hits:
 		return hits[0]
@@ -255,14 +264,15 @@ def _fetch_open_targets_rows(ensembl_id: str, size: int = 10) -> List[Dict[str, 
 	response = requests.post(OPEN_TARGETS_ENDPOINT, json=payload, timeout=15)
 	response.raise_for_status()
 	data = response.json()
+	if not data or not isinstance(data, dict):
+		return []
 	if "errors" in data:
 		raise ValueError(data["errors"][0].get("message", "Open Targets error"))
-	return (
-		data.get("data", {})
-		.get("target", {})
-		.get("associatedDiseases", {})
-		.get("rows", [])
-	)
+	# Use 'or {}' to handle cases where keys exist but values are None
+	data_obj = data.get("data") or {}
+	target_obj = data_obj.get("target") or {}
+	diseases_obj = target_obj.get("associatedDiseases") or {}
+	return diseases_obj.get("rows") or []
 
 
 def _get_mirbase_link(mirna_id: str) -> str:
@@ -401,8 +411,9 @@ def _build_methylation_table_rows(input_symbol: str) -> List[Dict[str, Any]]:
 		associations = ewas_data["associationList"]
 		
 		# Get related gene if available
-		related_genes = ewas_data.get("relatedTranscription", [])
-		gene_name = related_genes[0].get("geneName", "") if related_genes else ""
+		related_genes = ewas_data.get("relatedTranscription") or []
+		first_gene = related_genes[0] if isinstance(related_genes, list) and related_genes else None
+		gene_name = first_gene.get("geneName", "") if isinstance(first_gene, dict) else ""
 		probe_name = f"{probe_id} ({gene_name})" if gene_name else probe_id
 		
 		# Group by NORMALIZED trait: count studies and track best rank for each

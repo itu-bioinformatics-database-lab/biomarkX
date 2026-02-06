@@ -2,8 +2,12 @@ import json
 import os
 import sys
 import uuid
+import warnings
 from datetime import datetime
 from typing import List
+
+# Suppress urllib3 SSL warnings (LibreSSL compatibility)
+warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
 import pandas as pd
 from gseapy import enrichr
