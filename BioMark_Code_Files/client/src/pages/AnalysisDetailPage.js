@@ -17,6 +17,9 @@ export default function AnalysisDetailPage() {
   const [analysisResults, setAnalysisResults] = useState([]);
   const [enrichmentAnalyses, setEnrichmentAnalyses] = useState([]);
   const [biomarkerValidations, setBiomarkerValidations] = useState([]);
+  const [continueLoading, setContinueLoading] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
 
   // Function to fetch and parse CSV data for enrichment analyses
   const fetchEnrichmentResultTable = async (relativePath) => {
@@ -248,6 +251,63 @@ export default function AnalysisDetailPage() {
     }
   };
 
+  const handleContinueAnalysis = async () => {
+    setContinueLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get(`/api/user/analyses/${analysisId}/continue`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data.success) {
+        const { continuationData } = response.data;
+        
+        // Store continuation data in localStorage to be picked up by App.js
+        localStorage.setItem('continuationData', JSON.stringify(continuationData));
+        
+        // Navigate to home page with a flag to continue
+        navigate('/?continue=true');
+      }
+    } catch (error) {
+      console.error('Error loading continuation data:', error);
+      alert('Failed to load analysis data. Please try again.');
+    } finally {
+      setContinueLoading(false);
+    }
+  };
+
+  const startEditingName = () => {
+    setEditingName(true);
+    setEditNameValue(analysis.display_name || analysis.filename || '');
+  };
+
+  const cancelEditingName = () => {
+    setEditingName(false);
+    setEditNameValue('');
+  };
+
+  const saveDisplayName = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.put(`/api/user/analyses/${analysisId}/display-name`,
+        { display_name: editNameValue },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.data.success) {
+        setAnalysis(prev => ({ ...prev, display_name: response.data.analysis.display_name }));
+        setEditingName(false);
+        setEditNameValue('');
+      }
+    } catch (err) {
+      console.error('Error updating display name:', err);
+    }
+  };
+
+  const getDisplayName = () => {
+    return analysis?.display_name || analysis?.filename || 'Unknown';
+  };
+
   if (loading) {
     return (
       <div className="analysis-detail-page">
@@ -328,12 +388,43 @@ export default function AnalysisDetailPage() {
         </div>
       </header>
       <div className="detail-container">
-        <button className="back-button" onClick={() => navigate(isGuestUser() ? '/' : '/my-analyses')}>
-          &#11013; {isGuestUser() ? 'Back to Home' : 'Back to My Analyses'}
-        </button>
+        <div className="detail-action-buttons">
+          <button className="back-button" onClick={() => navigate(isGuestUser() ? '/' : '/my-analyses')}>
+            &#11013; {isGuestUser() ? 'Back to Home' : 'Back to My Analyses'}
+          </button>
+        </div>
 
         <div className="detail-header">
-          <h1>Analysis Details</h1>
+          {editingName ? (
+            <div className="analysis-title-edit">
+              <input
+                type="text"
+                value={editNameValue}
+                onChange={(e) => setEditNameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveDisplayName();
+                  if (e.key === 'Escape') cancelEditingName();
+                }}
+                autoFocus
+                placeholder="Enter analysis name..."
+                className="analysis-title-input"
+                style={{ minWidth: '300px', width: `${Math.max(300, editNameValue.length * 18 + 40)}px` }}
+              />
+              <button className="title-save-btn" onClick={saveDisplayName} title="Save">✓</button>
+              <button className="title-cancel-btn" onClick={cancelEditingName} title="Cancel">✕</button>
+            </div>
+          ) : (
+            <h1>
+              <span className="analysis-title-text" onClick={startEditingName} title="Click to rename">
+                {getDisplayName()}
+              </span>
+              {!isGuestUser() && (
+                <button className="title-rename-btn" onClick={startEditingName} title="Rename analysis">
+                  ✏️
+                </button>
+              )}
+            </h1>
+          )}
         </div>
 
         {/* Analysis Information Card(s) - Show separately for each analysis in group */}
@@ -680,27 +771,95 @@ export default function AnalysisDetailPage() {
           });
           
           return (
-            <div className="report-section">
-              <AnalysisReport
-                analysisResults={pdfAnalysisResults}
-                analysisDate={formatDate(analysis.created_at)}
-                executionTime={analysis.metadata?.executionTime || 'N/A'}
-                selectedClasses={allSelectedClasses}
-                selectedIllnessColumn={analysis.metadata?.illnessColumn || ''}
-                selectedAnalyzes={[
-                  ...(analysis.metadata?.analysisMethods?.differential || []),
-                  ...(analysis.metadata?.analysisMethods?.clustering || []),
-                  ...(analysis.metadata?.analysisMethods?.classification || [])
-                ]}
-                featureCount={20}
-                summaryImagePath=""
-                summarizeAnalyses={allBiomarkerSummaries}
-                enrichmentAnalyses={enrichmentAnalyses}
-                datasetFileName={analysis.filename || 'Unknown'}
-                biomarkerValidationResults={biomarkerValidations}
-                canValidateBiomarkers={false}
-              />
-            </div>
+            <>
+              <div className="report-section">
+                <AnalysisReport
+                  analysisResults={pdfAnalysisResults}
+                  analysisDate={formatDate(analysis.created_at)}
+                  executionTime={analysis.metadata?.executionTime || 'N/A'}
+                  selectedClasses={allSelectedClasses}
+                  selectedIllnessColumn={analysis.metadata?.illnessColumn || ''}
+                  selectedAnalyzes={[
+                    ...(analysis.metadata?.analysisMethods?.differential || []),
+                    ...(analysis.metadata?.analysisMethods?.clustering || []),
+                    ...(analysis.metadata?.analysisMethods?.classification || [])
+                  ]}
+                  featureCount={20}
+                  summaryImagePath=""
+                  summarizeAnalyses={allBiomarkerSummaries}
+                  enrichmentAnalyses={enrichmentAnalyses}
+                  datasetFileName={analysis.display_name || analysis.filename || 'Unknown'}
+                  biomarkerValidationResults={biomarkerValidations}
+                  canValidateBiomarkers={false}
+                />
+              </div>
+              
+              {/* Continue Analysis Button */}
+              <div className="continue-analysis-section" style={{                 marginTop: '4px', 
+                padding: '4px', 
+                background: '#f8f9fa', 
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
+                <p style={{ 
+                  marginBottom: '12px', 
+                  fontSize: '15px', 
+                  color: '#495057',
+                  fontWeight: '500'
+                }}>
+                  Want to perform additional analyses on this dataset?
+                </p>
+                <button 
+                  className="continue-analysis-button"
+                  onClick={handleContinueAnalysis}
+                  disabled={continueLoading}
+                  style={{
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '14px 32px',
+                    borderRadius: '8px',
+                    cursor: continueLoading ? 'not-allowed' : 'pointer',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                    transition: 'all 0.3s ease',
+                    opacity: continueLoading ? 0.7 : 1
+                  }}
+                  onMouseOver={(e) => {
+                    if (!continueLoading) {
+                      e.target.style.transform = 'translateY(-2px)';
+                      e.target.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)';
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    e.target.style.transform = 'translateY(0)';
+                    e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)';
+                  }}
+                >
+                  {continueLoading ? (
+                    <>
+                      <span className="spinner" style={{
+                        display: 'inline-block',
+                        width: '16px',
+                        height: '16px',
+                        border: '2px solid rgba(255, 255, 255, 0.3)',
+                        borderTopColor: 'white',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite',
+                        marginRight: '8px',
+                        verticalAlign: 'middle'
+                      }}></span>
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      🔄 Continue on this Analysis
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
           );
         })()}
       </div>

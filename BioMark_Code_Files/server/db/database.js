@@ -67,6 +67,17 @@ const initializeDatabase = async () => {
         END IF;
       END $$;
 
+      -- Add source_upload_ids column to track original files in merged datasets
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'analyses' AND column_name = 'source_upload_ids'
+        ) THEN
+          ALTER TABLE analyses ADD COLUMN source_upload_ids TEXT[];
+        END IF;
+      END $$;
+
       CREATE INDEX IF NOT EXISTS idx_analyses_session_id ON analyses(session_id);
       CREATE INDEX IF NOT EXISTS idx_analyses_user_id ON analyses(user_id);
       CREATE INDEX IF NOT EXISTS idx_analyses_upload_id ON analyses(upload_id);
@@ -81,6 +92,51 @@ const initializeDatabase = async () => {
         sent_at TIMESTAMP,
         error_message TEXT
       );
+
+      -- Create folders table for organizing analyses
+      CREATE TABLE IF NOT EXISTS folders (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES accounts(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_folders_user_id ON folders(user_id);
+
+      -- Add folder_ids column to analyses if it doesn't exist (array for multiple lists)
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'analyses' AND column_name = 'folder_ids'
+        ) THEN
+          ALTER TABLE analyses ADD COLUMN folder_ids TEXT[] DEFAULT '{}';
+        END IF;
+      END $$;
+
+      -- Add is_favorite column to analyses if it doesn't exist
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'analyses' AND column_name = 'is_favorite'
+        ) THEN
+          ALTER TABLE analyses ADD COLUMN is_favorite BOOLEAN DEFAULT FALSE;
+        END IF;
+      END $$;
+
+      -- Add display_name column to analyses if it doesn't exist (custom name set by user)
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'analyses' AND column_name = 'display_name'
+        ) THEN
+          ALTER TABLE analyses ADD COLUMN display_name TEXT DEFAULT NULL;
+        END IF;
+      END $$;
+
+      CREATE INDEX IF NOT EXISTS idx_analyses_is_favorite ON analyses(is_favorite);
     `);
     console.log('Database schema initialized successfully');
   } catch (err) {

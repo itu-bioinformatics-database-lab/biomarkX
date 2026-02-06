@@ -1,6 +1,6 @@
 import './css/App.css';
 import React, { useState, useRef , useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import BarChartWithSelection from './components/step4_BarChartWithSelection';
 import AnalysisSelection from './components/step5_AnalysisSelection';
 import ImagePopup from './components/step8-1_ImagePopup'; // Import the component
@@ -144,6 +144,7 @@ const normalizeAndSortClasses = (classArray = []) => {
 
 function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   
   // Authentication state
   const [token, setToken] = useState(localStorage.getItem('token') || null);
@@ -286,6 +287,15 @@ function App() {
   const [validationError, setValidationError] = useState('');
   const [validationResult, setValidationResult] = useState(null);
   const [validationGeneCap, setValidationGeneCap] = useState(DEFAULT_VALIDATION_GENE_LIMIT);
+  
+  // Queue-related state
+  const [analysisStatus, setAnalysisStatus] = useState(null); // 'queued', 'processing', 'finished', 'failed'
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [queuePosition, setQueuePosition] = useState(null);
+  const pollingIntervalRef = useRef(null);
+  const [pendingAnalysis, setPendingAnalysis] = useState(null); // Store completed analysis data
+  const [showAnalysisNotification, setShowAnalysisNotification] = useState(false);
+  
   // Parameter States
   const [useDefaultParams, setUseDefaultParams] = useState(true);
   // Differential Analysis Parameters
@@ -536,6 +546,244 @@ function App() {
       if (saved) setDefaultNotifyEmail(saved);
     } catch (e) {}
   }, []);
+  
+  // Handle continuation from Analysis Detail page
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const shouldContinue = params.get('continue') === 'true';
+    
+    if (shouldContinue) {
+      const continuationDataStr = localStorage.getItem('continuationData');
+      if (continuationDataStr) {
+        // Use IIFE for async operations inside useEffect
+        (async () => {
+        try {
+          const continuationData = JSON.parse(continuationDataStr);
+          const { analyses, fileInfo } = continuationData;
+          
+          // Clear the continuation data from localStorage
+          localStorage.removeItem('continuationData');
+          
+          // Remove the continue parameter from URL
+          navigate('/', { replace: true });
+          
+          // Process all analyses (parent + children)
+          if (analyses && analyses.length > 0) {
+            let hasAfterFS = false;
+            let canProduceFS = false;
+            
+            // Add all analyses to previousAnalyses
+            analyses.forEach(analysisData => {
+              const { metadata, resultPath, hasAfterFSFolder, producedFeatureScores } = analysisData;
+              
+              // Parse result paths - filter out:
+              // 1. CSV files (they should not be shown as images)
+              // 2. Summary of statistical methods plots (handled by summarizeAnalyses)
+              const allPaths = resultPath ? resultPath.split(',').filter(p => p.trim()) : [];
+              const imagePaths = allPaths.filter(p => {
+                const lowerPath = p.toLowerCase();
+                // Exclude CSV files
+                if (lowerPath.endsWith('.csv')) return false;
+                // Exclude summary of statistical methods plots (they're shown in biomarker summary section)
+                if (lowerPath.includes('summarystatisticalmethods') || lowerPath.includes('summary_of_statistical_methods')) return false;
+                return true;
+              });
+              
+              // Construct analysis object similar to what openAnalysisResults does
+              const newAnalysis = {
+                results: imagePaths,
+                time: metadata?.executionTime || "N/A",
+                date: new Date(analysisData.createdAt).toLocaleString('en-GB'),
+                parameters: metadata,
+                analysisInfo: {
+                  statisticalTest: metadata?.analysisMethods?.differential || [],
+                  dimensionalityReduction: metadata?.analysisMethods?.clustering || [],
+                  classificationAnalysis: metadata?.analysisMethods?.classification || [],
+                  modelExplanation: []
+                },
+                bestParams: metadata?.bestParams || null,
+                analysisId: analysisData.analysisId
+              };
+              
+              // Update feature selection flags
+              if (producedFeatureScores) canProduceFS = true;
+              if (hasAfterFSFolder) hasAfterFS = true;
+              
+              // Add to previous analyses
+              setPreviousAnalyses((prev) => [...prev, newAnalysis]);
+              setAnalysisInformation((prev) => [...prev, metadata]);
+              
+              // Check if pathway analysis can be run (check original paths for CSV)
+              const hasFeatureRanking = allPaths.some(p => /feature_ranking.*\.csv$/i.test(p));
+              if (hasFeatureRanking) setCanRunPathwayAnalysis(true);
+            });
+            
+            // Set feature selection flags based on all analyses
+            if (canProduceFS) setCanUseAfterFS(true);
+            if (hasAfterFS) { 
+              setAfterFeatureSelection(true); 
+              setCanUseAfterFS(true); 
+            }
+            
+            // Set the current analysis ID (use the first/parent analysis)
+            setCurrentAnalysisId(analyses[0].analysisId);
+            
+            // Restore Step 3 & 4 information from metadata (but don't show steps yet)
+            // Use the first analysis metadata for the file info
+            const firstMetadata = analyses[0]?.metadata || {};
+            if (fileInfo && firstMetadata) {
+              const filePath = fileInfo.filepath;
+            
+              // Restore file info
+              if (fileInfo.isMerged) {
+                // For merged files, restore merge metadata
+                setMergeMetadata({
+                  filePath: filePath,
+                  fileName: fileInfo.filename
+                });
+                setMergeCompleted(true);
+              } else {
+                // For single files, restore uploadedInfo
+                setUploadedInfo({
+                  filePath: filePath,
+                  name: fileInfo.filename
+                });
+              }
+              
+              // Fetch columns for the file to ensure they're available
+              // This is async but we don't wait for it - it will populate uploadContexts
+              fetchAllColumnsInBackground(filePath, { silent: true }).catch(err => {
+                console.warn('[Continuation] Failed to fetch columns:', err);
+              });
+              
+              // Restore columns from metadata (silently, for when user clicks "Perform Another Analysis")
+              if (firstMetadata.illnessColumn) {
+                setSelectedIllnessColumn(firstMetadata.illnessColumn);
+              }
+              if (firstMetadata.sampleColumn) {
+                setSelectedSampleColumn(firstMetadata.sampleColumn);
+              }
+              if (firstMetadata.nonFeatureColumns) {
+                setNonFeatureColumns(firstMetadata.nonFeatureColumns);
+              }
+              
+              // Restore selected classes (silently, for when user clicks "Perform Another Analysis")
+              if (firstMetadata.selectedClasses && Array.isArray(firstMetadata.selectedClasses)) {
+                setselectedClasses(firstMetadata.selectedClasses);
+              }
+              
+              // Update upload context with the file information
+              // Note: columns will be populated by fetchAllColumnsInBackground
+              updateUploadContext(filePath, (prev) => ({
+                ...prev,
+                illnessColumn: firstMetadata.illnessColumn || '',
+                sampleColumn: firstMetadata.sampleColumn || '',
+                nonFeatureColumns: firstMetadata.nonFeatureColumns || []
+                // Don't set classTable here - it will be fetched when needed
+              }));
+              
+              // Trigger class fetch in background (non-blocking)
+              if (firstMetadata.illnessColumn) {
+                handleIllnessColumnSelection(firstMetadata.illnessColumn, {
+                  skipSampleReset: true,
+                  sampleValue: firstMetadata.sampleColumn,
+                  skipMergeGuard: true,
+                  overrideFilePath: filePath,
+                  allowStepFour: true,
+                  forceFetch: true
+                }).catch(err => {
+                  console.error('[Continuation] Error fetching classes:', err);
+                });
+              }
+              
+              console.log('[Continuation] Restored Step 3 & 4 info (silently):', {
+                filePath,
+                illnessColumn: firstMetadata.illnessColumn,
+                sampleColumn: firstMetadata.sampleColumn,
+                selectedClasses: firstMetadata.selectedClasses,
+                totalAnalyses: analyses.length
+              });
+            }
+            
+            // Set up anotherAnalysis array to render all analyses
+            // anotherAnalysis controls which sections are rendered
+            const analysisIndices = analyses.map((_, idx) => idx);
+            setAnotherAnalysis(analysisIndices);
+            
+            // Restore biomarker summaries and validations from all analyses
+            // NOTE: We intentionally do NOT restore enrichment/pathway analyses when continuing
+            // This is by design - the user should not see previous pathway enrichment results
+            // in the continue screen. They can run new enrichment analyses if needed.
+            const allBiomarkerSummaries = [];
+            const allBiomarkerValidations = [];
+            
+            for (const analysisData of analyses) {
+              const meta = analysisData.metadata || {};
+              
+              // Restore biomarker summaries
+              if (meta.biomarkerSummaries && Array.isArray(meta.biomarkerSummaries)) {
+                for (const summary of meta.biomarkerSummaries) {
+                  allBiomarkerSummaries.push({
+                    classPair: summary.classPair,
+                    imagePath: summary.imagePath,
+                    csvPath: summary.csvPath,
+                    featureCount: summary.featureCount,
+                    aggregationLabel: summary.aggregationLabel || '',
+                    timestamp: summary.timestamp || Date.now(),
+                    version: 1
+                  });
+                }
+              }
+              
+              // Restore biomarker validations
+              if (meta.biomarkerValidations && Array.isArray(meta.biomarkerValidations)) {
+                allBiomarkerValidations.push(...meta.biomarkerValidations);
+              } else if (meta.biomarkerValidation) {
+                // Legacy support: single validation object
+                allBiomarkerValidations.push(meta.biomarkerValidation);
+              }
+            }
+            
+            // Set the restored biomarker summaries
+            if (allBiomarkerSummaries.length > 0) {
+              setSummarizeAnalyses(allBiomarkerSummaries);
+              setCanRunPathwayAnalysis(true);
+            }
+            
+            // Set the most recent biomarker validation result
+            if (allBiomarkerValidations.length > 0) {
+              // Use the most recent validation
+              const latestValidation = allBiomarkerValidations[allBiomarkerValidations.length - 1];
+              setValidationResult(latestValidation);
+            }
+          }
+          
+          // Hide all steps initially - only show results
+          setShowStepOne(false);
+          setShowStepTwo(false);
+          setShowStepThree(false);
+          setShowStepFour(false);
+          setShowStepFive(false);
+          setShowStepSix(false);
+          setShowStepAnalysis(false);
+          
+          // Scroll to results
+          setTimeout(() => { 
+            if (pageRef.current) {
+              pageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }, 300);
+          
+          console.log('[Continuation] Analysis loaded successfully');
+        } catch (error) {
+          console.error('[Continuation] Error parsing continuation data:', error);
+          setError('Failed to load analysis data. Please try again from My Analysis Results.');
+        }
+        })();
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, navigate, updateUploadContext]);
 
   useEffect(() => {
     if (requiresMerge) {
@@ -1770,17 +2018,11 @@ function App() {
     const requiresAction = requiresMerge || (singleIncluded && !mergeCompleted);
     const readyForStepFour = hasColumns && (!requiresAction || mergeCompleted);
     if (readyForStepFour) {
-      if (!showStepFour) {
-        console.log("[Effect Check Step 4 Visibility] Enabling Step 4 after merge requirement satisfied.");
-      }
       setShowStepFour(true);
       setTimeout(() => {
         if (stepFourRef.current) scrollToStep(stepFourRef);
       }, 100);
     } else {
-      if (showStepFour) {
-        console.log("[Effect Check Step 4 Visibility] Hiding Step 4 (waiting for merge or selections).");
-      }
       setShowStepFour(false);
       setShowStepFive(false);
       setShowStepSix(false);
@@ -1794,15 +2036,9 @@ function App() {
 
   // Show Step 5: When Step 4 is visible and 2 classes are selected
   useEffect(() => {
-    console.log("[Effect Check Step 5 Visibility] showStepFour:", showStepFour, "selectedClasses:", selectedClasses.length);
     if (showStepFour && selectedClasses.length === 2) {
-        console.log("[Effect Check Step 5 Visibility] Setting showStepFive to TRUE");
         setShowStepFive(true);
     } else {
-        // Only log if showStepFive is true
-        if (showStepFive) {
-            console.log("[Effect Check Step 5 Visibility] Setting showStepFive to FALSE");
-        }
         setShowStepFive(false);
         // When Step 5 is hidden, also hide later steps
         setShowStepSix(false);
@@ -1932,6 +2168,7 @@ function App() {
   };
 
   // Show categorical encoding information to user
+  // eslint-disable-next-line no-unused-vars
   const showCategoricalEncodingInfo = (encodingInfo) => {
     setCategoricalEncodingInfo(encodingInfo);
     setShowCategoricalModal(true);
@@ -1964,6 +2201,23 @@ function App() {
   };
 
   const buildRunPayload = async () => {
+    // Determine if this is a child analysis
+    // It's a child if we have previous analyses and they have the same file
+    // Always use the FIRST (root/parent) analysis ID, not the last child
+    let parentId = null;
+    if (previousAnalyses.length > 0) {
+      // Use the first analysis as the parent (root analysis)
+      const firstAnalysis = previousAnalyses[0];
+      const firstInfo = analysisInformation[0];
+      
+      // Check if we're analyzing the same file
+      if (firstInfo && firstInfo.filePath === analysisFilePath) {
+        // This is a child analysis - use the analysisId from the first/root analysis
+        parentId = firstAnalysis.analysisId;
+        console.log('[buildRunPayload] This is a child analysis, parent (root):', parentId);
+      }
+    }
+    
     return {
       filePath: analysisFilePath,
       IlnessColumnName: selectedIllnessColumn,
@@ -1995,7 +2249,9 @@ function App() {
       saveLabelEncoder: saveLabelEncoder,
       verbose: verbose,
       testSize: testSize,
-      nFolds: nFolds
+      nFolds: nFolds,
+      datasetNames: datasetNamesForReport, // Add dataset names for PDF filename
+      parentAnalysisId: parentId // Include parent ID if this is a child analysis
     };
   };
 
@@ -2014,37 +2270,65 @@ function App() {
     console.log("Running analysis with payload:", payload);
     setError('');
     setAnalyzing(true);
+    
+    // Reset queue state
+    setAnalysisStatus('queued');
+    setAnalysisProgress(0);
+    setQueuePosition(null);
+    setPendingAnalysis(null);
+    setShowAnalysisNotification(false);
+    
     try {
       const response = await api.post('/analyze', payload);
-      // ... reuse existing handling from handleRunAnalysis ...
-      if (response.data.categoricalEncodingInfo) {
-        showCategoricalEncodingInfo(response.data.categoricalEncodingInfo);
-      }
-      if (response.data.success) {
-        // Store the analysis ID for pathway analysis
-        if (response.data.analysisId) {
-          setCurrentAnalysisId(response.data.analysisId);
-        }
-        const newAnalysis = {
-          results: response.data.imagePaths || [],
-          time: response.data.elapsedTime || "N/A",
-          date: new Date().toLocaleString('en-GB'),
-          parameters: payload,
-          analysisInfo: { ...selectedAnalyzes },
-          bestParams: response.data.bestParams || null,
-          analysisId: response.data.analysisId || null
-        };
-        const paths2 = response.data.imagePaths || [];
-        const hasAfterFSFolder2 = paths2.some(p => /AfterFeatureSelection/i.test(p));
-        const producedFeatureScores2 = paths2.some(p => /(feature_importance|anova|t_test|shap|lime|feature_ranking)/i.test(p));
-        if (producedFeatureScores2) setCanUseAfterFS(true);
-        if (hasAfterFSFolder2) { setAfterFeatureSelection(true); setCanUseAfterFS(true); }
-        setPreviousAnalyses((prev) => [...prev, newAnalysis]);
-        setAnalysisInformation((prev) => [...prev, payload]);
-        setShowStepOne(false); setShowStepTwo(false); setShowStepThree(false); setShowStepFour(false); setShowStepFive(false); setShowStepSix(false); setShowStepAnalysis(false);
-        setTimeout(() => { if (pageRef.current) scrollToStep(pageRef); }, 100);
+      
+      console.log('[Frontend] Received response from /analyze:', response.data);
+      
+      if (response.data.success && response.data.status === 'queued') {
+        // Analysis queued successfully
+        const analysisId = response.data.analysisId;
+        setCurrentAnalysisId(analysisId);
+        setAnalysisStatus('queued');
+        
+        console.log(`[Frontend] Analysis ${analysisId} queued. Starting polling...`);
+        
+        // Only show Step 1 if there are no previous results to display
+        // If user already has results from earlier analyses, keep showing those instead
+        const hasExistingResults = previousAnalyses.length > 0;
+        setShowStepOne(!hasExistingResults);
+        setShowStepTwo(false);
+        setShowStepThree(false);
+        setShowStepFour(false);
+        setShowStepFive(false);
+        setShowStepSix(false);
+        setShowStepAnalysis(false);
+        setAnalyzing(false);
+        
+        // Clear previous selections to allow new analysis
+        setFile(null);
+        setSelectedFilePreviews([]);
+        setUploadedInfo(null);
+        setMergeMetadata(null);
+        setColumns([]);
+        setSelectedIllnessColumn('');
+        setSelectedSampleColumn('');
+        setselectedClasses([]);
+        setSelectedAnalyzes({
+          statisticalTest: [],
+          dimensionalityReduction: [],
+          classificationAnalysis: [],
+          modelExplanation: []
+        });
+        
+        // Show notification
+        setShowAnalysisNotification(true);
+        
+        // Start polling for status in background
+        startStatusPolling(analysisId, payload);
       } else {
-        setError(response.data.message || 'An error occurred during analysis. Please check the server logs.');
+        // Fallback for non-queue response (shouldn't happen with new backend)
+        console.log('[Frontend] Non-queue response received:', response.data);
+        setError(response.data.message || 'Unexpected response from server');
+        setAnalyzing(false);
       }
     } catch (error) {
       try {
@@ -2056,16 +2340,162 @@ function App() {
         if (/No best model found/i.test(raw)) {
           setError('No sufficiently performing model was found. The best model\'s F1 score is below the quality threshold, so model explanation was not generated. Consider balancing classes, adding more data, tuning hyperparameters, or adjusting the threshold.');
         } else {
-          setError('An error occurred during analysis communication. Please try again.');
+          setError('Failed to submit analysis. Please try again.');
         }
       } catch (e) {
-        setError('An error occurred during analysis communication. Please try again.');
+        setError('Failed to submit analysis. Please try again.');
       }
-      console.error('Error analyzing file:', error?.response?.data || error?.message || error);
-    } finally {
+      console.error('Error submitting analysis:', error?.response?.data || error?.message || error);
       setAnalyzing(false);
+      setAnalysisStatus(null);
     }
   };
+  
+  // Poll for analysis status
+  const startStatusPolling = (analysisId, payload) => {
+    // Clear any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    
+    const pollStatus = async () => {
+      try {
+        const response = await api.get(`/api/analysis/${analysisId}/status`);
+        
+        console.log(`[Frontend] Polling response for ${analysisId}:`, response.data);
+        
+        if (response.data.success) {
+          const { status, progress, queuePosition: pos, resultPath, metadata } = response.data;
+          
+          setAnalysisStatus(status);
+          setAnalysisProgress(progress || 0);
+          setQueuePosition(pos);
+          
+          console.log(`[Frontend] Analysis ${analysisId} status: ${status} (${progress}%) - Queue pos: ${pos}`);
+          
+          if (status === 'finished') {
+            // Analysis complete! Store results but don't auto-open
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+            
+            console.log('[Frontend] Analysis finished! Storing results...');
+            
+            const imagePaths = resultPath ? resultPath.split(',').filter(p => p.trim()) : [];
+            
+            const newAnalysis = {
+              results: imagePaths,
+              time: metadata?.executionTime || "N/A",
+              date: new Date().toLocaleString('en-GB'),
+              parameters: payload,
+              analysisInfo: { ...selectedAnalyzes },
+              bestParams: metadata?.bestParams || null,
+              analysisId: analysisId
+            };
+            
+            // Check for AfterFeatureSelection
+            const hasAfterFSFolder = imagePaths.some(p => /AfterFeatureSelection/i.test(p));
+            const producedFeatureScores = imagePaths.some(p => /(feature_importance|anova|t_test|shap|lime|feature_ranking)/i.test(p));
+            
+            // Store the completed analysis
+            setPendingAnalysis({
+              analysis: newAnalysis,
+              payload: payload,
+              hasAfterFSFolder,
+              producedFeatureScores
+            });
+            
+            setAnalysisStatus('finished');
+            setAnalysisProgress(100);
+            
+          } else if (status === 'failed') {
+            // Analysis failed
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+            
+            setError('Analysis failed. Please check your data and try again.');
+            setAnalyzing(false);
+            setAnalysisStatus(null);
+          }
+          // If still queued or processing, continue polling
+        }
+      } catch (error) {
+        console.error('Error polling status:', error);
+        // Don't stop polling on error, might be temporary network issue
+      }
+    };
+    
+    // Poll immediately, then every 2 seconds
+    pollStatus();
+    pollingIntervalRef.current = setInterval(pollStatus, 2000);
+  };
+  
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+  
+  // Function to open completed analysis results
+  const openAnalysisResults = () => {
+    if (!pendingAnalysis) return;
+    
+    const { analysis, payload, hasAfterFSFolder, producedFeatureScores } = pendingAnalysis;
+    
+    // Restore the file path from the payload so analysisFilePath will be available
+    // This is needed because we clear uploadedInfo and mergeMetadata when analysis is queued
+    if (payload?.filePath) {
+      const isMergedFile = payload.filePath.includes('_merged_dataset');
+      if (isMergedFile) {
+        // Restore merge metadata for merged files
+        setMergeMetadata({
+          filePath: payload.filePath,
+          name: payload.datasetNames?.[0] || 'Merged Dataset',
+          size: null
+        });
+      } else {
+        // Restore uploadedInfo for single files
+        setUploadedInfo({
+          filePath: payload.filePath,
+          name: payload.datasetNames?.[0] || 'Uploaded File',
+          size: null
+        });
+      }
+    }
+    
+    // Update feature selection flags
+    if (producedFeatureScores) setCanUseAfterFS(true);
+    if (hasAfterFSFolder) { 
+      setAfterFeatureSelection(true); 
+      setCanUseAfterFS(true); 
+    }
+    
+    // Add to previous analyses
+    setPreviousAnalyses((prev) => [...prev, analysis]);
+    setAnalysisInformation((prev) => [...prev, payload]);
+    
+    // Hide all steps to show only results
+    setShowStepOne(false);
+    setShowStepTwo(false);
+    setShowStepThree(false);
+    setShowStepFour(false);
+    setShowStepFive(false);
+    setShowStepSix(false);
+    setShowStepAnalysis(false);
+    
+    // Clear notification and pending state
+    setShowAnalysisNotification(false);
+    setPendingAnalysis(null);
+    setAnalysisStatus(null);
+    
+    // Scroll to results
+    setTimeout(() => { 
+      if (pageRef.current) scrollToStep(pageRef); 
+    }, 100);
+  };
+  
   const handleValidationGeneCapChange = (event) => {
     const rawValue = Number(event?.target?.value);
     const nextValue = Number.isFinite(rawValue) ? rawValue : DEFAULT_VALIDATION_GENE_LIMIT;
@@ -2381,38 +2811,169 @@ function App() {
   const handlePerformAnotherAnalysis = () => {
     // Clear any previous combine/summarize errors when starting a new analysis
     setCombineError('');
-    // Hide current steps (3, 4, 5, 6, 7) and update state for a new analysis block
-    // This function does not actually add a new analysis block, just shows previous steps again.
-    // If a truly new analysis block is needed, previousAnalyses logic should be changed.
-    // For now, just go back to Step 3.
     setAnotherAnalysis((prev) => [...prev, prev.length]); // Only used as index
     console.log("Performing another analysis, resetting to Step 3...");
 
-    // Show/hide steps for new analysis
+    // Get the last analysis payload to restore state
+    const lastPayload = analysisInformation[analysisInformation.length - 1];
+    const savedFilePath = lastPayload?.filePath;
+    
+    console.log('[handlePerformAnotherAnalysis] Last payload:', lastPayload);
+    console.log('[handlePerformAnotherAnalysis] analysisFilePath:', analysisFilePath);
+    console.log('[handlePerformAnotherAnalysis] uploadedInfo:', uploadedInfo);
+    console.log('[handlePerformAnotherAnalysis] mergeMetadata:', mergeMetadata);
+    console.log('[handlePerformAnotherAnalysis] analysisUploadContext:', analysisUploadContext);
+    console.log('[handlePerformAnotherAnalysis] uploadContexts:', uploadContexts);
+    
+    if (lastPayload) {
+      // Restore previously selected columns from the last analysis
+      const savedIllnessColumn = lastPayload.IlnessColumnName;
+      const savedSampleColumn = lastPayload.SampleColumnName;
+      const savedNonFeatureColumns = lastPayload.nonFeatureColumns || [];
+      
+      console.log('[handlePerformAnotherAnalysis] Restoring columns from last analysis:', {
+        illness: savedIllnessColumn,
+        sample: savedSampleColumn,
+        nonFeature: savedNonFeatureColumns,
+        filePath: savedFilePath
+      });
+      
+      // For single file: We need to restore uploadedInfo context
+      // Check if this is a single file (not merged)
+      const isMergedFile = savedFilePath?.includes('_merged_dataset');
+      console.log('[handlePerformAnotherAnalysis] Is merged file?', isMergedFile);
+      
+      if (!isMergedFile && savedFilePath) {
+        // Single file - need to restore uploadedInfo to make columns accessible
+        const existingContext = uploadContexts[savedFilePath];
+        console.log('[handlePerformAnotherAnalysis] Existing context for single file:', existingContext);
+        
+        if (existingContext) {
+          // Restore uploadedInfo so Step 3 works properly
+          console.log('[handlePerformAnotherAnalysis] Restoring uploadedInfo for single file');
+          setUploadedInfo({
+            filePath: savedFilePath,
+            name: existingContext.name || savedFilePath.split('/').pop(),
+            size: existingContext.size || 0
+          });
+        } else {
+          // Need to fetch columns and create context
+          console.log('[handlePerformAnotherAnalysis] No context found, fetching columns for single file');
+          fetchAllColumnsInBackground(savedFilePath, { silent: false }).then(() => {
+            // After fetching, set uploadedInfo
+            setUploadedInfo({
+              filePath: savedFilePath,
+              name: savedFilePath.split('/').pop(),
+              size: 0
+            });
+          });
+        }
+      } else if (isMergedFile) {
+        // Merged file - keep the merge state so it acts as a child analysis
+        // Don't reset mergeCompleted or mergeMetadata
+        console.log('[handlePerformAnotherAnalysis] Preserving merge state for child analysis');
+        // The mergeMetadata and mergeCompleted should remain as-is
+        // This ensures the analysis will be linked as a child
+        
+        // CRITICAL: Set uploadedInfo to the merged file so activeUploadContext gets populated
+        // This makes columns available in Step 3
+        const existingContext = uploadContexts[savedFilePath];
+        console.log('[handlePerformAnotherAnalysis] Existing context for merged file:', existingContext);
+        
+        if (existingContext) {
+          console.log('[handlePerformAnotherAnalysis] Setting uploadedInfo for merged file');
+          setUploadedInfo({
+            filePath: savedFilePath,
+            name: existingContext.name || savedFilePath.split('/').pop(),
+            size: existingContext.size || 0
+          });
+        } else {
+          // Need to fetch columns and create context
+          console.log('[handlePerformAnotherAnalysis] No context found, fetching columns for merged file');
+          fetchAllColumnsInBackground(savedFilePath, { silent: false }).then(() => {
+            // After fetching, set uploadedInfo
+            setUploadedInfo({
+              filePath: savedFilePath,
+              name: savedFilePath.split('/').pop(),
+              size: 0
+            });
+          });
+        }
+      }
+      
+      // Set the columns immediately so Step 3 shows them
+      if (savedIllnessColumn) {
+        console.log('[handlePerformAnotherAnalysis] Setting illness column:', savedIllnessColumn);
+        setSelectedIllnessColumn(savedIllnessColumn);
+      }
+      if (savedSampleColumn) {
+        console.log('[handlePerformAnotherAnalysis] Setting sample column:', savedSampleColumn);
+        setSelectedSampleColumn(savedSampleColumn);
+      }
+      if (savedNonFeatureColumns.length > 0) {
+        console.log('[handlePerformAnotherAnalysis] Setting non-feature columns:', savedNonFeatureColumns);
+        setNonFeatureColumns(savedNonFeatureColumns);
+      }
+      
+      // Check if we need to fetch columns
+      if (savedFilePath) {
+        const hasContext = uploadContexts[savedFilePath];
+        console.log('[handlePerformAnotherAnalysis] Has context for file:', hasContext);
+        
+        if (!hasContext || !hasContext.columns || hasContext.columns.length === 0) {
+          console.log('[handlePerformAnotherAnalysis] Fetching columns for:', savedFilePath);
+          fetchAllColumnsInBackground(savedFilePath, { silent: true });
+        } else {
+          console.log('[handlePerformAnotherAnalysis] Using existing columns from context:', hasContext.columns?.length, 'columns');
+        }
+        
+        // Trigger class fetch if we have illness column
+        // This ensures the chart is fetched and shown in Step 4
+        // Don't await - let it load in background like the normal flow
+        if (savedIllnessColumn) {
+          console.log('[handlePerformAnotherAnalysis] Triggering class fetch for chart');
+          handleIllnessColumnSelection(savedIllnessColumn, {
+            skipSampleReset: true,
+            sampleValue: savedSampleColumn,
+            skipMergeGuard: true,
+            overrideFilePath: savedFilePath,
+            allowStepFour: true
+          }).catch(err => {
+            console.error('[handlePerformAnotherAnalysis] Error fetching classes:', err);
+          });
+        }
+      }
+    } else {
+      console.log('[handlePerformAnotherAnalysis] No last payload found!');
+    }
+
+    // Show steps 3-6 for re-analysis immediately (don't wait for chart)
+    // For merged files, skip Step 4 (merge step) since we're continuing with same dataset
+    const skipMergeStep = savedFilePath?.includes('_merged_dataset');
+    console.log('[handlePerformAnotherAnalysis] Skip merge step?', skipMergeStep);
+    
+    setShowStepOne(false);
+    setShowStepTwo(false);
     setShowStepThree(true);
-    setShowStepFour(true);
+    setShowStepFour(true); // Always show Step 4 (class selection) - it's not the merge step
     setShowStepFive(false);
     setShowStepSix(false);
     setShowStepAnalysis(false);
     
-    // Optionally reset previous selections (user may want to continue)
-    // Keep classTable intact to avoid re-fetching and reloading the diagnosis distribution chart
+    // Reset selections for new analysis (but keep columns and merge state)
     setselectedClasses([]);
     setSelectedAnalyzes({ statisticalTest: [], dimensionalityReduction: [], classificationAnalysis: [], modelExplanation: [] });
     setUseDefaultParams(true);
     setCanRunPathwayAnalysis(false);
     setEnrichmentAnalyses([]);
     setCompletedEnrichmentTypes({});
-    // Optionally reset parameters as well.
-
-    // Do not re-fetch classes; reuse existing classTable/classDiagramUrl if dataset & columns are unchanged
 
     setTimeout(() => {
       const targetRef = stepFourRef.current || stepThreeRef.current;
       if (targetRef) {
         scrollToStep(targetRef);
       }
-    }, 200); // Wait a bit for API call and state updates
+    }, 200);
   };
 
   // Final Adımı 2: Baştan başlama butonu
@@ -2499,15 +3060,13 @@ function App() {
 
   // Final Adımı Summarize: İstatistiksel yöntemleri özetle
   const handleSummarizeStatisticalMethods = async (selectedClassPair = null) => {
-    if (!analysisFilePath) {
-        setError("Cannot summarize: File path is missing.");
-    }
     // Synchronous guard against rapid double-clicks
     if (summarizeLockRef.current) return;
     summarizeLockRef.current = true;
-    if (!uploadedInfo?.filePath) {
+    
+    if (!analysisFilePath) {
         setCombineError("Cannot summarize: File path is missing.");
-      summarizeLockRef.current = false;
+        summarizeLockRef.current = false;
         return;
     }
 
@@ -2720,11 +3279,7 @@ function App() {
 
   // Show Step 7 (Run Analysis button): When Step 6 is visible and not analyzing
   useEffect(() => {
-    console.log("[Effect Check Step 7 Visibility] showStepSix:", showStepSix, "analyzing:", analyzing);
     const shouldShow = showStepSix && !analyzing;
-    if (shouldShow !== showStepAnalysis) {
-        console.log(`[Effect Check Step 7 Visibility] Setting showStepAnalysis to ${shouldShow}`);
-    }
     setShowStepAnalysis(shouldShow);
     if (shouldShow) {
       setTimeout(() => {
@@ -2766,6 +3321,74 @@ function App() {
       </header>
       {/* Render User Guide Modal */}
       {showUserGuide && <UserGuideModal onClose={handleCloseUserGuide} />}
+      
+      {/* Analysis Queue Notification */}
+      {showAnalysisNotification && (
+        <div className="analysis-notification">
+          <div className="analysis-notification-content">
+            {analysisStatus === 'queued' && (
+              <>
+                <div className="notification-icon">⏳</div>
+                <div className="notification-text">
+                  <strong>Analysis Queued</strong>
+                  <p>Your analysis has been queued and will be processed shortly.</p>
+                  {queuePosition > 0 && <p className="queue-position">Position in queue: {queuePosition}</p>}
+                </div>
+              </>
+            )}
+            {analysisStatus === 'processing' && (
+              <>
+                <div className="notification-icon">
+                  <div className="spinner"></div>
+                </div>
+                <div className="notification-text">
+                  <strong>Analysis Running</strong>
+                  <p>Your analysis is currently being processed</p>
+                </div>
+              </>
+            )}
+            {analysisStatus === 'finished' && pendingAnalysis && (
+              <>
+                <div className="notification-icon">✅</div>
+                <div className="notification-text">
+                  <strong>Analysis Complete!</strong>
+                  <p>Your analysis has finished successfully.</p>
+                </div>
+                <button className="notification-button" onClick={openAnalysisResults} style={{ marginRight: '12px' }}>
+                  Open Results
+                </button>
+                <button 
+                  className="notification-close" 
+                  onClick={() => {
+                    setShowAnalysisNotification(false);
+                    setPendingAnalysis(null);
+                  }}
+                  aria-label="Close notification"
+                >
+                  ×
+                </button>
+              </>
+            )}
+            {analysisStatus === 'failed' && (
+              <>
+                <div className="notification-icon">❌</div>
+                <div className="notification-text">
+                  <strong>Analysis Failed</strong>
+                  <p>There was an error processing your analysis. Please try again.</p>
+                </div>
+                <button 
+                  className="notification-close" 
+                  onClick={() => setShowAnalysisNotification(false)}
+                  aria-label="Close notification"
+                >
+                  ×
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      
       {/* Step 1: Browse file*/}
       {showStepOne && (
       <div className="file-browse-section">
@@ -2797,7 +3420,7 @@ function App() {
             </button>
             
             <span id="file-name">
-              {selectedFilePreviews.length > 0
+              {selectedFilePreviews && selectedFilePreviews.length > 0
                 ? selectedFilePreviews.map((name, index) => (
                     <React.Fragment key={`${name}-${index}`}>
                       {index > 0 && ', '}
@@ -3199,7 +3822,17 @@ function App() {
               {analyzing && (
                 <div className="analysis-running">
                   <div className="spinner"></div>
-                  Analysis is running...
+                  {analysisStatus === 'queued' && (
+                    queuePosition ? 
+                      `Analysis queued (Position: ${queuePosition})...` : 
+                      'Analysis queued...'
+                  )}
+                  {analysisStatus === 'processing' && (
+                    analysisProgress > 0 ? 
+                      `Analysis running (${analysisProgress}%)...` : 
+                      'Analysis is running...'
+                  )}
+                  {!analysisStatus && 'Analysis is running...'}
                 </div>
               )}
             </>
@@ -3219,7 +3852,7 @@ function App() {
                     return (
                       <>
                       {/* A separate box will now be displayed for each analysis */}
-                      <div className="analysis-information" style={{ margin: '0 auto', maxWidth: '800px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <div className="analysis-information" style={{ margin: '30px auto 0 auto', maxWidth: '800px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         <h2 className="analysis-title" style={{ textAlign: 'center' }}>Analysis {index + 1} Details</h2>
                         
                         <div className="execution-time-container" style={{ textAlign: 'center', fontSize: '13px', color: '#555', margin: '5px 0 15px 0' }}>
@@ -3449,7 +4082,7 @@ function App() {
                     )}
                   </div>
                 )}
-                  {previousAnalyses[index].results
+                  {previousAnalyses[index]?.results && previousAnalyses[index].results
                     .filter(imagePath => {
                       // If an explanation method is selected, filter out the classification performance metric images.
                       if (analysisInformation[index].modelExplanation?.length > 0) {
@@ -3458,8 +4091,7 @@ function App() {
                       return true; // Otherwise, show all images.
                     })
                     .map((imagePath, imgIndex) => {
-                    // Extract file name and add more detailed logging
-                    console.log("imagePath: ", imagePath);
+                    // Extract file name
                     const rawImageName = imagePath.split('/').pop(); // Get the full file name
                     
                     let imageName = rawImageName
@@ -3826,7 +4458,7 @@ function App() {
                     analysisResults={previousAnalyses.map((analysis, idx) => {
                       const analysisParams = analysis.parameters; // Parameters specific to each analysis (payload)
 
-                      const images = analysis.results.map((imagePath, imgIdx) => {
+                      const images = (analysis.results || []).map((imagePath, imgIdx) => {
                         const rawImageName = imagePath.split('/').pop();
                         let imageName = rawImageName
                           .replace(/_/g, ' ')

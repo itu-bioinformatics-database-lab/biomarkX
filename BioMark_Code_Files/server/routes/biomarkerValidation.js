@@ -32,9 +32,16 @@ const runPythonValidation = (genes, maxGenes) => new Promise((resolve, reject) =
   });
 
   python.on('close', (code) => {
+    // Filter out known warnings from stderr (e.g., urllib3 SSL warnings)
+    const filteredStderr = stderr
+      .split('\n')
+      .filter(line => !line.includes('NotOpenSSLWarning') && !line.includes('urllib3 v2 only supports'))
+      .join('\n')
+      .trim();
+    
     if (code !== 0) {
       const err = new Error('Python biomarker validation failed');
-      err.details = stderr || stdout;
+      err.details = filteredStderr || stdout;
       return reject(err);
     }
     try {

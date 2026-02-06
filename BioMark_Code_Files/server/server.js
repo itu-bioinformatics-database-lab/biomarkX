@@ -14,6 +14,7 @@ const authMiddleware = require('./middleware/auth');
 const { sendMail } = require('./mailer');
 const pathwayAnalysisRouter = require('./routes/pathwayAnalysis');
 const biomarkerValidationRouter = require('./routes/biomarkerValidation');
+const analysisQueue = require('./services/analysisQueue');
 
 const { spawn } = require('child_process');
 
@@ -443,9 +444,10 @@ app.post('/get_classes', async (req, res) => {
 });
 
 // step7 - Run the analysis
+// New endpoint: Submit analysis to queue
 app.post('/analyze', async (req, res) => {
     
-    console.log("At analyze endpoint.");
+    console.log("At analyze endpoint (queue version)");
     console.log("Request body: ", req.body);
     
     // Assign the values from req.body to the variables on the left
@@ -493,370 +495,274 @@ app.post('/analyze', async (req, res) => {
     const analysisId = uuidv4();
     let derivedUploadIdForInsert = null;
     let mergedFileId = null;
+    let sourceUploadIds = null;
+
+    console.log('[Analyze] filePath:', filePath);
+    console.log('[Analyze] baseFileName:', baseFileName);
+    console.log('[Analyze] isMergedFile:', isMergedFile);
 
     if (!isMergedFile) {
         derivedUploadIdForInsert = path.basename(filePath).split('_')[0];
+        console.log('[Analyze] Single file - derivedUploadIdForInsert:', derivedUploadIdForInsert);
     } else {
         // Extract merged file ID from filename like "FULLID_merged_dataset.csv"
         const basename = path.basename(filePath);
-        const match = basename.match(/^([a-f0-9]+)_merged_dataset\.csv$/);
+        const match = basename.match(/^([a-f0-9-]+)_merged_dataset\.csv$/);
         if (match) {
             mergedFileId = match[1];
+            console.log('[Analyze] Merged file - mergedFileId:', mergedFileId);
+        }
+        
+        // Get source upload IDs from the merged file's metadata
+        try {
+            // Metadata is saved in results/merged_files/ directory by merge.py
+            const metadataPath = path.join(__dirname, 'results', 'merged_files', `${mergedFileId}_metadata.json`);
+            console.log('[Analyze] Looking for metadata at:', metadataPath);
+            
+            if (fs.existsSync(metadataPath)) {
+                console.log('[Analyze] Metadata file exists, reading...');
+                const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+                console.log('[Analyze] Metadata input_files:', Object.keys(metadata.input_files || {}));
+                
+                // Extract upload IDs from input_files keys
+                const sourceFiles = Object.keys(metadata.input_files || {});
+                sourceUploadIds = sourceFiles
+                    .map(f => path.basename(f).split('_')[0])
+                    .sort(); // Sort for consistent comparison
+                console.log('[Analyze] Extracted sourceUploadIds from metadata:', sourceUploadIds);
+            } else {
+                console.log('[Analyze] Metadata file does NOT exist');
+            }
+        } catch (err) {
+            console.error('[Analyze] Error reading merged file metadata:', err);
         }
     }
 
-    // Check for existing analyses on the same dataset to establish parent-child relationship
-    let parentAnalysisId = null;
-    try {
-        let existingAnalysisQuery;
-        if (isMergedFile && mergedFileId) {
-            // For merged files, find the most recent analysis using this merged file ID
-            // Match by either user_id (for registered users) or session_id (for guests)
-            if (req.userId) {
-                existingAnalysisQuery = await db.query(
-                    `SELECT id, parent_analysis_id FROM analyses 
-                     WHERE merged_file_id = $1 
-                     AND user_id = $2 
-                     AND status IN ('finished', 'running')
-                     ORDER BY created_at DESC 
-                     LIMIT 1`,
-                    [mergedFileId, req.userId]
-                );
-            } else {
-                existingAnalysisQuery = await db.query(
-                    `SELECT id, parent_analysis_id FROM analyses 
-                     WHERE merged_file_id = $1 
-                     AND session_id = $2 
-                     AND user_id IS NULL
-                     AND status IN ('finished', 'running')
-                     ORDER BY created_at DESC 
-                     LIMIT 1`,
-                    [mergedFileId, req.sessionId]
-                );
-            }
-        } else if (derivedUploadIdForInsert) {
-            // For single files, find the most recent analysis using this upload ID
-            if (req.userId) {
-                existingAnalysisQuery = await db.query(
-                    `SELECT id, parent_analysis_id FROM analyses 
-                     WHERE upload_id = $1 
-                     AND user_id = $2 
-                     AND status IN ('finished', 'running')
-                     ORDER BY created_at DESC 
-                     LIMIT 1`,
-                    [derivedUploadIdForInsert, req.userId]
-                );
-            } else {
-                existingAnalysisQuery = await db.query(
-                    `SELECT id, parent_analysis_id FROM analyses 
-                     WHERE upload_id = $1 
-                     AND session_id = $2 
-                     AND user_id IS NULL
-                     AND status IN ('finished', 'running')
-                     ORDER BY created_at DESC 
-                     LIMIT 1`,
-                    [derivedUploadIdForInsert, req.sessionId]
-                );
-            }
-        }
-
-        // If we found an existing analysis, either use it as parent or find its root parent
-        if (existingAnalysisQuery && existingAnalysisQuery.rows.length > 0) {
-            const existingAnalysis = existingAnalysisQuery.rows[0];
-            
-            // If existing analysis has a parent, use that parent; otherwise use the existing analysis as parent
-            parentAnalysisId = existingAnalysis.parent_analysis_id || existingAnalysis.id;
-            console.log(`Linking new analysis ${analysisId} to parent ${parentAnalysisId}`);
-        }
-    } catch (err) {
-        console.error('Error checking for parent analysis:', err);
+    // Parent-child relationship should ONLY be established if explicitly provided
+    // This happens when user clicks "Continue on this analysis" or "Perform Another Analysis"
+    let parentAnalysisId = req.body.parentAnalysisId || null;
+    
+    if (parentAnalysisId) {
+        console.log('[Analyze] Explicit parent analysis provided:', parentAnalysisId);
+    } else {
+        console.log('[Analyze] No parent analysis - this will be a standalone analysis');
     }
 
     // Record analysis start with metadata
     try {
         const metadata = {
+            // Store ALL parameters for Continue Analysis feature
+            filePath: filePath,
             illnessColumn: IlnessColumnName,
             sampleColumn: SampleColumnName,
             selectedClasses: selectedClasses || [],
+            statisticalTest: statisticalTest || [],
+            dimensionalityReduction: dimensionalityReduction || [],
+            classificationAnalysis: classificationAnalysis || [],
+            modelExplanation: modelExplanation || [],
+            nonFeatureColumns: nonFeatureColumns || [],
+            isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
+            afterFeatureSelection: afterFeatureSelection || false,
+            useDefaultParams: useDefaultParams !== undefined ? useDefaultParams : true,
+            featureType: featureType || 'numerical',
+            referenceClass: referenceClass || null,
+            limeGlobalExplanationSampleNum: limeGlobalExplanationSampleNum || 1000,
+            shapModelFinetune: shapModelFinetune !== undefined ? shapModelFinetune : true,
+            limeModelFinetune: limeModelFinetune !== undefined ? limeModelFinetune : true,
+            scoring: scoring || 'accuracy',
+            featureImportanceFinetune: featureImportanceFinetune !== undefined ? featureImportanceFinetune : true,
+            numTopFeatures: numTopFeatures || 50,
+            plotter: plotter || 'matplotlib',
+            dim: dim || 2,
+            paramFinetune: paramFinetune !== undefined ? paramFinetune : true,
+            finetuneFraction: finetuneFraction || 0.1,
+            saveBestModel: saveBestModel !== undefined ? saveBestModel : true,
+            standardScaling: standardScaling !== undefined ? standardScaling : true,
+            saveDataTransformer: saveDataTransformer !== undefined ? saveDataTransformer : true,
+            saveLabelEncoder: saveLabelEncoder !== undefined ? saveLabelEncoder : true,
+            verbose: verbose !== undefined ? verbose : true,
+            testSize: testSize || 0.2,
+            nFolds: nFolds || 10,
+            // Also store old format for compatibility with AnalysisReport component
             analysisMethods: {
-                // Map new parameter names to old format for compatibility with AnalysisReport component
                 differential: statisticalTest || [],
                 clustering: dimensionalityReduction || [],
                 classification: [...(classificationAnalysis || []), ...(modelExplanation || [])]
-            },
-            nonFeatureColumns: nonFeatureColumns || [],
-            isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
+            }
         };
         
-                await db.query('INSERT INTO analyses (id, upload_id, merged_file_id, session_id, user_id, status, analysis_metadata, parent_analysis_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-                    [analysisId, derivedUploadIdForInsert, mergedFileId, req.sessionId, req.userId || null, 'running', JSON.stringify(metadata), parentAnalysisId]);
+        console.log('[Analyze] Inserting analysis into database:');
+        console.log('[Analyze] - analysisId:', analysisId);
+        console.log('[Analyze] - upload_id:', derivedUploadIdForInsert);
+        console.log('[Analyze] - merged_file_id:', mergedFileId);
+        console.log('[Analyze] - source_upload_ids:', sourceUploadIds);
+        console.log('[Analyze] - parent_analysis_id:', parentAnalysisId);
+        console.log('[Analyze] - session_id:', req.sessionId);
+        console.log('[Analyze] - user_id:', req.userId || null);
+        
+        await db.query('INSERT INTO analyses (id, upload_id, merged_file_id, source_upload_ids, session_id, user_id, status, analysis_metadata, parent_analysis_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+                    [analysisId, derivedUploadIdForInsert, mergedFileId, sourceUploadIds, req.sessionId, req.userId || null, 'queued', JSON.stringify(metadata), parentAnalysisId]);
+        
+        console.log('[Analyze] Analysis record inserted successfully');
     } catch (err) {
-        console.error('Failed to insert analysis record:', err);
+        console.error('[Analyze] Failed to insert analysis record:', err);
+        return res.status(500).json({ success: false, error: 'Failed to create analysis record' });
     }
     
-    const startTime = Date.now(); // Start time of the process
-    console.log(filePath, IlnessColumnName, SampleColumnName, selectedClasses, statisticalTest, dimensionalityReduction, classificationAnalysis, modelExplanation, nonFeatureColumns, isDiffAnalysis);
-    
-    // Fix undefined values
-    const safeIsDiffAnalysis = isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])];
-    const safeAfterFeatureSelection = afterFeatureSelection === undefined ? false : afterFeatureSelection;
-    
-    // Prepare Python command and parameters
-    const pythonArgs = [
-        '-Xfrozen_modules=off', 
-        path.join(__dirname, 'services', 'analyze.py'), 
-        filePath, 
-        IlnessColumnName, 
-        SampleColumnName, 
-        Array.isArray(selectedClasses) ? selectedClasses : [], 
-        Array.isArray(statisticalTest) && statisticalTest.length > 0 ? statisticalTest.join(',') : '', 
-        Array.isArray(dimensionalityReduction) && dimensionalityReduction.length > 0 ? dimensionalityReduction.join(',') : '', 
-        Array.isArray(classificationAnalysis) && classificationAnalysis.length > 0 ? classificationAnalysis.join(',') : '', 
-        Array.isArray(modelExplanation) && modelExplanation.length > 0 ? modelExplanation.join(',') : '', // Add explanation
-        Array.isArray(nonFeatureColumns) ? nonFeatureColumns : [], 
-        Array.isArray(safeIsDiffAnalysis) ? safeIsDiffAnalysis.join(',') : '', // Differential analyses
-        String(safeAfterFeatureSelection) // After feature selection status
-    ];
-    
-    // If not using default parameters, add --params argument and parameters
-    if (!useDefaultParams) {
-        pythonArgs.push('--params');
-        pythonArgs.push(JSON.stringify({
-            // Differential Analysis Parameters
-            feature_type: featureType || "microRNA",
-            reference_class: referenceClass || "",
-            lime_global_explanation_sample_num: limeGlobalExplanationSampleNum || 50,
-            shap_model_finetune: !!shapModelFinetune, // Convert to Boolean
-            lime_model_finetune: !!limeModelFinetune, // Convert to Boolean
-            scoring: scoring || "f1",
-            feature_importance_finetune: !!featureImportanceFinetune, // Convert to Boolean
-            num_top_features: numTopFeatures || 20,
-            // Clustering Analysis Parameters
-            plotter: plotter || "seaborn",
-            dim: dim || "3D",
-            // Classification Analysis Parameters
-            param_finetune: !!paramFinetune, // Convert to Boolean
-            finetune_fraction: finetuneFraction || 1.0,
-            save_best_model: saveBestModel !== false, // Convert to Boolean, default true
-            standard_scaling: standardScaling !== false, // Convert to Boolean, default true
-            save_data_transformer: saveDataTransformer !== false, // Convert to Boolean, default true
-            save_label_encoder: saveLabelEncoder !== false, // Convert to Boolean, default true
-            verbose: verbose !== false, // Convert to Boolean, default true
-            use_preprocessing: usePreprocessing !== false, // Convert to Boolean, default true
-            // Common parameters
-            test_size: testSize || 0.2,
-            n_folds: nFolds || 5,
-            // String conversion for boolean parameters
-            is_diff_analysis: Array.isArray(safeIsDiffAnalysis) ? safeIsDiffAnalysis.join(',') : '',
-            after_feature_selection: String(safeAfterFeatureSelection)
-        }));
-    }
-    
-    // Print the full command arguments to the console
-    // console.log("Python command and arguments:", JSON.stringify(pythonArgs));
-    
-    const pythonCommand = getPythonCommand();
-    console.log("Python command:", pythonCommand);
-    const python = spawn(pythonCommand, pythonArgs);
-    let outputData = [];
-    let errorOutput = '';
-    let categoricalEncodingInfo = null;
-
-    python.stdout.on('data', (data) => {
-        console.log(`Python stdout: ${data}`);
-        const output = data.toString().trim().split('\n');
+    // Submit analysis to queue instead of running synchronously
+    try {
+        console.log(`[Queue] Submitting analysis ${analysisId} to queue`);
         
-        // Check for categorical encoding information
-        output.forEach(line => {
-            if (line.startsWith('CATEGORICAL_ENCODING_INFO:')) {
-                console.log('Found CATEGORICAL_ENCODING_INFO line:', line);
-                try {
-                    categoricalEncodingInfo = JSON.parse(line.replace('CATEGORICAL_ENCODING_INFO:', '').trim());
-                    console.log('Parsed categorical encoding info:', categoricalEncodingInfo);
-                } catch (e) {
-                    console.error('Failed to parse categorical encoding info:', e);
-                }
-            }
+        const jobData = {
+            analysisId,
+            uploadId: derivedUploadIdForInsert,
+            uploadPath: filePath,
+            originalName: baseFileName,
+            sessionId: req.sessionId,
+            userId: req.userId || null,
+            illnessColumn: IlnessColumnName,
+            sampleColumn: SampleColumnName,
+            selectedClasses,
+            nonFeatureColumns,
+            analysisMethods: {
+                statisticalTest,
+                dimensionalityReduction,
+                classificationAnalysis,
+                modelExplanation,
+            },
+            mergedFileId,
+            sourceFiles: isMergedFile ? (req.body.sourceFiles || []) : null,
+            // Include custom parameters if provided
+            useDefaultParams,
+            customParams: !useDefaultParams ? {
+                featureType,
+                referenceClass,
+                limeGlobalExplanationSampleNum,
+                shapModelFinetune,
+                limeModelFinetune,
+                scoring,
+                featureImportanceFinetune,
+                numTopFeatures,
+                plotter,
+                dim,
+                paramFinetune,
+                finetuneFraction,
+                saveBestModel,
+                standardScaling,
+                saveDataTransformer,
+                saveLabelEncoder,
+                verbose,
+                testSize,
+                nFolds,
+                usePreprocessing,
+                isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
+                afterFeatureSelection: afterFeatureSelection === undefined ? false : afterFeatureSelection
+            } : null
+        };
+        
+        const job = await analysisQueue.add(jobData, {
+            jobId: analysisId,
+            priority: req.userId ? 1 : 2, // Logged-in users get higher priority
         });
         
-        // Capture best hyperparameters if present
-        output.forEach(line => {
-            if (line.startsWith('BEST_PARAMS:')) {
-                try {
-                    const parsed = JSON.parse(line.replace('BEST_PARAMS:', '').trim());
-                    if (parsed && typeof parsed === 'object') {
-                        // Attach to response via closure variable
-                        if (!req.bestParams) req.bestParams = {};
-                        req.bestParams = Object.assign(req.bestParams, parsed);
-                    }
-                } catch (e) {
-                    console.error('Failed to parse BEST_PARAMS line:', e);
-                }
-            }
+        console.log(`[Queue] Analysis ${analysisId} queued successfully with job ID ${job.id}`);
+        
+        // Return immediately with queue status
+        res.json({
+            success: true,
+            analysisId,
+            status: 'queued',
+            message: 'Analysis has been queued and will be processed shortly',
+            queuePosition: await analysisQueue.count() // Approximate position
         });
-
-        // Filter only file paths starting with "results/"
-        // Use path.sep for Windows compatibility
-        const resultsPrefix = path.join('results', ''); // Ensure trailing separator
-        const filteredResults = output.filter(p => p.trim().startsWith(resultsPrefix));
-        outputData = outputData.concat(filteredResults);
-    });
-
-    python.stderr.on('data', (data) => {
-        console.error(`stderr: ${data}`);
-        errorOutput += data.toString();
-    });
-
-    python.on('close', async (code) => {
-        const endTime = Date.now(); // End time of the process
-        const elapsedTime = formatElapsedTime(endTime - startTime); // Calculate elapsed time in a suitable format
-
-        if (code === 0) {
-            console.log("output data: ", outputData);
-            
-            // Mark analysis as finished in DB and update metadata with execution time
-            try {
-                const result = await db.query('SELECT analysis_metadata FROM analyses WHERE id = $1', [analysisId]);
-                let metadata = {};
-                
-                if (result.rows[0]?.analysis_metadata) {
-                    try {
-                        metadata = JSON.parse(result.rows[0].analysis_metadata);
-                    } catch (e) {
-                        console.error('Failed to parse existing metadata:', e);
-                    }
-                }
-                
-                // Add execution time to metadata
-                metadata.executionTime = elapsedTime;
-                
-                await db.query('UPDATE analyses SET status = $1, result_path = $2, analysis_metadata = $3 WHERE id = $4',
-                  ['finished', outputData.join(','), JSON.stringify(metadata), analysisId]);
-            } catch (err) {
-                console.error('Failed to update analysis record:', err);
-            }
-
-            // Persist best hyperparameters to a JSON file under the results directory (if available)
-            try {
-                if (req.bestParams && Object.keys(req.bestParams).length > 0 && Array.isArray(outputData) && outputData.length > 0) {
-                    const firstPath = outputData.find(p => typeof p === 'string' && p.includes(path.join('results', path.sep)) || typeof p === 'string' && p.startsWith('results')) || outputData[0];
-                    if (firstPath) {
-                        // Derive base directory: results/<file>/<class_pair>
-                        const parts = firstPath.split(path.sep);
-                        const idx = parts.indexOf('results');
-                        if (idx >= 0 && parts.length >= idx + 3) {
-                            const baseDir = path.join(...parts.slice(0, idx + 3));
-                            const bestParamsPath = path.join(baseDir, 'best_params.json');
-                            try {
-                                fs.writeFileSync(bestParamsPath, JSON.stringify(req.bestParams, null, 2), 'utf8');
-                                console.log('Saved best_params.json at:', bestParamsPath);
-                            } catch (e) {
-                                console.error('Failed to write best_params.json', e);
-                            }
-
-                            // Also persist a CSV export for convenience
-                            try {
-                                const bestParamsCsvPath = path.join(baseDir, 'best_params.csv');
-                                const escapeCsv = (val) => `"${String(val).replace(/"/g, '""')}"`;
-                                let csv = 'Model,Parameter,Value\n';
-                                Object.entries(req.bestParams || {}).forEach(([modelName, paramsObj]) => {
-                                    if (paramsObj && typeof paramsObj === 'object') {
-                                        Object.entries(paramsObj).forEach(([key, value]) => {
-                                            const printable = Array.isArray(value) ? JSON.stringify(value) : String(value);
-                                            csv += `${escapeCsv(modelName)},${escapeCsv(key)},${escapeCsv(printable)}\n`;
-                                        });
-                                    }
-                                });
-                                fs.writeFileSync(bestParamsCsvPath, csv, 'utf8');
-                                console.log('Saved best_params.csv at:', bestParamsCsvPath);
-                            } catch (e) {
-                                console.error('Failed to write best_params.csv', e);
-                            }
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('Unexpected error while persisting best params:', e);
-            }
-
-            // Send the response here
-            console.log('Sending response with categoricalEncodingInfo:', categoricalEncodingInfo);
-            res.json({
-                success: true,
-                analysisId: analysisId,
-                imagePaths: outputData,
-                elapsedTime: elapsedTime,
-                categoricalEncodingInfo: categoricalEncodingInfo,
-                bestParams: req.bestParams || null
-            });
-
-            // After responding, notify pending email subscribers (fire-and-forget)
-            try {
-                const publicBase = process.env.PUBLIC_BASE_URL || 'http://localhost:3000';
-                const viewUrl = `${publicBase}/#/results/${analysisId}`;
-                const subject = 'Your analysis has finished';
-                const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#333">`
-                  + `<p>Your analysis is complete.</p>`
-                  + `<p><a href="${viewUrl}">Click here to view the results</a></p>`
-                  + `<p>If the link does not work, copy and paste this URL into your browser:</p>`
-                  + `<p>${viewUrl}</p>`
-                  + `</div>`;
-                const result = await db.query('SELECT id, email FROM notification_subscriptions WHERE job_id = $1 AND status = $2', [analysisId, 'pending']);
-                if (result.rows.length > 0) {
-                    result.rows.forEach(async (row) => {
-                        try {
-                            await sendMail({ to: row.email, subject, html, text: `Your analysis is complete. View: ${viewUrl}` });
-                            await db.query('UPDATE notification_subscriptions SET status = $1, sent_at = CURRENT_TIMESTAMP WHERE id = $2', ['sent', row.id]);
-                        } catch (mailErr) {
-                            console.error('Failed to send email notification:', mailErr);
-                            await db.query('UPDATE notification_subscriptions SET status = $1, error_message = $2 WHERE id = $3', ['failed', String(mailErr), row.id]);
-                        }
-                    });
-                }
-            } catch (notifyErr) {
-                console.error('Notification error:', notifyErr);
-            }
-        } else {
-            console.error(`Python script failed with code ${code}`);
-            // Mark analysis as failed
-            try {
-                await db.query('UPDATE analyses SET status = $1 WHERE id = $2',
-                  ['failed', analysisId]);
-            } catch (err) {
-                console.error('Failed to set analysis status to failed:', err);
-            }
-            res.status(500).json({
-                success: false,
-                message: 'Python script failed',
-                error: errorOutput
-            });
-
-            // On failure, also notify subscribers about failure
-            try {
-                const publicBase = process.env.PUBLIC_BASE_URL || 'http://localhost:3000';
-                const viewUrl = `${publicBase}/#/results/${analysisId}`;
-                const subject = 'Your analysis has failed';
-                const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#333">`
-                  + `<p>Unfortunately, your analysis failed. You may try again or check logs.</p>`
-                  + `<p>You can still open the results viewer page: <a href="${viewUrl}">${viewUrl}</a></p>`
-                  + `</div>`;
-                const result = await db.query('SELECT id, email FROM notification_subscriptions WHERE job_id = $1 AND status = $2', [analysisId, 'pending']);
-                if (result.rows.length > 0) {
-                    result.rows.forEach(async (row) => {
-                        try {
-                            await sendMail({ to: row.email, subject, html, text: `Your analysis failed. View: ${viewUrl}` });
-                            await db.query('UPDATE notification_subscriptions SET status = $1, sent_at = CURRENT_TIMESTAMP WHERE id = $2', ['sent', row.id]);
-                        } catch (mailErr) {
-                            console.error('Failed to send failure email notification:', mailErr);
-                            await db.query('UPDATE notification_subscriptions SET status = $1, error_message = $2 WHERE id = $3', ['failed', String(mailErr), row.id]);
-                        }
-                    });
-                }
-            } catch (notifyErr) {
-                console.error('Notification error:', notifyErr);
-            }
+        
+    } catch (error) {
+        console.error('[Queue] Error submitting analysis to queue:', error);
+        
+        // Update status to failed
+        try {
+            await db.query('UPDATE analyses SET status = $1 WHERE id = $2', ['failed', analysisId]);
+        } catch (dbErr) {
+            console.error('Failed to update analysis status:', dbErr);
         }
-    });
+        
+        res.status(500).json({
+            success: false,
+            error: 'Failed to queue analysis',
+            message: error.message
+        });
+    }
+});
+
+// Status polling endpoint for queue
+app.get('/api/analysis/:id/status', async (req, res) => {
+    const analysisId = req.params.id;
+    
+    try {
+        // Check ownership first
+        const result = await db.query(
+            'SELECT status, result_path, analysis_metadata, session_id, user_id FROM analyses WHERE id = $1',
+            [analysisId]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Analysis not found' });
+        }
+        
+        const analysis = result.rows[0];
+        
+        // Verify ownership
+        const ownedByUser = req.userId && analysis.user_id === req.userId;
+        const ownedBySession = req.sessionId && analysis.session_id === req.sessionId;
+        
+        if (!ownedByUser && !ownedBySession) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+        
+        // Get job progress if still queued or processing
+        let progress = 0;
+        let queuePosition = null;
+        
+        console.log(`[Status] Checking status for analysis ${analysisId}: ${analysis.status}`);
+        
+        if (analysis.status === 'queued' || analysis.status === 'processing') {
+            try {
+                const job = await analysisQueue.getJob(analysisId);
+                if (job) {
+                    const jobProgress = await job.progress();
+                    progress = typeof jobProgress === 'number' ? jobProgress : 0;
+                    
+                    console.log(`[Status] Job ${analysisId} progress: ${progress}`);
+                    
+                    if (analysis.status === 'queued') {
+                        const waiting = await analysisQueue.getWaiting();
+                        queuePosition = waiting.findIndex(j => j.id === analysisId) + 1;
+                        console.log(`[Status] Job ${analysisId} queue position: ${queuePosition}`);
+                    }
+                } else {
+                    console.log(`[Status] Job ${analysisId} not found in queue`);
+                }
+            } catch (err) {
+                console.error('Error getting job info:', err);
+            }
+        } else if (analysis.status === 'finished') {
+            progress = 100;
+        }
+        
+        res.json({
+            success: true,
+            analysisId,
+            status: analysis.status,
+            progress,
+            queuePosition,
+            resultPath: analysis.result_path,
+            metadata: analysis.analysis_metadata ? JSON.parse(analysis.analysis_metadata) : null
+        });
+        
+    } catch (error) {
+        console.error('Error checking analysis status:', error);
+        res.status(500).json({ success: false, error: 'Failed to check status' });
+    }
 });
 
 // step8 - Endpoint to summarize statistical methods
