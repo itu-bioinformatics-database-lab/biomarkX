@@ -474,7 +474,7 @@ router.get('/analyses/:id/continue', authMiddleware, async (req, res) => {
       
       const imagePaths = a.result_path ? a.result_path.split(',').filter(p => p.trim()) : [];
       const hasAfterFSFolder = imagePaths.some(p => /AfterFeatureSelection/i.test(p));
-      const producedFeatureScores = imagePaths.some(p => /(feature_importance|anova|t_test|shap|lime|feature_ranking)/i.test(p));
+      const producedFeatureScores = imagePaths.some(p => /(feature_importance|anova|t_test|wilcoxon_rank_sum|kruskal_wallis|shap|lime|feature_ranking)/i.test(p));
       
       return {
         analysisId: a.id,

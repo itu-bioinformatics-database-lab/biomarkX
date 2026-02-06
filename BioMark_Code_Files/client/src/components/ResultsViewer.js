@@ -170,14 +170,14 @@ export default function ResultsViewer() {
 
       // Optional phase between classPair and method (e.g., 'initial', 'AfterFeatureSelection')
       const afterPair = parts.slice(idxRes + 3);
-      const methodKeys = new Set(['t_test', 'anova', 'shap', 'lime', 'feature_importance', 'models', 'summaryStatisticalMethods']);
+      const methodKeys = new Set(['t_test', 'anova', 'wilcoxon_rank_sum', 'kruskal_wallis', 'shap', 'lime', 'feature_importance', 'models', 'summaryStatisticalMethods']);
       const foundIdx = afterPair.findIndex(seg => methodKeys.has(seg));
       const phase = foundIdx > 0 ? afterPair.slice(0, foundIdx).join('/') : (foundIdx === 0 ? '' : afterPair.slice(0, 1).join('/'));
       const sub1 = foundIdx >= 0 ? afterPair[foundIdx] : afterPair[0];
 
       const basePrefix = `/results/${fileName}/${classPair}` + (phase ? `/${phase}` : '');
 
-      // Statistical: t_test / anova
+      // Statistical: t_test / anova / wilcoxon_rank_sum / kruskal_wallis
       if (sub1 === 't_test') {
         links.push({ href: buildUrl(`${basePrefix}/t_test/t_test_results.csv`), label: 'Download Model Details as CSV' });
         // Aggregated (combined) ranking for the class pair
@@ -192,6 +192,22 @@ export default function ResultsViewer() {
         links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/ranked_features_df.csv`), label: 'Download Biomarker List (Combined)' });
         // Method-specific ranked list for anova only
         links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=statistical_tests_analysis=anova/ranked_features_df.csv`), label: 'Download Biomarker List as CSV' });
+        return links;
+      }
+      if (sub1 === 'wilcoxon_rank_sum') {
+        links.push({ href: buildUrl(`${basePrefix}/wilcoxon_rank_sum/wilcoxon_rank_sum_results.csv`), label: 'Download Model Details as CSV' });
+        // Aggregated (combined) ranking for the class pair
+        links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/ranked_features_df.csv`), label: 'Download Biomarker List (Combined)' });
+        // Method-specific ranked list for wilcoxon_rank_sum only
+        links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=statistical_tests_analysis=wilcoxon_rank_sum/ranked_features_df.csv`), label: 'Download Biomarker List as CSV' });
+        return links;
+      }
+      if (sub1 === 'kruskal_wallis') {
+        links.push({ href: buildUrl(`${basePrefix}/kruskal_wallis/kruskal_wallis_results.csv`), label: 'Download Model Details as CSV' });
+        // Aggregated (combined) ranking for the class pair
+        links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/ranked_features_df.csv`), label: 'Download Biomarker List (Combined)' });
+        // Method-specific ranked list for kruskal_wallis only
+        links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=statistical_tests_analysis=kruskal_wallis/ranked_features_df.csv`), label: 'Download Biomarker List as CSV' });
         return links;
       }
 

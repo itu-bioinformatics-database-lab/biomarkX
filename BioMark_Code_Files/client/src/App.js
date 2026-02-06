@@ -17,6 +17,7 @@ import LongRunNotificationModal from './components/common/LongRunNotificationMod
 import { buildKeggColumns, KEGG_PREVIEW_LIMIT } from './utils/keggTable';
 import { LOGIN_PATH } from './constants/routes';
 
+
 const ENRICHMENT_OPTIONS = {
   KEGG: {
     analysisType: 'KEGG',
@@ -921,14 +922,14 @@ function App() {
 
       // Optional phase between classPair and method (e.g., 'initial', 'AfterFeatureSelection')
       const afterPair = parts.slice(idxRes + 3);
-      const methodKeys = new Set(['t_test', 'anova', 'shap', 'lime', 'feature_importance', 'models', 'summaryStatisticalMethods']);
+      const methodKeys = new Set(['t_test', 'anova', 'wilcoxon_rank_sum', 'kruskal_wallis', 'shap', 'lime', 'feature_importance', 'models', 'summaryStatisticalMethods']);
       const foundIdx = afterPair.findIndex(seg => methodKeys.has(seg));
       const phase = foundIdx > 0 ? afterPair.slice(0, foundIdx).join('/') : (foundIdx === 0 ? '' : afterPair.slice(0, 1).join('/'));
       const sub1 = foundIdx >= 0 ? afterPair[foundIdx] : afterPair[0];
 
       const basePrefix = `/results/${fileName}/${classPair}` + (phase ? `/${phase}` : '');
 
-      // Statistical: t_test / anova
+      // Statistical: t_test / anova / wilcoxon_rank_sum / kruskal_wallis
       if (sub1 === 't_test') {
         links.push({ href: buildUrl(`${basePrefix}/t_test/t_test_results.csv`), label: 'Download Model Details as CSV' });
         // Aggregated (combined) ranking for the class pair
@@ -943,6 +944,22 @@ function App() {
         links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/ranked_features_df.csv`), label: 'Download Biomarker List (Combined)' });
         // Method-specific ranked list for anova only
         links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=statistical_tests_analysis=anova/ranked_features_df.csv`), label: 'Download Biomarker List as CSV' });
+        return links;
+      }
+      if (sub1 === 'wilcoxon_rank_sum') {
+        links.push({ href: buildUrl(`${basePrefix}/wilcoxon_rank_sum/wilcoxon_rank_sum_results.csv`), label: 'Download Model Details as CSV' });
+        // Aggregated (combined) ranking for the class pair
+        links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/ranked_features_df.csv`), label: 'Download Biomarker List (Combined)' });
+        // Method-specific ranked list for wilcoxon_rank_sum only
+        links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=statistical_tests_analysis=wilcoxon_rank_sum/ranked_features_df.csv`), label: 'Download Biomarker List as CSV' });
+        return links;
+      }
+      if (sub1 === 'kruskal_wallis') {
+        links.push({ href: buildUrl(`${basePrefix}/kruskal_wallis/kruskal_wallis_results.csv`), label: 'Download Model Details as CSV' });
+        // Aggregated (combined) ranking for the class pair
+        links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/ranked_features_df.csv`), label: 'Download Biomarker List (Combined)' });
+        // Method-specific ranked list for kruskal_wallis only
+        links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=statistical_tests_analysis=kruskal_wallis/ranked_features_df.csv`), label: 'Download Biomarker List as CSV' });
         return links;
       }
 
@@ -2394,7 +2411,7 @@ function App() {
             
             // Check for AfterFeatureSelection
             const hasAfterFSFolder = imagePaths.some(p => /AfterFeatureSelection/i.test(p));
-            const producedFeatureScores = imagePaths.some(p => /(feature_importance|anova|t_test|shap|lime|feature_ranking)/i.test(p));
+            const producedFeatureScores = imagePaths.some(p => /(feature_importance|anova|t_test|wilcoxon_rank_sum|kruskal_wallis|shap|lime|feature_ranking)/i.test(p));
             
             // Store the completed analysis
             setPendingAnalysis({
@@ -3328,7 +3345,7 @@ function App() {
           <div className="analysis-notification-content">
             {analysisStatus === 'queued' && (
               <>
-                <div className="notification-icon">⏳</div>
+                <div className="notification-icon">&#8987;</div>
                 <div className="notification-text">
                   <strong>Analysis Queued</strong>
                   <p>Your analysis has been queued and will be processed shortly.</p>
@@ -3349,7 +3366,7 @@ function App() {
             )}
             {analysisStatus === 'finished' && pendingAnalysis && (
               <>
-                <div className="notification-icon">✅</div>
+                <div className="notification-icon">&#10004;</div>
                 <div className="notification-text">
                   <strong>Analysis Complete!</strong>
                   <p>Your analysis has finished successfully.</p>
@@ -3365,13 +3382,13 @@ function App() {
                   }}
                   aria-label="Close notification"
                 >
-                  ×
+                  x
                 </button>
               </>
             )}
             {analysisStatus === 'failed' && (
               <>
-                <div className="notification-icon">❌</div>
+                <div className="notification-icon">&#10060;</div>
                 <div className="notification-text">
                   <strong>Analysis Failed</strong>
                   <p>There was an error processing your analysis. Please try again.</p>
@@ -3381,7 +3398,7 @@ function App() {
                   onClick={() => setShowAnalysisNotification(false)}
                   aria-label="Close notification"
                 >
-                  ×
+                  x
                 </button>
               </>
             )}
@@ -4274,7 +4291,7 @@ function App() {
                       {aggregationMethod === 'weighted_borda' && (
                         <>
                           <label style={{ fontWeight: 600 }}>weights (JSON)</label>
-                          <input type="text" value={aggregationWeights} onChange={(e) => setAggregationWeights(e.target.value)} placeholder='{"shap":1.5,"anova":1.0,"t_test":1.0,"lime":1.2}' style={{ minWidth: 350, fontSize: 16 }} />
+                          <input type="text" value={aggregationWeights} onChange={(e) => setAggregationWeights(e.target.value)} placeholder='{"shap":1.5,"anova":1.0,"t_test":1.0,"wilcoxon_rank_sum":1.0,"kruskal_wallis":1.0,"lime":1.2}' style={{ minWidth: 350, fontSize: 16 }} />
                         </>
                       )}
                       {aggregationMethod === 'rrf' && (

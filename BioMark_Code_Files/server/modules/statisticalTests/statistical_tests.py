@@ -13,7 +13,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 # Stats
-from scipy.stats import ttest_ind
+from scipy.stats import ttest_ind, mannwhitneyu, kruskal
 
 # Custom
 from modules.logger import logging
@@ -25,7 +25,7 @@ set_config(transform_output="pandas")
 
 class StatisticalTestAnalysis:
     """
-    Statistical tests runner for ANOVA and t-Test. Prepares data the same way as the
+    Statistical tests runner for ANOVA, t-Test, Wilcoxon rank-sum, and Kruskal-Wallis. Prepares data the same way as the
     previous DifferentiatingFactorAnalysis and saves results to feature_importances.json
     grouped by class pairs for downstream use (e.g., feature ranking summary).
     """
@@ -202,6 +202,143 @@ class StatisticalTestAnalysis:
         print(" t-Test Analysis Completed ")
         print("=" * length)
 
+    def perform_wilcoxon_rank_sum(self):
+        logging.info("Performing Wilcoxon Rank-Sum Test")
+        length = 110
+        print("=" * length)
+        print(" Starting Wilcoxon Rank-Sum")
+        print("=" * length)
+
+        if len(self.class_names) != 2:
+            logging.warning("Wilcoxon rank-sum requires exactly two classes; skipping.")
+            print("Wilcoxon rank-sum requires exactly two classes; skipping.")
+            print("=" * length)
+            return
+
+        np.random.seed(0)
+
+        class_0 = self.X.iloc[self.labels[self.labels == self.class_names[0]].dropna().index, :]
+        class_1 = self.X.iloc[self.labels[self.labels == self.class_names[1]].dropna().index, :]
+
+        wilcoxon_values = {"Features": [], "U statistic": [], "p-value": []}
+        for column in self.X.columns:
+            output = mannwhitneyu(class_0[column], class_1[column], alternative="two-sided")
+            wilcoxon_values["Features"].append(column)
+            wilcoxon_values["U statistic"].append(output.statistic)
+            wilcoxon_values["p-value"].append(output.pvalue)
+
+        logging.info("Computing Wilcoxon Rank-Sum Features")
+        wilcoxon_df = pd.DataFrame(wilcoxon_values)
+        wilcoxon_df = wilcoxon_df.sort_values(by="U statistic", ascending=False)
+        wilcoxon_df["Features"] = wilcoxon_df["Features"].apply(lambda x: self.feature_map_reverse[x])
+
+        # Save full Wilcoxon table to CSV for download
+        try:
+            wilcoxon_csv_path = os.path.join(self.outdir, "wilcoxon_rank_sum", "wilcoxon_rank_sum_results.csv")
+            os.makedirs(os.path.dirname(wilcoxon_csv_path), exist_ok=True)
+            wilcoxon_df.to_csv(wilcoxon_csv_path, index=False, sep=';', encoding='utf-8-sig')
+        except Exception:
+            pass
+
+        logging.info("Plotting Top n Features (Wilcoxon Rank-Sum)")
+        top_wilcoxon_features = wilcoxon_df[wilcoxon_df["p-value"] < 0.05].head(self.top_features_to_plot)
+        colors = top_wilcoxon_features["U statistic"].apply(lambda x: "blue")
+
+        plt.figure(figsize=(10, 15))
+        plt.barh(top_wilcoxon_features["Features"], top_wilcoxon_features["U statistic"], color=colors)
+        plt.xlabel('U statistic', fontsize=20)
+        plt.xticks(fontsize=18)
+        plt.yticks(fontsize=18)
+        plt.title(f'Wilcoxon Rank-Sum Feature Importance of Top Differentiating {self.feature_type}s',
+                  fontsize=20, loc='center', pad=15)
+        plt.gca().invert_yaxis()
+
+        logging.info("Saving Plots")
+        plt.savefig(f'{self.outdir}/wilcoxon_rank_sum/png/wilcoxon_rank_sum_features_plot.png', bbox_inches='tight')
+        plt.savefig(f'{self.outdir}/wilcoxon_rank_sum/pdf/wilcoxon_rank_sum_features_plot.pdf', bbox_inches='tight')
+        print(f'{self.outdir}/wilcoxon_rank_sum/png/wilcoxon_rank_sum_features_plot.png')
+
+        self.top_features["wilcoxon_rank_sum"] = {wilcoxon_df.Features[i]: wilcoxon_df["U statistic"][i]
+                                                   for i in range(len(wilcoxon_df))}
+
+        print(sorted(self.top_features["wilcoxon_rank_sum"], key=self.top_features["wilcoxon_rank_sum"].get, reverse=True)[:self.top_features_to_plot])
+        print("=" * length)
+        print(" Wilcoxon Rank-Sum Analysis Completed ")
+        print("=" * length)
+
+    def perform_kruskal_wallis(self):
+        logging.info("Performing Kruskal-Wallis Test")
+        length = 110
+        print("=" * length)
+        print(" Starting Kruskal-Wallis")
+        print("=" * length)
+
+        if len(self.class_names) < 2:
+            logging.warning("Kruskal-Wallis requires at least two classes; skipping.")
+            print("Kruskal-Wallis requires at least two classes; skipping.")
+            print("=" * length)
+            return
+
+        np.random.seed(0)
+
+        group_indices = {
+            class_name: self.labels[self.labels == class_name].dropna().index
+            for class_name in self.class_names
+        }
+
+        kruskal_values = {"Features": [], "H statistic": [], "p-value": []}
+        for column in self.X.columns:
+            groups = [self.X.loc[group_indices[name], column] for name in self.class_names]
+            try:
+                output = kruskal(*groups)
+                statistic = output.statistic
+                p_value = output.pvalue
+            except Exception:
+                statistic = 0.0
+                p_value = 1.0
+            kruskal_values["Features"].append(column)
+            kruskal_values["H statistic"].append(statistic)
+            kruskal_values["p-value"].append(p_value)
+
+        logging.info("Computing Kruskal-Wallis Features")
+        kruskal_df = pd.DataFrame(kruskal_values)
+        kruskal_df = kruskal_df.sort_values(by="H statistic", ascending=False)
+        kruskal_df["Features"] = kruskal_df["Features"].apply(lambda x: self.feature_map_reverse[x])
+
+        # Save full Kruskal-Wallis table to CSV for download
+        try:
+            kruskal_csv_path = os.path.join(self.outdir, "kruskal_wallis", "kruskal_wallis_results.csv")
+            os.makedirs(os.path.dirname(kruskal_csv_path), exist_ok=True)
+            kruskal_df.to_csv(kruskal_csv_path, index=False, sep=';', encoding='utf-8-sig')
+        except Exception:
+            pass
+
+        logging.info("Plotting Top n Features (Kruskal-Wallis)")
+        top_kruskal_features = kruskal_df[kruskal_df["p-value"] < 0.05].head(self.top_features_to_plot)
+        colors = top_kruskal_features["H statistic"].apply(lambda x: "blue")
+
+        plt.figure(figsize=(10, 15))
+        plt.barh(top_kruskal_features["Features"], top_kruskal_features["H statistic"], color=colors)
+        plt.xlabel('H statistic', fontsize=20)
+        plt.xticks(fontsize=18)
+        plt.yticks(fontsize=18)
+        plt.title(f'Kruskal-Wallis Feature Importance of Top Differentiating {self.feature_type}s',
+                  fontsize=20, loc='center', pad=15)
+        plt.gca().invert_yaxis()
+
+        logging.info("Saving Plots")
+        plt.savefig(f'{self.outdir}/kruskal_wallis/png/kruskal_wallis_features_plot.png', bbox_inches='tight')
+        plt.savefig(f'{self.outdir}/kruskal_wallis/pdf/kruskal_wallis_features_plot.pdf', bbox_inches='tight')
+        print(f'{self.outdir}/kruskal_wallis/png/kruskal_wallis_features_plot.png')
+
+        self.top_features["kruskal_wallis"] = {kruskal_df.Features[i]: kruskal_df["H statistic"][i]
+                                               for i in range(len(kruskal_df))}
+
+        print(sorted(self.top_features["kruskal_wallis"], key=self.top_features["kruskal_wallis"].get, reverse=True)[:self.top_features_to_plot])
+        print("=" * length)
+        print(" Kruskal-Wallis Analysis Completed ")
+        print("=" * length)
+
     def run_all_analyses(self):
         logging.info("RUNNING STATISTICAL ANALYSES")
         length = 110
@@ -213,6 +350,10 @@ class StatisticalTestAnalysis:
             self.perform_anova()
         if "t_test" in self.analyses:
             self.perform_t_test()
+        if "wilcoxon_rank_sum" in self.analyses:
+            self.perform_wilcoxon_rank_sum()
+        if "kruskal_wallis" in self.analyses:
+            self.perform_kruskal_wallis()
 
         # Convert values to float for JSON serialization
         for a in self.top_features.keys():

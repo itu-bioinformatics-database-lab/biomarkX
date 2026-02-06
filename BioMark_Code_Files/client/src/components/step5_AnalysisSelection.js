@@ -72,7 +72,7 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
   }, [showParamsDropdown, confirmSelection]);
   
   const analysisOptions = {
-    statisticalTest: ['T-test', 'Anova'],
+    statisticalTest: ['T-test', 'Anova', 'Wilcoxon-rank-sum', 'Kruskal-Wallis'],
     dimensionalityReduction: ['PCA', 'tSNE', 'UMAP'],
     classificationAnalysis: ['Logistic Regression', 'Random Forest', 'XGBClassifier', 'Decision Tree', 'Gradient Boosting', 'CatBoosting Classifier', 'AdaBoost Classifier', 'MLPClassifier', 'SVC'],
     modelExplanation: ['SHAP', 'LIME', 'Permutation-Feature-Importance']

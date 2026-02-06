@@ -524,6 +524,21 @@ def _build_table_rows(
 	return rows
 
 
+def _build_open_targets_fallback_rows(input_symbol: str, hit: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+	gene_name = ""
+	if isinstance(hit, dict):
+		gene_name = hit.get("name") or ""
+	return [{
+		"biomarkerSymbol": input_symbol,
+		"biomarkerType": "Gene",
+		"biomarkerName": gene_name or input_symbol,
+		"disease": "No disease associations found - see Open Targets for sequence info;",
+		"score": None,
+		"source": "Open Targets (fallback)",
+		"link": f"https://platform.opentargets.org/search?q={input_symbol}&page=1",
+	}]
+
+
 def _build_mirna_table_rows(input_symbol: str) -> List[Dict[str, Any]]:
 	"""
 	Build table rows for microRNA biomarkers using JensenLab DISEASES database.
@@ -607,8 +622,12 @@ def _build_response_rows(genes: List[str]) -> Dict[str, Any]:
 						ensembl_id = None
 					associations = _fetch_open_targets_rows(ensembl_id) if ensembl_id else []
 					rows = _build_table_rows(symbol, hit, associations)
-					if rows:
-						gene_count += 1
+					if not rows:
+						rows = _build_open_targets_fallback_rows(symbol, hit)
+					gene_count += 1
+				else:
+					rows = _build_open_targets_fallback_rows(symbol, None)
+					gene_count += 1
 		except (requests.RequestException, ValueError) as exc:
 			rows = []
 			sys.stderr.write(f"[biomarker_validation] Lookup failed for {symbol}: {exc}\n")
