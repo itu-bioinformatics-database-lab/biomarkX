@@ -349,6 +349,9 @@ function App() {
   const [uploadDuration, setUploadDuration] = useState(null);
   const [loadingClasses, setLoadingClasses] = useState(false); // loading while fetching class list
 
+  // State for analysis display name (optional custom name)
+  const [analysisDisplayName, setAnalysisDisplayName] = useState('');
+
   // New state: holds upload results when multiple files are uploaded
   const [uploadedInfos, setUploadedInfos] = useState(null);
   const [activeUploadIndex, setActiveUploadIndex] = useState(0);
@@ -1389,6 +1392,7 @@ function App() {
       setShowStepSix(false);
       setShowStepAnalysis(false);
       setselectedClasses([]);
+      setAnalysisDisplayName('');
     } else {
       setFile(null);
       setShowStepTwo(false);
@@ -2268,7 +2272,8 @@ function App() {
       testSize: testSize,
       nFolds: nFolds,
       datasetNames: datasetNamesForReport, // Add dataset names for PDF filename
-      parentAnalysisId: parentId // Include parent ID if this is a child analysis
+      parentAnalysisId: parentId, // Include parent ID if this is a child analysis
+      display_name: parentId ? null : (analysisDisplayName && analysisDisplayName.trim() ? analysisDisplayName.trim() : null) // Only include display name for parent analysis
     };
   };
 
@@ -2285,6 +2290,7 @@ function App() {
       return;
     }
     console.log("Running analysis with payload:", payload);
+    console.log("[Frontend] display_name being sent:", payload.display_name);
     setError('');
     setAnalyzing(true);
     
@@ -2423,6 +2429,9 @@ function App() {
             
             setAnalysisStatus('finished');
             setAnalysisProgress(100);
+            
+            // Clear display name for next analysis
+            setAnalysisDisplayName('');
             
           } else if (status === 'failed') {
             // Analysis failed
@@ -3038,6 +3047,7 @@ function App() {
     setEnrichmentProcessing({});
     setCompletedEnrichmentTypes({});
     setCanRunPathwayAnalysis(false);
+    setAnalysisDisplayName('');
     classCacheRef.current = new Map();
 
     setSelectedAnalyzes({
@@ -3825,14 +3835,33 @@ function App() {
               )}
               {/* Step 7: Run Analysis */}
               {showStepAnalysis && (
-                <div ref={stepAnalysisRef} className="run-analysis-section" style={{ display: 'flex', justifyContent: 'center' }}>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
+                <div ref={stepAnalysisRef} className="run-analysis-section" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  {/* Only show analysis name input for parent/root analysis, not for child analyses */}
+                  {previousAnalyses.length === 0 && (
+                    <input
+                      type="text"
+                      value={analysisDisplayName}
+                      onChange={(e) => setAnalysisDisplayName(e.target.value)}
+                      placeholder="Analysis name (optional)"
+                      style={{
+                        padding: '10px 14px',
+                        fontSize: '15px',
+                        border: '2px solid #e0e0e0',
+                        borderRadius: '6px',
+                        width: '320px',
+                        outline: 'none',
+                        transition: 'border-color 0.2s'
+                      }}
+                      onFocus={(e) => e.target.style.borderColor = '#4CAF50'}
+                      onBlur={(e) => e.target.style.borderColor = '#e0e0e0'}
+                      maxLength={200}
+                    />
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <button className="run-analysis-button" onClick={handleStartAnalysis}>
                       Run Analysis
                     </button>
-                    <span style={{ display: 'inline-flex' }}>
-                      <HelpTooltip placement="right" text={helpTexts.steps.run.note}>info</HelpTooltip>
-                    </span>
+                    <HelpTooltip placement="right" text={helpTexts.steps.run.note}>info</HelpTooltip>
                   </div>
                 </div>
               )}

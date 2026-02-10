@@ -484,8 +484,12 @@ app.post('/analyze', async (req, res) => {
         verbose,
         testSize,
         nFolds,
-        usePreprocessing
+        usePreprocessing,
+        display_name
     } = req.body;
+
+    console.log('[Analyze] Received display_name from frontend:', display_name);
+    console.log('[Analyze] Type of display_name:', typeof display_name);
 
     const baseFileName = path.basename(filePath);
 
@@ -599,11 +603,16 @@ app.post('/analyze', async (req, res) => {
         console.log('[Analyze] - parent_analysis_id:', parentAnalysisId);
         console.log('[Analyze] - session_id:', req.sessionId);
         console.log('[Analyze] - user_id:', req.userId || null);
+        console.log('[Analyze] - display_name (raw):', display_name);
         
-        await db.query('INSERT INTO analyses (id, upload_id, merged_file_id, source_upload_ids, session_id, user_id, status, analysis_metadata, parent_analysis_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-                    [analysisId, derivedUploadIdForInsert, mergedFileId, sourceUploadIds, req.sessionId, req.userId || null, 'queued', JSON.stringify(metadata), parentAnalysisId]);
+        // Set display_name (trimmed or null)
+        const displayNameToSave = display_name && display_name.trim() ? display_name.trim() : null;
+        console.log('[Analyze] - display_name (to save):', displayNameToSave);
         
-        console.log('[Analyze] Analysis record inserted successfully');
+        await db.query('INSERT INTO analyses (id, upload_id, merged_file_id, source_upload_ids, session_id, user_id, status, analysis_metadata, parent_analysis_id, display_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+                    [analysisId, derivedUploadIdForInsert, mergedFileId, sourceUploadIds, req.sessionId, req.userId || null, 'queued', JSON.stringify(metadata), parentAnalysisId, displayNameToSave]);
+        
+        console.log('[Analyze] Analysis record inserted successfully with display_name:', displayNameToSave);
     } catch (err) {
         console.error('[Analyze] Failed to insert analysis record:', err);
         return res.status(500).json({ success: false, error: 'Failed to create analysis record' });
