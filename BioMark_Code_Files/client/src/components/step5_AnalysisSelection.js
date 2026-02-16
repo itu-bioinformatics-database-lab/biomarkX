@@ -7,7 +7,7 @@ import AccountTree from '@mui/icons-material/AccountTree';
 import Insights from '@mui/icons-material/Insights';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
-function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggleAfterFS, canUseAfterFS, computedNumTopFeatures, onNumTopFeaturesChange }) {
+function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggleAfterFS, canUseAfterFS, computedNumTopFeatures, onNumTopFeaturesChange, numSelectedClasses }) {
   const [selectedAnalyses, setSelectedAnalyses] = useState({
     statisticalTest: [],
     dimensionalityReduction: [],
@@ -78,8 +78,32 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
     modelExplanation: ['SHAP', 'LIME', 'Permutation-Feature-Importance']
   };
 
+  // Class count compatibility: methods that only work with exactly 2 classes
+  const methodClassLimits = {
+    'T-test': { min: 2, max: 2 },
+    'Wilcoxon-rank-sum': { min: 2, max: 2 },
+    // All others default to { min: 2, max: Infinity }
+  };
+
+  // Check if a method is compatible with the current number of selected classes
+  const isMethodCompatible = (method) => {
+    const limits = methodClassLimits[method] || { min: 2, max: Infinity };
+    return numSelectedClasses >= limits.min && numSelectedClasses <= limits.max;
+  };
+
+  // Get tooltip text for disabled methods
+  const getDisabledTooltip = (method) => {
+    const limits = methodClassLimits[method];
+    if (!limits) return '';
+    if (limits.max === 2) return 'This method requires exactly 2 classes for comparison.';
+    return `This method requires at least ${limits.min} classes.`;
+  };
+
   // Handle selection of analysis method
   const handleSelection = (method, category) => {
+    // Block selection of incompatible methods
+    if (!isMethodCompatible(method)) return;
+
     setSelectedAnalyses(prev => {
       const isDeselecting = prev[category].includes(method);
 
@@ -255,20 +279,24 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
               </h4>
               <table>
                 <tbody>
-                  {analysisOptions.statisticalTest.map((method) => (
+                  {analysisOptions.statisticalTest.map((method) => {
+                    const compatible = isMethodCompatible(method);
+                    return (
                     <tr
                       key={method}
-                      className={selectedAnalyses.statisticalTest.includes(method) ? 'selected' : ''}
+                      className={`${selectedAnalyses.statisticalTest.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
                       onClick={() => handleSelection(method, 'statisticalTest')}
+                      title={!compatible ? getDisabledTooltip(method) : ''}
                     >
-                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                        <span>{method}</span>
+                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
+                        <span>{method}{!compatible && <span style={{ fontSize: 11, color: '#999', marginLeft: 6 }}>(2 classes only)</span>}</span>
                         <span onClick={(e) => e.stopPropagation()}>
                           <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
                         </span>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -280,20 +308,24 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
               </h4>
               <table>
                 <tbody>
-                  {analysisOptions.dimensionalityReduction.map((method) => (
+                  {analysisOptions.dimensionalityReduction.map((method) => {
+                    const compatible = isMethodCompatible(method);
+                    return (
                     <tr
                       key={method}
-                      className={selectedAnalyses.dimensionalityReduction.includes(method) ? 'selected' : ''}
+                      className={`${selectedAnalyses.dimensionalityReduction.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
                       onClick={() => handleSelection(method, 'dimensionalityReduction')}
+                      title={!compatible ? getDisabledTooltip(method) : ''}
                     >
-                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
                         <span>{method}</span>
                         <span onClick={(e) => e.stopPropagation()}>
                           <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
                         </span>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -310,20 +342,24 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
                 </h4>
                 <table>
                   <tbody>
-                    {analysisOptions.classificationAnalysis.map((method) => (
+                    {analysisOptions.classificationAnalysis.map((method) => {
+                      const compatible = isMethodCompatible(method);
+                      return (
                       <tr
                         key={method}
-                        className={selectedAnalyses.classificationAnalysis.includes(method) ? 'selected' : ''}
+                        className={`${selectedAnalyses.classificationAnalysis.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
                         onClick={() => handleSelection(method, 'classificationAnalysis')}
+                        title={!compatible ? getDisabledTooltip(method) : ''}
                       >
-                        <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                        <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
                           <span>{method}</span>
                           <span onClick={(e) => e.stopPropagation()}>
                             <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
                           </span>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -342,20 +378,24 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
                 </h4>
                 <table>
                   <tbody>
-                    {analysisOptions.modelExplanation.map((method) => (
+                    {analysisOptions.modelExplanation.map((method) => {
+                      const compatible = isMethodCompatible(method);
+                      return (
                       <tr
                         key={method}
-                        className={selectedAnalyses.modelExplanation.includes(method) ? 'selected' : ''}
+                        className={`${selectedAnalyses.modelExplanation.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
                         onClick={() => handleSelection(method, 'modelExplanation')}
+                        title={!compatible ? getDisabledTooltip(method) : ''}
                       >
-                        <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                        <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
                           <span>{method}</span>
                           <span onClick={(e) => e.stopPropagation()}>
                             <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
                           </span>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

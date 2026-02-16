@@ -260,9 +260,18 @@ def feature_selection(outdir, class_pair: str):
     if not feature_importances or not isinstance(feature_importances, dict):
         return None
 
-    # Try both possible key orders (e.g. A_B and B_A)
+    # Try both possible key orders (e.g. A_vs_B and B_vs_A, or legacy A_B and B_A)
     possible_keys = [class_pair]
-    if "_" in class_pair:
+    if "_vs_" in class_pair:
+        parts = class_pair.split("_vs_")
+        # Try reversed order for 2-class pairs
+        if len(parts) == 2:
+            possible_keys.append(f"{parts[1]}_vs_{parts[0]}")
+        # Also try legacy underscore-only format for backward compatibility
+        possible_keys.append("_".join(parts))
+        if len(parts) == 2:
+            possible_keys.append(f"{parts[1]}_{parts[0]}")
+    elif "_" in class_pair:
         cls1, cls2 = class_pair.split("_", 1)
         possible_keys.append(f"{cls2}_{cls1}")
 
@@ -478,8 +487,8 @@ if __name__ == "__main__":
     file_name_without_ext = os.path.splitext(base_name)[0]
     outdir = os.path.join("results", file_name_without_ext)
     
-    # Create a unique path for this class pair analysis
-    class_pair_key = f"{selectedClasseses[0]}_{selectedClasseses[1]}" if len(selectedClasseses) >= 2 else "all_classes"
+    # Create a unique path for this class group analysis
+    class_pair_key = "_vs_".join(sorted(selectedClasseses)) if len(selectedClasseses) >= 2 else "all_classes"
     RESULTS_PATH = os.path.join(outdir, class_pair_key)
     FEATURE_RANKING_PATH = os.path.join(outdir, "feature_ranking", class_pair_key)
     os.makedirs(RESULTS_PATH, exist_ok=True)
@@ -638,7 +647,7 @@ if __name__ == "__main__":
         
         # We need the class pair to find the correct ranked features file.
         if len(selectedClasseses) >= 2:
-            class_pair_key = f"{selectedClasseses[0]}_{selectedClasseses[1]}"
+            class_pair_key = "_vs_".join(sorted(selectedClasseses))
             
             # This function loads feature_importances.json, ranks them using feature_rank,
             # and returns the top N features.

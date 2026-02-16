@@ -11,7 +11,7 @@ function BarChartWithSelection({ chartUrl, classList, onClassSelection }) {
     // Toggle selection
     if (selectedClasses.includes(className)) {
       setSelectedClasses(selectedClasses.filter((cls) => cls !== className));
-    } else if (selectedClasses.length < 2) {
+    } else {
       setSelectedClasses([...selectedClasses, className]);
     }
   };
@@ -46,9 +46,11 @@ function BarChartWithSelection({ chartUrl, classList, onClassSelection }) {
             ))}
           </tbody>
         </table>
-        {/* Show analyze button only when two classes are selected */}
-        {selectedClasses.length === 2 && (
-          <button onClick={() => onClassSelection(selectedClasses)}>Analyze</button>
+        {/* Show analyze button when two or more classes are selected */}
+        {selectedClasses.length >= 2 && (
+          <button onClick={() => onClassSelection(selectedClasses)}>
+            Analyze ({selectedClasses.length} classes selected)
+          </button>
         )}
       </div>
     </div>

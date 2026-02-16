@@ -227,6 +227,15 @@ select, option {
   color: #0d47a1;
 }
 
+/* Disabled (incompatible) method rows */
+.analysis-category tr.disabled-method {
+  cursor: not-allowed;
+  background-color: #fafafa;
+}
+.analysis-category tr.disabled-method:hover {
+  background-color: #fafafa;
+}
+
 .analysis-category td {
   padding: 10px 8px;
   font-size: 14px;

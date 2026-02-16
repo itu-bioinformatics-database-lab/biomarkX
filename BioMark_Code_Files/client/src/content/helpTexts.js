@@ -14,8 +14,8 @@ export const helpTexts = {
       howTo: "Search by column name. Patient Group and Sample ID cannot be the same.",
     },
     step4: {
-      about: "This chart shows the number of samples in each class. Select exactly two classes for comparison.",
-      howTo: "Taller bars mean more samples. Large imbalance may affect evaluation; consider robust metrics.",
+      about: "This chart shows the number of samples in each class. Select two or more classes for comparison. Some analysis methods require exactly two classes, while others support multi-class comparisons.",
+      howTo: "Click rows to select classes. Taller bars mean more samples. Large imbalance may affect evaluation; consider robust metrics.",
     },
     step5: {
       about: "Choose one primary analysis. Optionally add a model explanation after selecting a classification method.",
@@ -48,7 +48,7 @@ export const helpTexts = {
         "SVC": "Max-margin classifier; kernels enable non-linear boundaries; effective but slower on large datasets; scale features.",
         // Explanation Methods
         "SHAP": "Game-theoretic attribution; quantifies each feature's contribution to predictions (global + per-sample).",
-        "LIME": "Fits a simple surrogate around one prediction to show local feature effects; stochastic—repeat for stability.",
+        "LIME": "Fits a simple surrogate around one prediction to show local feature effects; stochasticï¿½repeat for stability.",
         "Permutation-Feature-Importance": "Measures metric drop when a feature is shuffled on holdout/CV; model-agnostic estimate of importance.",
       }
     },
@@ -67,10 +67,10 @@ export const helpTexts = {
       aggregationInfo: (
         "Aggregation methods merge multiple ranked biomarker lists into one consensus list. \n\n" +
         "Common options:\n" +
-        "• Reciprocal Rank Fusion (RRF): Robust default. Rewards biomarkers that appear near the top across lists; parameter k controls how quickly lower ranks are discounted.\n" +
-        "• Rank Product: Uses the geometric mean of ranks; highlights features consistently near the top; less influenced by a single extreme list.\n" +
-        "• Weighted Borda Count: Sums ranks with optional weights; give higher weight to methods you trust more (e.g., SHAP > t-test).\n" +
-        "• Simple Sum: Adds ranks across lists equally; easy to interpret but slightly more sensitive to the number of lists and outliers.\n\n" +
+        "ï¿½ Reciprocal Rank Fusion (RRF): Robust default. Rewards biomarkers that appear near the top across lists; parameter k controls how quickly lower ranks are discounted.\n" +
+        "ï¿½ Rank Product: Uses the geometric mean of ranks; highlights features consistently near the top; less influenced by a single extreme list.\n" +
+        "ï¿½ Weighted Borda Count: Sums ranks with optional weights; give higher weight to methods you trust more (e.g., SHAP > t-test).\n" +
+        "ï¿½ Simple Sum: Adds ranks across lists equally; easy to interpret but slightly more sensitive to the number of lists and outliers.\n\n" +
         "Tips: Start with RRF as a balanced choice. Use Weighted Borda when you want to prioritize certain methods. Try a couple of options and compare the Top-N biomarkers for stability."
       ),
     }

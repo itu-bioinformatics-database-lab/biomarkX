@@ -242,7 +242,11 @@ outdir_abs = server_root / outdir_rel
 
 human_label = _humanize_agg_label(agg_label)
 if class_pair:
-    class_pair_display = class_pair.replace('_', ' vs ')
+    # Support both _vs_ (new) and _ (legacy) delimiters
+    if '_vs_' in class_pair:
+        class_pair_display = class_pair.replace('_vs_', ' vs ')
+    else:
+        class_pair_display = class_pair.replace('_', ' vs ')
     title_text = (
         f"Top {feature_count} Biomarkers by Chosen Aggregation\n"
         f"for Class Pair: {class_pair_display}"

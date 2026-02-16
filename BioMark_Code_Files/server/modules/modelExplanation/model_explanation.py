@@ -52,7 +52,8 @@ class ModelExplanationAnalysis:
         sns.set_theme(style="darkgrid")
         self.X = X_data
         self.y = y_data
-        self.class_names = class_names
+        # Ensure class_names are strings to avoid join/formatting errors with numpy types
+        self.class_names = [str(c) for c in class_names] if class_names else class_names
         self.feature_map_reverse = feature_map_reverse
         self.outdir = outdir
         self.feature_type = feature_type
@@ -68,14 +69,13 @@ class ModelExplanationAnalysis:
             self.model_key = list(self.trained_models_info.keys())[0] if self.trained_models_info else "unknown_model"
         except Exception:
             self.model_key = "unknown_model"
-        # Random samples to keep behavior
+        # Random samples — support any number of classes
         np.random.seed(42)
-        class0_indices = np.where(self.y == 0)[0]
-        class1_indices = np.where(self.y == 1)[0]
-        random_class0_index = np.random.choice(class0_indices)
-        random_class1_index = np.random.choice(class1_indices)
-        self.random_samples = {self.class_names[0]: random_class0_index,
-                               self.class_names[1]: random_class1_index}
+        self.random_samples = {}
+        for idx, name in enumerate(self.class_names):
+            class_indices = np.where(self.y == idx)[0]
+            if len(class_indices) > 0:
+                self.random_samples[name] = np.random.choice(class_indices)
 
         # Init analyzers
         if "shap" in self.analyses:
@@ -258,7 +258,7 @@ class ModelExplanationAnalysis:
         else:
             existing_data = {}
 
-        class_pair = f"{self.class_names[0]}_{self.class_names[1]}"
+        class_pair = "_vs_".join(sorted(str(c) for c in self.class_names))
         if class_pair not in existing_data:
             existing_data[class_pair] = {}
         if self.model_key not in existing_data[class_pair]:

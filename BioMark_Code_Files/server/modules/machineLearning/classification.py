@@ -243,6 +243,12 @@ class Classification:
             # encode labels
             label_encoder = LabelEncoder()
             self.y = label_encoder.fit_transform(self.labels)
+
+            # Auto-switch scoring for multi-class (3+ classes)
+            n_classes = len(self.class_names)
+            if n_classes > 2 and self.scoring == "f1":
+                self.scoring = "f1_weighted"
+                logging.info(f"Multi-class detected ({n_classes} classes): switching scoring to f1_weighted")
     
             # save encoder
             if self.save_label_encoder:
@@ -412,7 +418,7 @@ class Classification:
 
                         # Class pair key
                         if hasattr(self, 'class_names') and len(self.class_names) >= 2:
-                            class_pair = f"{self.class_names[0]}_{self.class_names[1]}"
+                            class_pair = "_vs_".join(sorted(str(c) for c in self.class_names))
                         else:
                             # Fallback if class names missing
                             class_pair = "all_classes"

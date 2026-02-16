@@ -2055,9 +2055,9 @@ function App() {
     }
   }, [selectedIllnessColumn, selectedSampleColumn, showStepFour, setShowStepFour, setShowStepFive, setShowStepSix, setShowStepAnalysis, setselectedClasses, setClassTable, stepFourRef, scrollToStep, requiresMerge, mergeCompleted, singleIncluded]);
 
-  // Show Step 5: When Step 4 is visible and 2 classes are selected
+  // Show Step 5: When Step 4 is visible and 2 or more classes are selected
   useEffect(() => {
-    if (showStepFour && selectedClasses.length === 2) {
+    if (showStepFour && selectedClasses.length >= 2) {
         setShowStepFive(true);
     } else {
         setShowStepFive(false);
@@ -2069,7 +2069,7 @@ function App() {
 
   const handleClassSelection = async (newlySelectedClasses) => {
     const sortedSelection = normalizeAndSortClasses(newlySelectedClasses);
-    if (sortedSelection.length === 2) {
+    if (sortedSelection.length >= 2) {
         setselectedClasses(sortedSelection);
         console.log("Selected classes:", sortedSelection);
         setShowStepFive(true);
@@ -2279,7 +2279,7 @@ function App() {
 
   const runAnalysisWithPayload = async (payload) => {
     // Validate selections
-    if (!analysisFilePath || !selectedIllnessColumn || !selectedSampleColumn || selectedClasses.length !== 2) {
+    if (!analysisFilePath || !selectedIllnessColumn || !selectedSampleColumn || selectedClasses.length < 2) {
       setError("Please complete all selections in steps 3 and 4 before running the analysis.");
       setAnalyzing(false);
       return;
@@ -3709,7 +3709,7 @@ function App() {
                 <div ref={stepFourRef} className='select-class-section'>
                   <div className="step-and-instruction">
                     <div className="step-number">4</div>
-                    <h2 className='title'>Select Two Classes for Comparison</h2>
+                    <h2 className='title'>Select Two or More Classes for Comparison</h2>
                   </div>
                   {classColumnOptions.length > 0 && (
                     <div className="class-column-selector">
@@ -3780,6 +3780,7 @@ function App() {
                     canUseAfterFS={canUseAfterFS}
                     computedNumTopFeatures={numTopFeatures}
                     onNumTopFeaturesChange={setNumTopFeatures}
+                    numSelectedClasses={selectedClasses.length}
                   />
                 )}
               </div>
@@ -3837,26 +3838,35 @@ function App() {
               {showStepAnalysis && (
                 <div ref={stepAnalysisRef} className="run-analysis-section" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
                   {/* Only show analysis name input for parent/root analysis, not for child analyses */}
-                  {previousAnalyses.length === 0 && (
-                    <input
-                      type="text"
-                      value={analysisDisplayName}
-                      onChange={(e) => setAnalysisDisplayName(e.target.value)}
-                      placeholder="Analysis name (optional)"
-                      style={{
-                        padding: '10px 14px',
-                        fontSize: '15px',
-                        border: '2px solid #e0e0e0',
-                        borderRadius: '6px',
-                        width: '320px',
-                        outline: 'none',
-                        transition: 'border-color 0.2s'
-                      }}
-                      onFocus={(e) => e.target.style.borderColor = '#4CAF50'}
-                      onBlur={(e) => e.target.style.borderColor = '#e0e0e0'}
-                      maxLength={200}
-                    />
-                  )}
+                  {previousAnalyses.length === 0 && (() => {
+                    const defaultName = mergeMetadata?.name || uploadedInfo?.name || 'your file name';
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', width: '100%' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <label style={{ fontSize: '14px', fontWeight: 600, color: '#333' }}>Analysis Name</label>
+                          <HelpTooltip placement="top" text={`This is optional. If left empty, the analysis will be saved as "${defaultName}".`}>info</HelpTooltip>
+                        </div>
+                        <input
+                          type="text"
+                          value={analysisDisplayName}
+                          onChange={(e) => setAnalysisDisplayName(e.target.value)}
+                          placeholder={defaultName}
+                          style={{
+                            padding: '10px 14px',
+                            fontSize: '15px',
+                            border: '2px solid #e0e0e0',
+                            borderRadius: '6px',
+                            width: '320px',
+                            outline: 'none',
+                            transition: 'border-color 0.2s'
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = '#4CAF50'}
+                          onBlur={(e) => e.target.style.borderColor = '#e0e0e0'}
+                          maxLength={200}
+                        />
+                      </div>
+                    );
+                  })()}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <button className="run-analysis-button" onClick={handleStartAnalysis}>
                       Run Analysis

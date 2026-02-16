@@ -205,49 +205,36 @@ class SHAP_Analysis:
         self._check_fit()
         logging.info("Plotting Waterfall Plots")
         
-        # Create a figure with two subplots side-by-side
-        fig, axes = plt.subplots(1, 2, figsize=(20, 10))
         class_names = list(self.random_samples.keys())
+        n_classes = len(class_names)
 
-        # --- Plot for the first class (e.g., AD) ---
-        class_name_1 = class_names[0]
-        sample_index_1 = self.random_samples[class_name_1]
+        # Create a figure with one subplot per class
+        fig, axes = plt.subplots(1, n_classes, figsize=(10 * n_classes, 10))
+        if n_classes == 1:
+            axes = [axes]
 
-        # Select the correct slice of SHAP values based on dimensionality
-        if len(self.shap_values.shape) > 2 and self.shap_values.shape[2] > 1:
-            class_index_1 = self.class_names.index(class_name_1)
-            shap_values_for_plot_1 = self.shap_values[sample_index_1, :, class_index_1]
-        else:
-            shap_values_for_plot_1 = self.shap_values[sample_index_1]
-        
-        # Plot on the first axis
-        plt.sca(axes[0])
-        shap.plots.waterfall(shap_values_for_plot_1, max_display=self.top_features_to_plot, show=False)
-        axes[0].set_title(f"{class_name_1} Sample", fontsize=15)
+        for i, class_name in enumerate(class_names):
+            sample_index = self.random_samples[class_name]
 
-        # --- Plot for the second class (e.g., Control) ---
-        class_name_2 = class_names[1]
-        sample_index_2 = self.random_samples[class_name_2]
-
-        # Select the correct slice of SHAP values
-        if len(self.shap_values.shape) > 2 and self.shap_values.shape[2] > 1:
-            class_index_2 = self.class_names.index(class_name_2)
-            shap_values_for_plot_2 = self.shap_values[sample_index_2, :, class_index_2]
-        else:
-            shap_values_for_plot_2 = self.shap_values[sample_index_2]
+            # Select the correct slice of SHAP values based on dimensionality
+            if len(self.shap_values.shape) > 2 and self.shap_values.shape[2] > 1:
+                class_index = self.class_names.index(class_name)
+                shap_values_for_plot = self.shap_values[sample_index, :, class_index]
+            else:
+                shap_values_for_plot = self.shap_values[sample_index]
             
-        # Plot on the second axis
-        plt.sca(axes[1])
-        shap.plots.waterfall(shap_values_for_plot_2, max_display=self.top_features_to_plot, show=False)
-        axes[1].set_title(f"{class_name_2} Sample", fontsize=15)
+            plt.sca(axes[i])
+            shap.plots.waterfall(shap_values_for_plot, max_display=self.top_features_to_plot, show=False)
+            axes[i].set_title(f"{class_name} Sample", fontsize=15)
 
         # --- Finalize and save the combined plot ---
         plt.tight_layout(pad=2.0)
-        plt.suptitle(f"Waterfall Plots for {class_name_1} and {class_name_2} Samples", fontsize=20, y=1.02)
+        title_classes = " and ".join(class_names)
+        plt.suptitle(f"Waterfall Plots for {title_classes} Samples", fontsize=20, y=1.02)
         
         logging.info("Saving Plots")
-        plot_path_png = f'{self.outdir}/png/shap_waterfall_subplots_{class_name_1}_and_{class_name_2}.png'
-        plot_path_pdf = f'{self.outdir}/pdf/shap_waterfall_subplots_{class_name_1}_and_{class_name_2}.pdf'
+        plot_path_png = f'{self.outdir}/png/shap_waterfall_subplots_{"_and_".join(class_names)}.png'
+        plot_path_pdf = f'{self.outdir}/pdf/shap_waterfall_subplots_{"_and_".join(class_names)}.pdf'
         plt.savefig(plot_path_png, bbox_inches='tight')
         plt.savefig(plot_path_pdf, bbox_inches='tight')
         plt.close()
@@ -333,22 +320,18 @@ class SHAP_Analysis:
         X_transformed = self.preprocessor.transform(self.X)
         # -----------------------
 
-        # Handle multi-class models by creating subplots
+        # Handle multi-class models by creating subplots for each class
         if len(self.shap_values.shape) > 2 and self.shap_values.shape[2] > 1:
-            fig, axes = plt.subplots(1, 2, figsize=(20, 10))
+            n_classes = self.shap_values.shape[2]
             class_names = self.class_names
+            fig, axes = plt.subplots(1, n_classes, figsize=(10 * n_classes, 10))
+            if n_classes == 1:
+                axes = [axes]
             
-            # --- Plot for the first class ---
-            plt.sca(axes[0])
-            # self.X yerine X_transformed kullanıyoruz
-            shap.summary_plot(self.shap_values[:,:,0], X_transformed, show=False)
-            axes[0].set_title(f"SHAP Summary for {class_names[0]}", fontsize=15)
-
-            # --- Plot for the second class ---
-            plt.sca(axes[1])
-            # self.X yerine X_transformed kullanıyoruz
-            shap.summary_plot(self.shap_values[:,:,1], X_transformed, show=False)
-            axes[1].set_title(f"SHAP Summary for {class_names[1]}", fontsize=15)
+            for i, class_name in enumerate(class_names[:n_classes]):
+                plt.sca(axes[i])
+                shap.summary_plot(self.shap_values[:,:,i], X_transformed, show=False)
+                axes[i].set_title(f"SHAP Summary for {class_name}", fontsize=15)
             
             # --- Finalize and save the combined plot ---
             plt.tight_layout(pad=1.0)
@@ -380,18 +363,16 @@ class SHAP_Analysis:
 
         # Handle multi-class models by creating vertical subplots
         if len(self.shap_values.shape) > 2 and self.shap_values.shape[2] > 1:
-            fig, axes = plt.subplots(2, 1, figsize=(20, 40)) # Vertical arrangement
+            n_classes = self.shap_values.shape[2]
             class_names = self.class_names
+            fig, axes = plt.subplots(n_classes, 1, figsize=(20, 20 * n_classes))
+            if n_classes == 1:
+                axes = [axes]
 
-            # --- Plot for the first class ---
-            plt.sca(axes[0])
-            shap.plots.heatmap(self.shap_values[:,:,0], max_display=self.top_features_to_plot, show=False, plot_width=20)
-            axes[0].set_title(f"SHAP Heatmap for {class_names[0]}", fontsize=20)
-            
-            # --- Plot for the second class ---
-            plt.sca(axes[1])
-            shap.plots.heatmap(self.shap_values[:,:,1], max_display=self.top_features_to_plot, show=False, plot_width=20)
-            axes[1].set_title(f"SHAP Heatmap for {class_names[1]}", fontsize=20)
+            for i, class_name in enumerate(class_names[:n_classes]):
+                plt.sca(axes[i])
+                shap.plots.heatmap(self.shap_values[:,:,i], max_display=self.top_features_to_plot, show=False, plot_width=20)
+                axes[i].set_title(f"SHAP Heatmap for {class_name}", fontsize=20)
             
             # --- Finalize and save ---
             plt.tight_layout(pad=3.0)
@@ -422,18 +403,16 @@ class SHAP_Analysis:
         logging.info("Plotting Mean SHAP Plot")
 
         if len(self.shap_values.shape) > 2 and self.shap_values.shape[2] > 1:
-            fig, axes = plt.subplots(1, 2, figsize=(20, 10))
+            n_classes = self.shap_values.shape[2]
             class_names = self.class_names
+            fig, axes = plt.subplots(1, n_classes, figsize=(10 * n_classes, 10))
+            if n_classes == 1:
+                axes = [axes]
 
-            # --- Plot for the first class ---
-            plt.sca(axes[0])
-            shap.plots.bar(self.shap_values[:,:,0], max_display=self.top_features_to_plot, show=False)
-            axes[0].set_title(f"Mean SHAP for {class_names[0]}", fontsize=15)
-
-            # --- Plot for the second class ---
-            plt.sca(axes[1])
-            shap.plots.bar(self.shap_values[:,:,1], max_display=self.top_features_to_plot, show=False)
-            axes[1].set_title(f"Mean SHAP for {class_names[1]}", fontsize=15)
+            for i, class_name in enumerate(class_names[:n_classes]):
+                plt.sca(axes[i])
+                shap.plots.bar(self.shap_values[:,:,i], max_display=self.top_features_to_plot, show=False)
+                axes[i].set_title(f"Mean SHAP for {class_name}", fontsize=15)
 
             # --- Finalize and save ---
             plt.tight_layout(pad=1.0)

@@ -402,14 +402,35 @@ def evaluate_models(X_train,
 def get_cross_validation_scores(model, X, y, cv):
     """
     Get cross validation scores:
-        ('f1', 'precision', 'recall', 'roc_auc', "accuracy") for classification
+        ('f1', 'precision', 'recall', 'roc_auc', "accuracy") for classification.
+    Automatically uses weighted averaging for multi-class (3+ classes).
     """
     try:
-        scoring = ('f1', 'precision', 'recall', 'roc_auc', "accuracy")
+        n_classes = len(np.unique(y))
+        if n_classes > 2:
+            scoring = ('f1_weighted', 'precision_weighted', 'recall_weighted', 'roc_auc_ovr_weighted', 'accuracy')
+            # Map sklearn cross_validate keys back to standard metric names
+            key_map = {
+                'test_f1_weighted': 'f1',
+                'test_precision_weighted': 'precision',
+                'test_recall_weighted': 'recall',
+                'test_roc_auc_ovr_weighted': 'roc_auc',
+                'test_accuracy': 'accuracy',
+            }
+        else:
+            scoring = ('f1', 'precision', 'recall', 'roc_auc', "accuracy")
+            key_map = {
+                'test_f1': 'f1',
+                'test_precision': 'precision',
+                'test_recall': 'recall',
+                'test_roc_auc': 'roc_auc',
+                'test_accuracy': 'accuracy',
+            }
         scores = cross_validate(model, X, y, cv=cv,scoring=scoring,return_train_score=False)
-        score_report = {"_".join(score_name.split("_")[1:]):{"mean":scores[score_name].mean(), 
-                                                         "std":scores[score_name].std(),
-                                                         "all":list(scores[score_name])} for score_name in scores}
+        score_report = {key_map[k]: {"mean": scores[k].mean(),
+                                     "std": scores[k].std(),
+                                     "all": list(scores[k])}
+                        for k in key_map if k in scores}
     except Exception as e:
         raise CustomException(e, sys)
     
@@ -420,30 +441,45 @@ def get_cross_validation_scores(model, X, y, cv):
 def get_test_report(true, predicted, scores=None):
 
     """
-    Run Various Evaluation Metrics on data
+    Run Various Evaluation Metrics on data.
+    Automatically uses weighted averaging for multi-class (3+ classes).
     """
     try:
+        n_classes = len(np.unique(true))
+        avg = 'weighted' if n_classes > 2 else 'binary'
+
         # Compute ROC-AUC using scores/probabilities if available
         try:
             roc_auc = None
             if scores is not None:
                 arr = np.asarray(scores)
                 if arr.ndim == 1:
-                    roc_auc = roc_auc_score(true, arr)
+                    if n_classes > 2:
+                        roc_auc = None  # Cannot compute ROC-AUC from 1D scores for multi-class
+                    else:
+                        roc_auc = roc_auc_score(true, arr)
                 elif arr.ndim == 2:
                     # Multi-class probability/score matrix
-                    roc_auc = roc_auc_score(true, arr, multi_class='ovr')
+                    roc_auc = roc_auc_score(true, arr, multi_class='ovr', average='weighted')
             else:
-                roc_auc = roc_auc_score(true, predicted)
+                if n_classes <= 2:
+                    roc_auc = roc_auc_score(true, predicted)
+                else:
+                    roc_auc = None  # Cannot compute from labels alone for multi-class
         except Exception:
-            # Fallback to label-based AUC (may be less informative)
-            roc_auc = roc_auc_score(true, predicted)
+            try:
+                if n_classes <= 2:
+                    roc_auc = roc_auc_score(true, predicted)
+                else:
+                    roc_auc = None
+            except Exception:
+                roc_auc = None
 
-        score_report = {"f1": f1_score(true, predicted),
+        score_report = {"f1": f1_score(true, predicted, average=avg),
                         "accuracy": accuracy_score(true, predicted),
                         "roc_auc": roc_auc,
-                        "precision": precision_score(true, predicted),
-                        "recall": recall_score(true, predicted)
+                        "precision": precision_score(true, predicted, average=avg),
+                        "recall": recall_score(true, predicted, average=avg)
                         }
         return score_report
 

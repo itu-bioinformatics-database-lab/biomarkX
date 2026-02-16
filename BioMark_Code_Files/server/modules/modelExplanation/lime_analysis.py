@@ -248,32 +248,21 @@ class LIME_Analysis:
         X_processed = self.preprocessor.transform(self.X)
         X_processed = X_processed.to_numpy() if hasattr(X_processed, "to_numpy") else np.asarray(X_processed)
 
-        exp0 = self.explainer.explain_instance(X_processed[self.random_samples[self.class_names[0]], :],
-                                               self._predict_proba_with_feature_names, num_features=self.top_features_to_plot)
-        #Plot local explanation
-        plt2 = exp0.as_pyplot_figure()
-        plt.title(f"Local explanation for class {self.class_names[0]} on an {self.class_names[0]} Sample", x=0.3)
-        plt2.tight_layout()
-        
-        # Save the plot as a PNG file
-        logging.info("Saving Plot 1")
-        plt2.savefig(f'{self.outdir}/png/lime_local_explanation_plot_{self.class_names[0]}.png', bbox_inches='tight')
-        plt2.savefig(f'{self.outdir}/pdf/lime_local_explanation_plot_{self.class_names[0]}.pdf', bbox_inches='tight')
-        print(f'{self.outdir}/png/lime_local_explanation_plot_{self.class_names[0]}.png')
-
-        #Explaining a random class 1 sample using top n (top_features_to_plot) features
-        exp1 = self.explainer.explain_instance(X_processed[self.random_samples[self.class_names[1]], :],
-                                               self._predict_proba_with_feature_names, num_features=self.top_features_to_plot)
-        #Plot local explanation
-        plt2 = exp1.as_pyplot_figure()
-        plt.title(f"Local explanation for class {self.class_names[0]} on an {self.class_names[1]} Sample", x=0.3, fontsize=25)
-        plt2.tight_layout()
-        
-        # Save the plot as a PNG file
-        logging.info("Saving Plot 2")
-        plt2.savefig(f'{self.outdir}/png/lime_local_explanation_plot_{self.class_names[1]}.png', bbox_inches='tight')
-        plt2.savefig(f'{self.outdir}/pdf/lime_local_explanation_plot_{self.class_names[1]}.pdf', bbox_inches='tight')
-        print(f'{self.outdir}/png/lime_local_explanation_plot_{self.class_names[1]}.png')
+        # Generate local explanations for each class
+        for i, class_name in enumerate(self.class_names):
+            if class_name not in self.random_samples:
+                continue
+            exp = self.explainer.explain_instance(X_processed[self.random_samples[class_name], :],
+                                                   self._predict_proba_with_feature_names, num_features=self.top_features_to_plot)
+            plt2 = exp.as_pyplot_figure()
+            plt.title(f"Local explanation for a {class_name} sample", x=0.3, fontsize=25)
+            plt2.tight_layout()
+            
+            logging.info(f"Saving LIME local plot for class {class_name}")
+            plt2.savefig(f'{self.outdir}/png/lime_local_explanation_plot_{class_name}.png', bbox_inches='tight')
+            plt2.savefig(f'{self.outdir}/pdf/lime_local_explanation_plot_{class_name}.pdf', bbox_inches='tight')
+            print(f'{self.outdir}/png/lime_local_explanation_plot_{class_name}.png')
+            plt.close(plt2)
 
     def get_lime_explanations(self):
         """
@@ -284,20 +273,17 @@ class LIME_Analysis:
         """
         self._check_fit()
         logging.info(f"Computing LIME Explanations from {self.global_explanation_sample_num} samples") 
-        # Define the number of samples you want from each class
-        n0 = min(self.global_explanation_sample_num, sum(self.y==0))
-        n1 = min(self.global_explanation_sample_num, sum(self.y==1))
-        
-        # Separate the data into two classes
-        class_0_indices = np.where(self.y == 0)[0]
-        class_1_indices = np.where(self.y == 1)[0]
-        
-        # Randomly sample n indices from each class
-        class_0_sample = np.random.choice(class_0_indices, n0, replace=False)
-        class_1_sample = np.random.choice(class_1_indices, n1, replace=False)
+        # Sample from each class proportionally — supports any number of classes
+        unique_classes = np.unique(self.y)
+        all_sampled_indices = []
+        for cls in unique_classes:
+            cls_indices = np.where(self.y == cls)[0]
+            n_samples = min(self.global_explanation_sample_num, len(cls_indices))
+            sampled = np.random.choice(cls_indices, n_samples, replace=False)
+            all_sampled_indices.append(sampled)
         
         # Combine the sampled indices
-        sample_indices = np.concatenate([class_0_sample, class_1_sample])
+        sample_indices = np.concatenate(all_sampled_indices)
         
         # Get processed data for explanation
         X_processed = self.preprocessor.transform(self.X)

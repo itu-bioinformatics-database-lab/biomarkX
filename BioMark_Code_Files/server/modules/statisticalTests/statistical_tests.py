@@ -149,6 +149,12 @@ class StatisticalTestAnalysis:
         print(" Starting t-Test")
         print("=" * length)
 
+        if len(self.class_names) != 2:
+            logging.warning("t-Test requires exactly two classes; skipping.")
+            print("t-Test requires exactly two classes; skipping.")
+            print("=" * length)
+            return
+
         np.random.seed(0)
 
         class_0 = self.X.iloc[self.labels[self.labels == self.class_names[0]].dropna().index, :]
@@ -376,7 +382,7 @@ class StatisticalTestAnalysis:
         else:
             existing_data = {}
 
-        class_pair = f"{self.class_names[0]}_{self.class_names[1]}"
+        class_pair = "_vs_".join(sorted(str(c) for c in self.class_names))
         if class_pair not in existing_data:
             existing_data[class_pair] = {}
 
