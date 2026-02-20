@@ -51,10 +51,10 @@ const InputFormatPopup = ({ onClose }) => {
             <h3>Example Format</h3>
             {/* Example of a properly formatted CSV file */}
             <pre className="file-format-example">
-              Sample_ID,Illness,miRNA_1,miRNA_2,miRNA_3,...
-              Sample1,Control,0.123,4.567,0.891,...
-              Sample2,Alzheimer,0.234,5.678,0.912,...
-              Sample3,Control,0.345,6.789,0.123,...
+              Sample_ID,Illness,miRNA_1,miRNA_2,miRNA_3,... <br />
+              Sample1,Control,0.123,4.567,0.891,... <br />
+              Sample2,Alzheimer,0.234,5.678,0.912,... <br />
+              Sample3,Control,0.345,6.789,0.123,... <br />
             </pre>
           </div>
           

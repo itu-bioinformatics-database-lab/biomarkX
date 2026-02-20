@@ -14,6 +14,7 @@ const authMiddleware = require('./middleware/auth');
 const { sendMail } = require('./mailer');
 const pathwayAnalysisRouter = require('./routes/pathwayAnalysis');
 const biomarkerValidationRouter = require('./routes/biomarkerValidation');
+const normalizationRouter = require('./routes/normalization');
 const analysisQueue = require('./services/analysisQueue');
 
 const { spawn } = require('child_process');
@@ -45,6 +46,7 @@ app.use(authMiddleware); // Middleware to extract user info from token
 app.use('/api/user', userRoutes);
 app.use('/api', pathwayAnalysisRouter);
 app.use('/api', biomarkerValidationRouter);
+app.use('/api', normalizationRouter);
 
 // Helper function to get the correct python command depending on the OS
 const getPythonCommand = () => {
@@ -485,6 +487,9 @@ app.post('/analyze', async (req, res) => {
         testSize,
         nFolds,
         usePreprocessing,
+        normalizationGatePassed,
+        normalizationMode,
+        normalizationConfig,
         display_name
     } = req.body;
 
@@ -493,8 +498,13 @@ app.post('/analyze', async (req, res) => {
 
     const baseFileName = path.basename(filePath);
 
-    // Check if it's a merged file (saved in uploads directory with _merged_dataset suffix)
-    const isMergedFile = baseFileName.includes('_merged_dataset.csv');
+    // Check merged/normalized merged patterns
+    const mergedPattern = /^([a-f0-9-]+)_merged_dataset(?:_normalized(?:_[a-f0-9-]+)?)?\.csv$/i;
+    // Legacy normalized naming fallback: <runId>_<mergedId>_merged_dataset_normalized.csv
+    const legacyNormalizedMergedPattern = /^[a-f0-9-]+_([a-f0-9-]+)_merged_dataset_normalized\.csv$/i;
+    const mergedMatch = baseFileName.match(mergedPattern);
+    const legacyMergedMatch = baseFileName.match(legacyNormalizedMergedPattern);
+    const isMergedFile = Boolean(mergedMatch || legacyMergedMatch || baseFileName.includes('_merged_dataset'));
 
     const analysisId = uuidv4();
     let derivedUploadIdForInsert = null;
@@ -509,11 +519,19 @@ app.post('/analyze', async (req, res) => {
         derivedUploadIdForInsert = path.basename(filePath).split('_')[0];
         console.log('[Analyze] Single file - derivedUploadIdForInsert:', derivedUploadIdForInsert);
     } else {
-        // Extract merged file ID from filename like "FULLID_merged_dataset.csv"
+        // Extract merged file ID from filenames like:
+        // - FULLID_merged_dataset.csv
+        // - FULLID_merged_dataset_normalized.csv
+        // - FULLID_merged_dataset_normalized_<runid>.csv
+        // - <runid>_FULLID_merged_dataset_normalized.csv (legacy)
         const basename = path.basename(filePath);
-        const match = basename.match(/^([a-f0-9-]+)_merged_dataset\.csv$/);
+        const match = basename.match(mergedPattern);
+        const legacyMatch = basename.match(legacyNormalizedMergedPattern);
         if (match) {
             mergedFileId = match[1];
+            console.log('[Analyze] Merged file - mergedFileId:', mergedFileId);
+        } else if (legacyMatch) {
+            mergedFileId = legacyMatch[1];
             console.log('[Analyze] Merged file - mergedFileId:', mergedFileId);
         }
         
@@ -587,6 +605,9 @@ app.post('/analyze', async (req, res) => {
             verbose: verbose !== undefined ? verbose : true,
             testSize: testSize || 0.2,
             nFolds: nFolds || 10,
+            normalizationGatePassed: normalizationGatePassed === true,
+            normalizationMode: normalizationMode || null,
+            normalizationConfig: normalizationConfig || null,
             // Also store old format for compatibility with AnalysisReport component
             analysisMethods: {
                 differential: statisticalTest || [],

@@ -1,0 +1,387 @@
+
+.norm-modal-overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.45);
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	z-index: 1100;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: 24px 16px;
+}
+
+.norm-modal {
+	background: #ffffff;
+	border-radius: 10px;
+	width: 560px;
+	max-width: 94vw;
+	max-height: 88vh;
+	display: flex;
+	flex-direction: column;
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+	overflow: hidden;
+}
+
+/* ?? Header ?? */
+.norm-modal-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 16px 20px;
+	border-bottom: 1px solid #e9ecef;
+	background: #f5f7fb;
+}
+
+.norm-modal-header h3 {
+	margin: 0;
+	font-size: 17px;
+	color: #1c2b61;
+}
+
+.norm-modal-close {
+	background: none;
+	border: none;
+	font-size: 22px;
+	cursor: pointer;
+	color: #666;
+	line-height: 1;
+	padding: 0 4px;
+}
+
+.norm-modal-close:hover {
+	color: #333;
+}
+
+/* ?? Scrollable body ?? */
+.norm-modal-body {
+	padding: 16px 20px;
+	overflow-y: auto;
+	overflow-x: hidden;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	position: relative;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+}
+
+.norm-modal-body::-webkit-scrollbar {
+  display: none; /* Safari and Chrome */
+}
+
+/* ?? Pipeline step card ?? */
+.norm-pipeline-step {
+	border: 1px solid #d7e2ff;
+	border-radius: 8px;
+	background: #f9faff;
+	overflow: visible;
+	transition: opacity 0.2s;
+}
+
+.norm-pipeline-step.is-disabled {
+	opacity: 0.55;
+	background: #f5f5f5;
+	border-color: #e0e0e0;
+}
+
+.norm-step-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 14px;
+	background: #eef3fd;
+	border-bottom: 1px solid #d7e2ff;
+	position: relative;
+	z-index: 1;
+}
+
+.norm-pipeline-step.is-disabled .norm-step-header {
+	background: #ececec;
+	border-bottom-color: #e0e0e0;
+}
+
+.norm-checkbox-label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	flex: 1;
+	margin: 0;
+}
+
+.norm-checkbox-label input[type="checkbox"] {
+	width: 16px;
+	height: 16px;
+	accent-color: #2f4fb5;
+	cursor: pointer;
+}
+
+.norm-step-title {
+	font-weight: 600;
+	font-size: 14px;
+	color: #1c2b61;
+}
+
+/* ?? Params area ?? */
+.norm-step-params {
+	padding: 12px 14px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	position: relative;
+}
+
+.norm-param-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.norm-param-row > label {
+	min-width: 160px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #495057;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+}
+
+.norm-param-row input[type="number"],
+.norm-param-row input[type="text"] {
+	flex: 1;
+	padding: 7px 10px;
+	border: 1px solid #ccc;
+	border-radius: 5px;
+	font-size: 14px;
+	transition: border-color 0.2s;
+}
+
+.norm-covariate-panel {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.norm-covariate-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.norm-covariate-actions button {
+	padding: 4px 10px;
+	border: 1px solid #cfd6ea;
+	border-radius: 14px;
+	background: #f5f7ff;
+	color: #2f4fb5;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.norm-covariate-actions button:hover {
+	background: #e9eeff;
+}
+
+.norm-covariate-list {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 6px 10px;
+	max-height: 140px;
+	overflow-y: auto;
+	padding: 8px;
+	border: 1px solid #dfe5f5;
+	border-radius: 6px;
+	background: #fff;
+}
+
+.norm-covariate-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	color: #334;
+	cursor: pointer;
+	min-width: 0;
+}
+
+.norm-covariate-item input[type="checkbox"] {
+	accent-color: #2f4fb5;
+	width: 14px;
+	height: 14px;
+	flex-shrink: 0;
+}
+
+.norm-covariate-item span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.norm-covariate-empty {
+	font-size: 12px;
+	color: #6c757d;
+	padding: 6px 2px;
+}
+
+.norm-param-row input:focus {
+	border-color: #2f4fb5;
+	outline: none;
+	box-shadow: 0 0 0 2px rgba(47, 79, 181, 0.12);
+}
+
+.norm-param-row select {
+	flex: 1;
+	padding: 7px 10px;
+	border: 1px solid #ccc;
+	border-radius: 5px;
+	font-size: 14px;
+	background: #fff;
+	transition: border-color 0.2s;
+}
+
+.norm-param-row select:focus {
+	border-color: #2f4fb5;
+	outline: none;
+}
+
+.norm-select-placeholder {
+	color: #999;
+}
+
+.norm-required {
+	color: #e74c3c;
+	font-weight: 700;
+}
+
+.norm-validation-hint {
+	font-size: 12px;
+	color: #e74c3c;
+	white-space: nowrap;
+}
+
+/* Range inputs (Min-Max) */
+.norm-param-row--inline {
+	flex-wrap: wrap;
+}
+
+.norm-range-inputs {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 1;
+}
+
+.norm-range-inputs span {
+	font-size: 13px;
+	color: #666;
+}
+
+.norm-range-inputs input[type="number"] {
+	width: 70px;
+	flex: unset;
+}
+
+/* ?? Footer ?? */
+.norm-modal-footer {
+	padding: 14px 20px;
+	border-top: 1px solid #e9ecef;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	align-items: flex-end;
+}
+
+.norm-footer-hint {
+	font-size: 12px;
+	color: #e74c3c;
+	text-align: right;
+	width: 100%;
+}
+
+.norm-footer-buttons {
+	display: flex;
+	gap: 10px;
+}
+
+.norm-btn-cancel {
+	padding: 8px 18px;
+	border: 1px solid #ccc;
+	border-radius: 6px;
+	background: #fff;
+	color: #555;
+	font-weight: 600;
+	cursor: pointer;
+	font-size: 14px;
+	transition: background 0.2s;
+}
+
+.norm-btn-cancel:hover {
+	background: #f5f5f5;
+}
+
+.norm-btn-normalize {
+	padding: 8px 22px;
+	border: none;
+	border-radius: 6px;
+	background: #2f4fb5;
+	color: #fff;
+	font-weight: 600;
+	cursor: pointer;
+	font-size: 14px;
+	transition: background 0.2s, transform 0.2s;
+}
+
+.norm-btn-normalize:hover {
+	background: #1f3a8c;
+	transform: translateY(-1px);
+}
+
+.norm-btn-normalize:disabled {
+	background: #aab6ff;
+	cursor: not-allowed;
+	transform: none;
+	opacity: 0.7;
+}
+
+/* Tooltip layering inside modal */
+.norm-modal .help-tooltip-content {
+	z-index: 2000 !important;
+}
+
+body.norm-modal-open {
+	overflow: hidden;
+}
+
+/* ?? Responsive ?? */
+@media (max-width: 600px) {
+	.norm-modal {
+		width: 98vw;
+		max-height: 94vh;
+	}
+
+	.norm-param-row {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 4px;
+	}
+
+	.norm-param-row > label {
+		min-width: unset;
+	}
+
+	.norm-param-row input,
+	.norm-param-row select {
+		width: 100%;
+	}
+
+	.norm-covariate-list {
+		grid-template-columns: 1fr;
+	}
+}

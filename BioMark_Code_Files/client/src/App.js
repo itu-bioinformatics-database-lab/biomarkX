@@ -16,6 +16,7 @@ import { helpTexts } from './content/helpTexts';
 import LongRunNotificationModal from './components/common/LongRunNotificationModal';
 import { buildKeggColumns, KEGG_PREVIEW_LIMIT } from './utils/keggTable';
 import { LOGIN_PATH } from './constants/routes';
+import NormalizationConfigModal from './components/NormalizationConfigModal';
 
 
 const ENRICHMENT_OPTIONS = {
@@ -359,6 +360,12 @@ function App() {
   const [mergeInProgress, setMergeInProgress] = useState(false);
   const [mergeCompleted, setMergeCompleted] = useState(false);
   const [mergeMetadata, setMergeMetadata] = useState(null);
+  const [showNormConfigModal, setShowNormConfigModal] = useState(false);
+  const [normalizeInProgress, setNormalizeInProgress] = useState(false);
+  const [normalizationGatePassed, setNormalizationGatePassed] = useState(false);
+  const [normalizationMode, setNormalizationMode] = useState(null); // 'normalized' | 'skipped' | null
+  const [executedNormalizationConfig, setExecutedNormalizationConfig] = useState(null);
+  const [normalizedAnalysisFilePath, setNormalizedAnalysisFilePath] = useState(null);
   const columnFetchInFlightRef = useRef(new Set());
   const visibleColumnFetchesRef = useRef(0);
   const classCacheRef = useRef(new Map());
@@ -380,6 +387,12 @@ function App() {
     setShowStepFive(false);
     setShowStepSix(false);
     setShowStepAnalysis(false);
+    setShowNormConfigModal(false);
+    setNormalizeInProgress(false);
+    setNormalizationGatePassed(false);
+    setNormalizationMode(null);
+    setExecutedNormalizationConfig(null);
+    setNormalizedAnalysisFilePath(null);
     setselectedClasses([]);
     classCacheRef.current = new Map();
   }, [classCacheRef]);
@@ -449,6 +462,92 @@ function App() {
     const ctx = uploadContexts[sole.filePath];
     return Boolean(ctx && ctx.illnessColumn && ctx.sampleColumn);
   }, [singleIncluded, includedUploads, uploadContexts]);
+
+  const normalizationPrereqReady = useMemo(() => {
+    const hasColumns = Boolean(selectedIllnessColumn && selectedSampleColumn);
+    const requiresAction = requiresMerge || (singleIncluded && !mergeCompleted);
+    return hasColumns && (!requiresAction || mergeCompleted);
+  }, [selectedIllnessColumn, selectedSampleColumn, requiresMerge, singleIncluded, mergeCompleted]);
+
+  const deriveNormalizationStateFromMetadata = useCallback((metadata = {}) => {
+    if (!metadata || typeof metadata !== 'object') {
+      return { mode: 'preloaded', config: null };
+    }
+
+    let config = metadata.normalizationConfig || metadata.executedNormalizationConfig || null;
+
+    if (!config && metadata.normalizationPipeline && typeof metadata.normalizationPipeline === 'object') {
+      const pipeline = metadata.normalizationPipeline;
+      const log = pipeline.logTransformation || {};
+      const batch = pipeline.batchEffectCorrection || {};
+      const norm = pipeline.normalization || {};
+      const outlier = pipeline.outlierDetection || {};
+
+      config = {
+        logTransform: {
+          enabled: Boolean(log.requested),
+          base: log.base,
+          offset: log.offset,
+        },
+        batchCorrection: {
+          enabled: Boolean(batch.requested),
+          batchColumn: batch.batchColumn || '',
+          covariates: Array.isArray(batch.covariates) ? batch.covariates : [],
+          parametric: Boolean(batch.parametric),
+        },
+        normalization: {
+          enabled: Boolean(norm.requested),
+          method: norm.method || 'zscore',
+          zscore: norm.zscore || { center: true, scale: true },
+          minmax: norm.minmax || { rangeMin: 0, rangeMax: 1 },
+          quantile: {
+            tieBreaking: norm?.quantile?.tieBreaking || norm?.quantile?.tieBreakingMethod || 'mean',
+          },
+        },
+        outlierDetection: {
+          enabled: Boolean(outlier.requested),
+          method: outlier.method || 'iqr',
+          iqrCoefficient: outlier.iqrCoefficient,
+          zscoreDeviation: outlier.zscoreDeviation,
+          action: outlier.action || 'impute',
+        },
+      };
+    }
+
+    if (config) {
+      return { mode: 'normalized', config };
+    }
+
+    if (metadata.normalizationMode === 'skipped') {
+      return { mode: 'skipped', config: null };
+    }
+
+    if (metadata.normalizationMode === 'normalized') {
+      return { mode: 'normalized', config: null };
+    }
+
+    return { mode: 'preloaded', config: null };
+  }, []);
+
+  const executedNormalizationDetails = useMemo(() => {
+    if (!executedNormalizationConfig) return [];
+
+    const details = [];
+    const logCfg = executedNormalizationConfig.logTransform || {};
+    const batchCfg = executedNormalizationConfig.batchCorrection || {};
+    const normCfg = executedNormalizationConfig.normalization || {};
+    const outlierCfg = executedNormalizationConfig.outlierDetection || {};
+
+    console.log("normCfg:", normCfg);
+    console.log("outlierCfg:", outlierCfg);
+
+    details.push(`Log Transformation: ${logCfg.enabled ? `Enabled (base=${logCfg.base}, offset=${logCfg.offset})` : 'Skipped'}`);
+    details.push(`Batch Effect Correction: ${batchCfg.enabled ? `Enabled (batch=${batchCfg.batchColumn || 'N/A'}, covariates={${Array.isArray(batchCfg.covariates) ? batchCfg.covariates.join(', ') || 'none' : 'none'}}, ${batchCfg.parametric ? 'Parametric' : 'Non-parametric'})` : 'Skipped'}`);
+    details.push(`Normalization: ${normCfg.enabled ? `Enabled (${normCfg.method || 'zscore'}${normCfg.method === 'zscore' ? `, center=${normCfg.zscore.center}, scale=${normCfg.zscore.scale}` : ''}${normCfg.method === 'minmax' ? `, range=${normCfg.minmax.rangeMin || 0}-${normCfg.minmax.rangeMax || 1}` : ''}${normCfg.method === 'quantile' ? `, tie-breaking method=${normCfg.quantile.tieBreakingMethod || 'mean'}` : ''})` : 'Skipped'}`);
+    details.push(`Outlier Detection: ${outlierCfg.enabled ? `Enabled (${outlierCfg.method || 'iqr'}${outlierCfg.method === 'iqr' ? `, iqrCoefficient=${outlierCfg.iqrCoefficient || 1.5}` : ''}${outlierCfg.method === 'zscore' ? `, zscoreDeviation=${outlierCfg.zscoreDeviation || 3.0}` : ''}, action=${outlierCfg.action || 'impute'})` : 'Skipped'}`);
+
+    return details;
+  }, [executedNormalizationConfig]);
 
   const canMerge = ((requiresMerge && allFilesHaveSelections) || singleIncludedReady) && !mergeInProgress;
 
@@ -635,6 +734,10 @@ function App() {
             // Restore Step 3 & 4 information from metadata (but don't show steps yet)
             // Use the first analysis metadata for the file info
             const firstMetadata = analyses[0]?.metadata || {};
+            const restoredNormalization = deriveNormalizationStateFromMetadata(firstMetadata);
+            setNormalizationGatePassed(true);
+            setNormalizationMode(restoredNormalization.mode);
+            setExecutedNormalizationConfig(restoredNormalization.config || null);
             if (fileInfo && firstMetadata) {
               const filePath = fileInfo.filepath;
             
@@ -787,7 +890,7 @@ function App() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search, navigate, updateUploadContext]);
+  }, [location.search, navigate, updateUploadContext, deriveNormalizationStateFromMetadata]);
 
   useEffect(() => {
     if (requiresMerge) {
@@ -1690,7 +1793,9 @@ function App() {
         classTable: cached
       }));
       if (canAdvanceToStepFour(sampleForComparison)) {
-        setShowStepFour(true);
+        if (normalizationGatePassed) {
+          setShowStepFour(true);
+        }
         setTimeout(() => {
           if (stepFourRef.current) scrollToStep(stepFourRef);
         }, 100);
@@ -1761,7 +1866,9 @@ function App() {
           classTable: classPayload
         }));
         if (canAdvanceToStepFour(sampleForComparison)) {
-          setShowStepFour(true);
+          if (normalizationGatePassed) {
+            setShowStepFour(true);
+          }
           setTimeout(() => {
             if (stepFourRef.current) scrollToStep(stepFourRef);
           }, 100);
@@ -1824,7 +1931,9 @@ function App() {
     };
 
     if (canAdvanceToStepFour()) {
-      setShowStepFour(true);
+      if (normalizationGatePassed) {
+        setShowStepFour(true);
+      }
       setTimeout(() => {
         if (stepFourRef.current) scrollToStep(stepFourRef);
       }, 100);
@@ -2033,12 +2142,153 @@ function App() {
     });
   };
 
+  const handleNormalizeDataset = async (normalizationConfig) => {
+    if (normalizeInProgress) {
+      return;
+    }
+
+    if (!analysisFilePath) {
+      setError('No dataset is selected for normalization.');
+      return;
+    }
+
+    setNormalizeInProgress(true);
+    setShowNormConfigModal(false);
+    setError('');
+    setInfo('Submitting normalization pipeline request...');
+
+    if (normalizationConfig?.batchCorrection?.covariates.includes(normalizationConfig?.batchCorrection?.batchColumn)) {
+      
+      // Covariates should not include the batch column used for correction
+      const filteredCovariates = normalizationConfig.batchCorrection.covariates.filter(
+        (covariate) => covariate !== normalizationConfig.batchCorrection.batchColumn
+      );
+      normalizationConfig = {
+        ...normalizationConfig,
+        batchCorrection: {
+          ...normalizationConfig.batchCorrection,
+          covariates: filteredCovariates
+        }
+      };
+    }
+
+    const payload = {
+      filePath: analysisFilePath,
+      analysisId: currentAnalysisId || null,
+      selectedIllnessColumn,
+      selectedSampleColumn,
+      requestedBy: isGuestUser() ? 'guest' : (username || 'authenticated-user'),
+      normalizationPipeline: {
+        logTransformation: {
+          requested: Boolean(normalizationConfig?.logTransform?.enabled),
+          base: normalizationConfig?.logTransform?.base,
+          offset: normalizationConfig?.logTransform?.offset,
+        },
+        batchEffectCorrection: {
+          requested: Boolean(normalizationConfig?.batchCorrection?.enabled),
+          method: 'combat',
+          batchColumn: normalizationConfig?.batchCorrection?.batchColumn || '',
+          covariates: Array.isArray(normalizationConfig?.batchCorrection?.covariates)
+            ? normalizationConfig.batchCorrection.covariates
+            : [],
+          parametric: Boolean(normalizationConfig?.batchCorrection?.parametric),
+        },
+        normalization: {
+          requested: Boolean(normalizationConfig?.normalization?.enabled),
+          method: normalizationConfig?.normalization?.method || 'zscore',
+          zscore: normalizationConfig?.normalization?.zscore || { center: true, scale: true },
+          minmax: normalizationConfig?.normalization?.minmax || { rangeMin: 0, rangeMax: 1 },
+          quantile: normalizationConfig?.normalization?.quantile || { tieBreaking: 'mean' },
+        },
+        outlierDetection: {
+          requested: Boolean(normalizationConfig?.outlierDetection?.enabled),
+          method: normalizationConfig?.outlierDetection?.method || 'iqr',
+          iqrCoefficient: normalizationConfig?.outlierDetection?.iqrCoefficient,
+          zscoreDeviation: normalizationConfig?.outlierDetection?.zscoreDeviation,
+          action: normalizationConfig?.outlierDetection?.action || 'impute',
+        },
+      },
+    };
+
+    try {
+      const response = await api.post('/api/normalize-dataset', payload);
+      const responseData = response?.data || {};
+
+      if (!responseData.success) {
+        throw new Error(responseData.message || 'Normalization request failed.');
+      }
+
+      const normalizedFilePath = responseData?.data?.outputFilePath;
+      if (normalizedFilePath) {
+        setNormalizedAnalysisFilePath(normalizedFilePath);
+      }
+
+      if (normalizedFilePath && normalizedFilePath !== analysisFilePath) {
+        const sourceContext = uploadContexts[analysisFilePath] || {};
+        updateUploadContext(normalizedFilePath, {
+          ...sourceContext,
+          columns: Array.isArray(allColumns) ? allColumns.slice(0, 10) : sourceContext.columns || [],
+          allColumns: Array.isArray(allColumns) ? allColumns : sourceContext.allColumns || [],
+          illnessColumn: selectedIllnessColumn,
+          sampleColumn: selectedSampleColumn,
+          nonFeatureColumns: nonFeatureColumns || [],
+        });
+
+        if (mergeMetadata?.filePath) {
+          setMergeMetadata((prev) => ({
+            ...(prev || {}),
+            filePath: normalizedFilePath,
+            name: prev?.name || mergeMetadata?.name || 'Normalized merged dataset'
+          }));
+        } else if (uploadedInfo?.filePath) {
+          setUploadedInfo((prev) => ({
+            ...(prev || {}),
+            filePath: normalizedFilePath,
+            name: prev?.name || uploadedInfo?.name || 'Normalized dataset'
+          }));
+        }
+
+        fetchAllColumnsInBackground(normalizedFilePath, { silent: true }).catch(() => {});
+      }
+
+      setShowNormConfigModal(false);
+      setNormalizationGatePassed(true);
+      setNormalizationMode('normalized');
+      setExecutedNormalizationConfig(normalizationConfig || null);
+      setShowStepFour(true);
+
+      const removedRows = Number(responseData?.data?.rowsRemoved || 0);
+      const detectedOutliers = Number(responseData?.data?.detectedOutliers || 0);
+      const successMessage = `${responseData.message || 'Normalization pipeline request completed successfully.'} Using normalized file for analysis.${removedRows > 0 ? ` Rows removed: ${removedRows}.` : ''}${detectedOutliers > 0 ? ` Outliers detected: ${detectedOutliers}.` : ''}`;
+      setInfo(successMessage);
+      setTimeout(() => setInfo(''), 6000);
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to run normalization pipeline request.';
+      setError(message);
+      setInfo('');
+    } finally {
+      setNormalizeInProgress(false);
+    }
+  };
+
+  const handleContinueWithoutNormalization = () => {
+    if (!normalizationPrereqReady || normalizeInProgress || mergeInProgress) {
+      return;
+    }
+    setShowNormConfigModal(false);
+    setNormalizationGatePassed(true);
+    setNormalizationMode('skipped');
+    setExecutedNormalizationConfig(null);
+    setNormalizedAnalysisFilePath(null);
+    setShowStepFour(true);
+    setTimeout(() => {
+      if (stepFourRef.current) scrollToStep(stepFourRef);
+    }, 100);
+  };
+
   // Show Step 4: When both columns (Illness & Sample) are selected
   useEffect(() => {
-    const hasColumns = Boolean(selectedIllnessColumn && selectedSampleColumn);
-    const requiresAction = requiresMerge || (singleIncluded && !mergeCompleted);
-    const readyForStepFour = hasColumns && (!requiresAction || mergeCompleted);
-    if (readyForStepFour) {
+    if (normalizationPrereqReady && normalizationGatePassed) {
       setShowStepFour(true);
       setTimeout(() => {
         if (stepFourRef.current) scrollToStep(stepFourRef);
@@ -2049,11 +2299,11 @@ function App() {
       setShowStepSix(false);
       setShowStepAnalysis(false);
       setselectedClasses([]);
-      if (!hasColumns) {
+      if (!normalizationPrereqReady) {
         setClassTable({ class: [] });
       }
     }
-  }, [selectedIllnessColumn, selectedSampleColumn, showStepFour, setShowStepFour, setShowStepFive, setShowStepSix, setShowStepAnalysis, setselectedClasses, setClassTable, stepFourRef, scrollToStep, requiresMerge, mergeCompleted, singleIncluded]);
+  }, [normalizationPrereqReady, normalizationGatePassed, showStepFour, setShowStepFour, setShowStepFive, setShowStepSix, setShowStepAnalysis, setselectedClasses, setClassTable, stepFourRef, scrollToStep]);
 
   // Show Step 5: When Step 4 is visible and 2 or more classes are selected
   useEffect(() => {
@@ -2222,6 +2472,10 @@ function App() {
   };
 
   const buildRunPayload = async () => {
+    const effectiveAnalysisFilePath = (normalizationMode === 'normalized' && normalizedAnalysisFilePath)
+      ? normalizedAnalysisFilePath
+      : analysisFilePath;
+
     // Determine if this is a child analysis
     // It's a child if we have previous analyses and they have the same file
     // Always use the FIRST (root/parent) analysis ID, not the last child
@@ -2232,15 +2486,22 @@ function App() {
       const firstInfo = analysisInformation[0];
       
       // Check if we're analyzing the same file
-      if (firstInfo && firstInfo.filePath === analysisFilePath) {
+      if (firstInfo && firstInfo.filePath === effectiveAnalysisFilePath) {
         // This is a child analysis - use the analysisId from the first/root analysis
         parentId = firstAnalysis.analysisId;
         console.log('[buildRunPayload] This is a child analysis, parent (root):', parentId);
       }
     }
+
+    console.log('[buildRunPayload] Input file path selected for analysis:', {
+      analysisFilePath,
+      normalizedAnalysisFilePath,
+      effectiveAnalysisFilePath,
+      normalizationMode
+    });
     
     return {
-      filePath: analysisFilePath,
+      filePath: effectiveAnalysisFilePath,
       IlnessColumnName: selectedIllnessColumn,
       SampleColumnName: selectedSampleColumn,
       selectedClasses: normalizeAndSortClasses(selectedClasses),
@@ -2271,6 +2532,10 @@ function App() {
       verbose: verbose,
       testSize: testSize,
       nFolds: nFolds,
+      normalizationGatePassed: normalizationGatePassed,
+      normalizationMode: normalizationMode,
+      normalizationConfig: executedNormalizationConfig,
+      normalizedFilePath: normalizedAnalysisFilePath,
       datasetNames: datasetNamesForReport, // Add dataset names for PDF filename
       parentAnalysisId: parentId, // Include parent ID if this is a child analysis
       display_name: parentId ? null : (analysisDisplayName && analysisDisplayName.trim() ? analysisDisplayName.trim() : null) // Only include display name for parent analysis
@@ -2843,6 +3108,13 @@ function App() {
     // Get the last analysis payload to restore state
     const lastPayload = analysisInformation[analysisInformation.length - 1];
     const savedFilePath = lastPayload?.filePath;
+
+    // Continued analyses are loaded from server-side results and should not be normalized again.
+    // If metadata contains normalization history, show it.
+    const restoredNormalization = deriveNormalizationStateFromMetadata(lastPayload || {});
+    setNormalizationGatePassed(true);
+    setNormalizationMode(restoredNormalization.mode);
+    setExecutedNormalizationConfig(restoredNormalization.config || null);
     
     console.log('[handlePerformAnotherAnalysis] Last payload:', lastPayload);
     console.log('[handlePerformAnotherAnalysis] analysisFilePath:', analysisFilePath);
@@ -3048,6 +3320,11 @@ function App() {
     setCompletedEnrichmentTypes({});
     setCanRunPathwayAnalysis(false);
     setAnalysisDisplayName('');
+    setShowNormConfigModal(false);
+    setNormalizeInProgress(false);
+    setNormalizationGatePassed(false);
+    setNormalizationMode(null);
+    setExecutedNormalizationConfig(null);
     classCacheRef.current = new Map();
 
     setSelectedAnalyzes({
@@ -3285,6 +3562,11 @@ function App() {
     setEnrichmentProcessing({});
     setCompletedEnrichmentTypes({});
     setCanRunPathwayAnalysis(false);
+    setShowNormConfigModal(false);
+    setNormalizeInProgress(false);
+    setNormalizationGatePassed(false);
+    setNormalizationMode(null);
+    setExecutedNormalizationConfig(null);
 
     // Navigate to login page
     navigate(LOGIN_PATH);
@@ -3552,7 +3834,7 @@ function App() {
             <>
               {/* Step 3: Select Columns using Buttons and Modal */}
               {showStepThree && (
-                <div ref={stepThreeRef} className="select-class-section step-three-container">
+              <div ref={stepThreeRef} className="select-class-section step-three-container">
                 <div className="step-and-instruction">
                   <div className="step-number">3</div>
                   <h2 className="title">Select Columns for Patient Groups and Sample IDs {' '}
@@ -3701,9 +3983,64 @@ function App() {
                 )}
 
                 {error && <div className="error-message step-error">{error}</div>}
-                {info && <div className="info-message step-info">{info}</div>}
+                {/* Optional Normalization */}
+                {normalizationPrereqReady && (
+                  <div className="normalize-section">
+                    <div className="step-and-instruction">
+                      <h2 className="title">Optional: Normalize Dataset</h2>
+                    </div>
+                    <p className="normalize-hint">
+                      {requiresMerge
+                        ? 'You can normalize the merged dataset before continuing to Step 4.'
+                        : 'You can normalize your dataset before continuing to Step 4.'}
+                    </p>
+                    <div className="normalize-action-row">
+                      <button
+                        className="normalize-button"
+                        onClick={() => setShowNormConfigModal(true)}
+                        disabled={normalizeInProgress || normalizationGatePassed || mergeInProgress}
+                      >
+                        {normalizeInProgress ? 'Normalizing...' : 'Normalize'}
+                      </button>
+                      <button
+                        className="normalize-button normalize-button--secondary"
+                        onClick={handleContinueWithoutNormalization}
+                        disabled={normalizeInProgress || normalizationGatePassed || mergeInProgress}
+                      >
+                        Continue without normalization
+                      </button>
+                      {normalizationMode === 'normalized' && (
+                        <span className="normalize-status normalize-status--success">Normalization completed. Step 4 is now unlocked.</span>
+                      )}
+                      {normalizationMode === 'skipped' && (
+                        <span className="normalize-status normalize-status--info">Normalization skipped. Step 4 is now unlocked.</span>
+                      )}
+                      {normalizationMode === 'preloaded' && (
+                        <span className="normalize-status normalize-status--info">Dataset was loaded from previous results. Step 4 is unlocked. No saved normalization record was found for this analysis.</span>
+                      )}
+                    </div>
+                    {executedNormalizationDetails.length > 0 && (
+                      <div className="normalize-summary">
+                        <div className="normalize-summary__title">Executed normalization parameters</div>
+                        <ul>
+                          {executedNormalizationDetails.map((detail) => (
+                            <li key={detail}>{detail}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {showNormConfigModal && (
+                  <NormalizationConfigModal
+                    columns={analysisAllColumns.length > 0 ? analysisAllColumns : allColumns}
+                    onClose={() => setShowNormConfigModal(false)}
+                    onNormalize={handleNormalizeDataset}
+                  />
+                )}
               </div>
               )}
+              
               {/* Step 4: Get classes names */}
               {showStepFour && !previousAnalyses[index] && (
                 <div ref={stepFourRef} className='select-class-section'>
