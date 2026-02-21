@@ -738,22 +738,36 @@ function App() {
             setNormalizationGatePassed(true);
             setNormalizationMode(restoredNormalization.mode);
             setExecutedNormalizationConfig(restoredNormalization.config || null);
-            if (fileInfo && firstMetadata) {
-              const filePath = fileInfo.filepath;
+            const metadataFilePath = typeof firstMetadata?.filePath === 'string' && firstMetadata.filePath.trim()
+              ? firstMetadata.filePath.trim()
+              : (typeof firstMetadata?.normalizedFilePath === 'string' && firstMetadata.normalizedFilePath.trim()
+                ? firstMetadata.normalizedFilePath.trim()
+                : '');
+            const fallbackFilePath = typeof fileInfo?.filepath === 'string' ? fileInfo.filepath : '';
+            const filePath = metadataFilePath || fallbackFilePath;
+
+            if (restoredNormalization.mode === 'normalized' && filePath) {
+              setNormalizedAnalysisFilePath(filePath);
+            } else {
+              setNormalizedAnalysisFilePath(null);
+            }
+
+            if (filePath && firstMetadata) {
+              const isMergedDataset = Boolean(fileInfo?.isMerged) || /_merged_dataset/i.test(filePath);
             
               // Restore file info
-              if (fileInfo.isMerged) {
+              if (isMergedDataset) {
                 // For merged files, restore merge metadata
                 setMergeMetadata({
                   filePath: filePath,
-                  fileName: fileInfo.filename
+                  fileName: fileInfo?.filename
                 });
                 setMergeCompleted(true);
               } else {
                 // For single files, restore uploadedInfo
                 setUploadedInfo({
                   filePath: filePath,
-                  name: fileInfo.filename
+                  name: fileInfo?.filename
                 });
               }
               
@@ -804,6 +818,8 @@ function App() {
               }
               
               console.log('[Continuation] Restored Step 3 & 4 info (silently):', {
+                sourceFilePath: fileInfo?.filepath,
+                metadataFilePath,
                 filePath,
                 illnessColumn: firstMetadata.illnessColumn,
                 sampleColumn: firstMetadata.sampleColumn,
@@ -2172,11 +2188,36 @@ function App() {
       };
     }
 
+    const dedupeNonEmpty = (values = []) => {
+      const seen = new Set();
+      return values.filter((value) => {
+        if (typeof value !== 'string') return false;
+        const normalized = value.trim();
+        if (!normalized || seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      });
+    };
+
+    const selectedIllnessColumns = dedupeNonEmpty(
+      (Array.isArray(chosenColumns) && chosenColumns.length > 0
+        ? chosenColumns.map((entry) => entry?.illnessColumn)
+        : [selectedIllnessColumn])
+    );
+
+    const selectedSampleColumns = dedupeNonEmpty(
+      (Array.isArray(chosenColumns) && chosenColumns.length > 0
+        ? chosenColumns.map((entry) => entry?.sampleColumn)
+        : [selectedSampleColumn])
+    );
+
     const payload = {
       filePath: analysisFilePath,
       analysisId: currentAnalysisId || null,
       selectedIllnessColumn,
       selectedSampleColumn,
+      selectedIllnessColumns,
+      selectedSampleColumns,
       requestedBy: isGuestUser() ? 'guest' : (username || 'authenticated-user'),
       normalizationPipeline: {
         logTransformation: {

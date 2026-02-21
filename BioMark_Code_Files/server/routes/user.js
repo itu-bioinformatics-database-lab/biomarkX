@@ -495,6 +495,12 @@ router.get('/analyses/:id/continue', authMiddleware, async (req, res) => {
         console.error('Error parsing analysis metadata:', err);
       }
     }
+
+    const metadataFilePath = typeof metadata?.filePath === 'string' && metadata.filePath.trim()
+      ? metadata.filePath.trim()
+      : (typeof metadata?.normalizedFilePath === 'string' && metadata.normalizedFilePath.trim()
+        ? metadata.normalizedFilePath.trim()
+        : null);
     
     // Get the upload/merged file info
     let fileInfo = null;
@@ -507,7 +513,7 @@ router.get('/analyses/:id/continue', authMiddleware, async (req, res) => {
         fileInfo = {
           id: fileResult.rows[0].id,
           filename: fileResult.rows[0].original_name,
-          filepath: fileResult.rows[0].server_path,
+          filepath: metadataFilePath || fileResult.rows[0].server_path,
           isMerged: true
         };
       }
@@ -520,10 +526,19 @@ router.get('/analyses/:id/continue', authMiddleware, async (req, res) => {
         fileInfo = {
           id: fileResult.rows[0].id,
           filename: fileResult.rows[0].original_name,
-          filepath: fileResult.rows[0].server_path,
-          isMerged: false
+          filepath: metadataFilePath || fileResult.rows[0].server_path,
+          isMerged: /_merged_dataset/i.test(metadataFilePath || fileResult.rows[0].server_path || '')
         };
       }
+    }
+
+    if (!fileInfo && metadataFilePath) {
+      fileInfo = {
+        id: null,
+        filename: path.basename(metadataFilePath),
+        filepath: metadataFilePath,
+        isMerged: /_merged_dataset/i.test(metadataFilePath)
+      };
     }
     
     return res.json({

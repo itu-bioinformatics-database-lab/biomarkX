@@ -25,6 +25,37 @@ def _to_bool(value, default=False):
     return bool(value)
 
 
+def _coerce_column_list(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        val = value.strip()
+        return [val] if val else []
+    if isinstance(value, (list, tuple, set)):
+        cols = []
+        for item in value:
+            if isinstance(item, str):
+                val = item.strip()
+                if val:
+                    cols.append(val)
+        return cols
+    return []
+
+
+def _collect_selected_columns(payload, singular_key, plural_key):
+    merged = []
+    merged.extend(_coerce_column_list(payload.get(plural_key)))
+    merged.extend(_coerce_column_list(payload.get(singular_key)))
+
+    deduped = []
+    seen = set()
+    for col in merged:
+        if col not in seen:
+            deduped.append(col)
+            seen.add(col)
+    return deduped
+
+
 def _build_pipeline(raw_pipeline):
     log_cfg = raw_pipeline.get("logTransformation", {}) if isinstance(raw_pipeline, dict) else {}
     batch_cfg = raw_pipeline.get("batchEffectCorrection", {}) if isinstance(raw_pipeline, dict) else {}
@@ -465,25 +496,29 @@ def _write_audit_log(output_path, audit_payload):
     return log_path
 
 
-def _run_pipeline(file_path, pipeline, selected_illness_column, selected_sample_column):
+def _run_pipeline(file_path, pipeline, selected_illness_columns, selected_sample_columns):
     resolved_input = _resolve_existing_path(file_path)
     df = pd.read_csv(resolved_input)
     input_rows = int(df.shape[0])
     input_cols = int(df.shape[1])
 
-    protected = {
-        c for c in [selected_illness_column, selected_sample_column] if isinstance(c, str) and c
+    globally_protected = {
+        c for c in (selected_illness_columns + selected_sample_columns) if isinstance(c, str) and c
     }
-    batch_column = pipeline.get("batchEffectCorrection", {}).get("batchColumn", "")
-    if batch_column:
-        protected.add(batch_column)
-    covariates = pipeline.get("batchEffectCorrection", {}).get("covariates", [])
-    if isinstance(covariates, list):
-        protected.update([c for c in covariates if isinstance(c, str)])
 
-    feature_cols = _feature_columns(df, protected)
+    feature_cols = _feature_columns(df, globally_protected)
     if not feature_cols:
         raise ValueError("No numeric feature columns found to normalize.")
+
+    batch_protected = set(globally_protected)
+    batch_column = pipeline.get("batchEffectCorrection", {}).get("batchColumn", "")
+    if batch_column:
+        batch_protected.add(batch_column)
+    covariates = pipeline.get("batchEffectCorrection", {}).get("covariates", [])
+    if isinstance(covariates, list):
+        batch_protected.update([c for c in covariates if isinstance(c, str)])
+
+    batch_feature_cols = _feature_columns(df, batch_protected)
 
     step_stats = {}
 
@@ -491,7 +526,7 @@ def _run_pipeline(file_path, pipeline, selected_illness_column, selected_sample_
         step_stats["logTransformation"] = _log_transform(df, feature_cols, pipeline.get("logTransformation", {}))
 
     if pipeline.get("batchEffectCorrection", {}).get("requested"):
-        step_stats["batchEffectCorrection"] = _combat_like_batch_correction(df, feature_cols, pipeline.get("batchEffectCorrection", {}))
+        step_stats["batchEffectCorrection"] = _combat_like_batch_correction(df, batch_feature_cols, pipeline.get("batchEffectCorrection", {}))
 
     if pipeline.get("normalization", {}).get("requested"):
         step_stats["normalization"] = _apply_normalization(df, feature_cols, pipeline.get("normalization", {}))
@@ -526,7 +561,8 @@ def _run_pipeline(file_path, pipeline, selected_illness_column, selected_sample_
         "receivedAt": datetime.utcnow().isoformat() + "Z",
         "inputFilePath": str(resolved_input),
         "outputFilePath": str(output_path),
-        "protectedColumns": sorted(list(protected)),
+        "protectedColumns": sorted(list(globally_protected)),
+        "batchProtectedColumns": sorted(list(batch_protected)),
         "pipeline": pipeline,
         "summary": summary,
         "stepStats": step_stats,
@@ -566,6 +602,8 @@ def main():
         return
 
     pipeline, requested_steps = _build_pipeline(payload.get("normalizationPipeline", {}))
+    selected_illness_columns = _collect_selected_columns(payload, "selectedIllnessColumn", "selectedIllnessColumns")
+    selected_sample_columns = _collect_selected_columns(payload, "selectedSampleColumn", "selectedSampleColumns")
 
     batch_cfg = pipeline.get("batchEffectCorrection", {})
     if batch_cfg.get("requested") and not batch_cfg.get("batchColumn"):
@@ -579,8 +617,8 @@ def main():
         execution_info = _run_pipeline(
             file_path=file_path,
             pipeline=pipeline,
-            selected_illness_column=payload.get("selectedIllnessColumn"),
-            selected_sample_column=payload.get("selectedSampleColumn"),
+            selected_illness_columns=selected_illness_columns,
+            selected_sample_columns=selected_sample_columns,
         )
     except Exception as ex:
         print(json.dumps({
@@ -598,6 +636,8 @@ def main():
             "analysisId": payload.get("analysisId"),
             "selectedIllnessColumn": payload.get("selectedIllnessColumn"),
             "selectedSampleColumn": payload.get("selectedSampleColumn"),
+            "selectedIllnessColumns": selected_illness_columns,
+            "selectedSampleColumns": selected_sample_columns,
             "requestedSteps": requested_steps,
             "normalizationPipeline": pipeline,
         }
