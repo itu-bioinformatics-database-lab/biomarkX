@@ -20,6 +20,7 @@ const OUTLIER_ACTIONS = [
 ];
 
 const DEFAULT_CONFIG = {
+  selectedProtectedColumns: [],
   logTransform: {
     enabled: true,
     base: 2,
@@ -47,8 +48,23 @@ const DEFAULT_CONFIG = {
   },
 };
 
-const NormalizationConfigModal = ({ onClose, onNormalize, columns = [] }) => {
+const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessColumns = [] }) => {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
+
+  const selectableProtectedColumns = useMemo(() => {
+    const illnessSet = new Set(
+      (illnessColumns || [])
+        .filter((col) => typeof col === 'string')
+        .map((col) => col.trim())
+        .filter(Boolean)
+    );
+
+    return (columns || []).filter((col) => {
+      if (typeof col !== 'string') return false;
+      const normalized = col.trim();
+      return Boolean(normalized) && !illnessSet.has(normalized);
+    });
+  }, [columns, illnessColumns]);
 
   const availableCovariateColumns = useMemo(() => {
     const selectedBatchColumn = config.batchCorrection.batchColumn;
@@ -98,6 +114,36 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [] }) => {
     });
   };
 
+  const toggleProtectedColumn = (columnName) => {
+    setConfig((prev) => {
+      const current = Array.isArray(prev.selectedProtectedColumns)
+        ? prev.selectedProtectedColumns
+        : [];
+      const next = current.includes(columnName)
+        ? current.filter((item) => item !== columnName)
+        : [...current, columnName];
+
+      return {
+        ...prev,
+        selectedProtectedColumns: next,
+      };
+    });
+  };
+
+  const selectAllProtectedColumns = () => {
+    setConfig((prev) => ({
+      ...prev,
+      selectedProtectedColumns: [...selectableProtectedColumns],
+    }));
+  };
+
+  const clearAllProtectedColumns = () => {
+    setConfig((prev) => ({
+      ...prev,
+      selectedProtectedColumns: [],
+    }));
+  };
+
   const selectAllCovariates = () => {
     setConfig((prev) => ({
       ...prev,
@@ -141,6 +187,50 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [] }) => {
         </div>
 
         <div className="norm-modal-body">
+
+          {/*  0. Protected Columns  */}
+          <div className="norm-pipeline-step">
+            <div className="norm-step-header">
+              <span className="norm-step-title">0. Protect Columns from All Normalization Steps</span>
+              <HelpTooltip useFixedPosition placement="right" text="Select columns to protect from all normalization steps (log transform, batch correction, normalization, outlier detection). Illness columns are already protected automatically and are excluded from this list.">info</HelpTooltip>
+            </div>
+            <div className="norm-step-params">
+              <div className="norm-param-row">
+                <label>
+                  Protected Columns
+                  <HelpTooltip useFixedPosition text="Selected columns are treated as non-feature columns and remain unchanged by the normalization pipeline.">info</HelpTooltip>
+                </label>
+                <div className="norm-covariate-panel">
+                  <div className="norm-covariate-actions">
+                    <button type="button" onClick={selectAllProtectedColumns}>Select all</button>
+                    <button type="button" onClick={clearAllProtectedColumns}>Clear</button>
+                  </div>
+
+                  {selectableProtectedColumns.length > 0 ? (
+                    <div className="norm-covariate-list">
+                      {selectableProtectedColumns.map((columnName) => {
+                        const checked = Array.isArray(config.selectedProtectedColumns)
+                          ? config.selectedProtectedColumns.includes(columnName)
+                          : false;
+                        return (
+                          <label key={columnName} className="norm-covariate-item">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleProtectedColumn(columnName)}
+                            />
+                            <span>{columnName}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="norm-covariate-empty">No columns available for manual protection.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
 
           {/*  1. Log Transformation  */}
           <div className={`norm-pipeline-step ${!config.logTransform.enabled ? 'is-disabled' : ''}`}>
@@ -223,7 +313,7 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [] }) => {
                 <div className="norm-param-row">
                   <label>
                     Model Covariates
-                    <HelpTooltip useFixedPosition text="Select columns representing biological variables to preserve (e.g. disease status, age). ComBat will protect these signals while removing batch effects.">info</HelpTooltip>
+                    <HelpTooltip useFixedPosition text="These are not just protected from Batch Correction; they are variables the batch model uses to preserve biological signal while removing batch effects. Example: age/gender/diagnosis/APOE4 may be included.">info</HelpTooltip>
                   </label>
                   <div className="norm-covariate-panel">
                     <div className="norm-covariate-actions">

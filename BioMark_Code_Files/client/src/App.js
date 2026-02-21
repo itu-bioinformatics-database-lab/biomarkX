@@ -1823,9 +1823,11 @@ function App() {
 
     const shouldDeferFetch =
       !forceFetch &&
-      !skipMergeGuard &&
-      requiresMerge &&
-      (!mergeCompleted || !isMergedPath);
+      (!normalizationGatePassed || (
+        !skipMergeGuard &&
+        requiresMerge &&
+        (!mergeCompleted || !isMergedPath)
+      ));
 
     if (shouldDeferFetch) {
       setClassTable({ class: [] });
@@ -2211,6 +2213,8 @@ function App() {
         : [selectedSampleColumn])
     );
 
+    const selectedProtectedColumns = dedupeNonEmpty(normalizationConfig?.selectedProtectedColumns || []);
+
     const payload = {
       filePath: analysisFilePath,
       analysisId: currentAnalysisId || null,
@@ -2218,6 +2222,7 @@ function App() {
       selectedSampleColumn,
       selectedIllnessColumns,
       selectedSampleColumns,
+      selectedProtectedColumns,
       requestedBy: isGuestUser() ? 'guest' : (username || 'authenticated-user'),
       normalizationPipeline: {
         logTransformation: {
@@ -2298,6 +2303,18 @@ function App() {
       setExecutedNormalizationConfig(normalizationConfig || null);
       setShowStepFour(true);
 
+      const effectivePathForClasses = normalizedFilePath || analysisFilePath;
+      if (selectedIllnessColumn && effectivePathForClasses) {
+        await handleIllnessColumnSelection(selectedIllnessColumn, {
+          skipMergeGuard: true,
+          sampleValue: selectedSampleColumn,
+          skipSampleReset: true,
+          overrideFilePath: effectivePathForClasses,
+          forceFetch: true,
+          allowStepFour: true
+        });
+      }
+
       const removedRows = Number(responseData?.data?.rowsRemoved || 0);
       const detectedOutliers = Number(responseData?.data?.detectedOutliers || 0);
       const successMessage = `${responseData.message || 'Normalization pipeline request completed successfully.'} Using normalized file for analysis.${removedRows > 0 ? ` Rows removed: ${removedRows}.` : ''}${detectedOutliers > 0 ? ` Outliers detected: ${detectedOutliers}.` : ''}`;
@@ -2312,7 +2329,7 @@ function App() {
     }
   };
 
-  const handleContinueWithoutNormalization = () => {
+  const handleContinueWithoutNormalization = async () => {
     if (!normalizationPrereqReady || normalizeInProgress || mergeInProgress) {
       return;
     }
@@ -2322,6 +2339,18 @@ function App() {
     setExecutedNormalizationConfig(null);
     setNormalizedAnalysisFilePath(null);
     setShowStepFour(true);
+
+    if (selectedIllnessColumn && analysisFilePath) {
+      await handleIllnessColumnSelection(selectedIllnessColumn, {
+        skipMergeGuard: true,
+        sampleValue: selectedSampleColumn,
+        skipSampleReset: true,
+        overrideFilePath: analysisFilePath,
+        forceFetch: true,
+        allowStepFour: true
+      });
+    }
+
     setTimeout(() => {
       if (stepFourRef.current) scrollToStep(stepFourRef);
     }, 100);
@@ -4075,6 +4104,7 @@ function App() {
                 {showNormConfigModal && (
                   <NormalizationConfigModal
                     columns={analysisAllColumns.length > 0 ? analysisAllColumns : allColumns}
+                    illnessColumns={classColumnOptions}
                     onClose={() => setShowNormConfigModal(false)}
                     onNormalize={handleNormalizeDataset}
                   />

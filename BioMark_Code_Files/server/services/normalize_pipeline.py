@@ -496,14 +496,15 @@ def _write_audit_log(output_path, audit_payload):
     return log_path
 
 
-def _run_pipeline(file_path, pipeline, selected_illness_columns, selected_sample_columns):
+def _run_pipeline(file_path, pipeline, selected_illness_columns, selected_sample_columns, selected_protected_columns):
     resolved_input = _resolve_existing_path(file_path)
     df = pd.read_csv(resolved_input)
     input_rows = int(df.shape[0])
     input_cols = int(df.shape[1])
 
     globally_protected = {
-        c for c in (selected_illness_columns + selected_sample_columns) if isinstance(c, str) and c
+        c for c in (selected_illness_columns + selected_sample_columns + selected_protected_columns)
+        if isinstance(c, str) and c
     }
 
     feature_cols = _feature_columns(df, globally_protected)
@@ -604,6 +605,12 @@ def main():
     pipeline, requested_steps = _build_pipeline(payload.get("normalizationPipeline", {}))
     selected_illness_columns = _collect_selected_columns(payload, "selectedIllnessColumn", "selectedIllnessColumns")
     selected_sample_columns = _collect_selected_columns(payload, "selectedSampleColumn", "selectedSampleColumns")
+    selected_protected_columns = _collect_selected_columns(payload, "selectedProtectedColumn", "selectedProtectedColumns")
+
+    selected_protected_columns = [
+        col for col in selected_protected_columns
+        if col not in set(selected_illness_columns)
+    ]
 
     batch_cfg = pipeline.get("batchEffectCorrection", {})
     if batch_cfg.get("requested") and not batch_cfg.get("batchColumn"):
@@ -619,6 +626,7 @@ def main():
             pipeline=pipeline,
             selected_illness_columns=selected_illness_columns,
             selected_sample_columns=selected_sample_columns,
+            selected_protected_columns=selected_protected_columns,
         )
     except Exception as ex:
         print(json.dumps({
@@ -638,6 +646,7 @@ def main():
             "selectedSampleColumn": payload.get("selectedSampleColumn"),
             "selectedIllnessColumns": selected_illness_columns,
             "selectedSampleColumns": selected_sample_columns,
+            "selectedProtectedColumns": selected_protected_columns,
             "requestedSteps": requested_steps,
             "normalizationPipeline": pipeline,
         }
