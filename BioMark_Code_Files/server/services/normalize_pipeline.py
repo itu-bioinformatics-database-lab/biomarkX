@@ -316,6 +316,32 @@ def _quantile_normalize(df, feature_cols, qcfg):
     normalized = pd.DataFrame(index=filled.index, columns=filled.columns, dtype=float)
     rank_grid = np.arange(n, dtype=float)
 
+    if tie_method == "random":
+        rng = np.random.default_rng(None) # differnt seed each run
+
+        for col in filled.columns:
+            values = filled[col].to_numpy(dtype=float)
+            order = np.argsort(values, kind="mergesort")
+            randomized_ranks = np.empty(n, dtype=float)
+
+            start = 0
+            while start < n:
+                end = start
+                while end + 1 < n and values[order[end + 1]] == values[order[start]]:
+                    end += 1
+
+                rank_slots = np.arange(start, end + 1, dtype=float)
+                if end > start:
+                    rng.shuffle(rank_slots)
+                randomized_ranks[order[start:end + 1]] = rank_slots
+                start = end + 1
+
+            normalized[col] = np.interp(randomized_ranks, rank_grid, mean_sorted)
+
+        for col in feature_cols:
+            df[col] = normalized[col]
+        return
+
     for col in filled.columns:
         series = filled[col]
         ranks = series.rank(method=rank_method).to_numpy(dtype=float) - 1.0

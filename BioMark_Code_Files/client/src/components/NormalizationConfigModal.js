@@ -191,7 +191,9 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
           {/*  0. Protected Columns  */}
           <div className="norm-pipeline-step">
             <div className="norm-step-header">
-              <span className="norm-step-title">0. Protect Columns from All Normalization Steps</span>
+              <label className="norm-checkbox-label">
+                <span className="norm-step-title">0. Protected Columns</span>
+              </label>
               <HelpTooltip useFixedPosition placement="right" text="Select columns to protect from all normalization steps (log transform, batch correction, normalization, outlier detection). Illness columns are already protected automatically and are excluded from this list.">info</HelpTooltip>
             </div>
             <div className="norm-step-params">
@@ -313,7 +315,7 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
                 <div className="norm-param-row">
                   <label>
                     Model Covariates
-                    <HelpTooltip useFixedPosition text="These are not just protected from Batch Correction; they are variables the batch model uses to preserve biological signal while removing batch effects. Example: age/gender/diagnosis/APOE4 may be included.">info</HelpTooltip>
+                    <HelpTooltip useFixedPosition text="These are not just protected from Batch Correction; they are variables the batch model uses to preserve biological signal while removing batch effects. Columns from Step 0 are need to be selected. Example: age/gender/diagnosis/APOE4 may be included.">info</HelpTooltip>
                   </label>
                   <div className="norm-covariate-panel">
                     <div className="norm-covariate-actions">
