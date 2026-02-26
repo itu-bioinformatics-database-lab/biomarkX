@@ -168,22 +168,33 @@ select, option {
   display: flex;
   flex-direction: column;
   gap: 20px; /* Space between rows */
-  max-width: 820px; /* 2 cards * max 400px + 20px gap */
+  max-width: 1240px;
   width: 100%;
   margin: 0 auto; /* Center the container itself to keep a consistent left edge */
 }
 
 .analysis-row {
   display: flex;
-  justify-content: space-between; /* Left card flush left, right card flush right */
+  justify-content: flex-start;
+  align-items: flex-start;
   gap: 20px; /* Space between category cards */
-  width: 100%;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+.two-card-row {
+  width: fit-content;
+}
+
+.three-card-row {
+  width: fit-content;
 }
 
 .analysis-category {
-  flex: 1; /* Each card takes equal space in the row */
+  flex: 0 0 300px;
+  width: 300px;
   min-width: 300px;
-  max-width: 400px;
+  max-width: 300px;
   background: #fdfdfd;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
@@ -250,11 +261,11 @@ select, option {
 .classification-container {
   display: flex;
   align-items: center;
-  justify-content: flex-start; /* Align single card to the left edge of the 820px container */
+  justify-content: flex-start;
   gap: 20px;
-  width: 100%;
-  max-width: 820px; /* match top-row width for column alignment */
-  margin: 0 auto; /* Center the container block itself */
+  width: fit-content;
+  max-width: none;
+  margin: 0;
 }
 
 /* Styling for the arrow connector */
@@ -294,7 +305,7 @@ select, option {
 /* New wrapper for tables and confirm button */
 .analysis-content-wrapper {
   display: grid;
-  grid-template-columns: 820px auto; /* lock tables column to same width as top row */
+  grid-template-columns: auto auto;
   justify-content: center;           /* center the grid within page */
   align-items: start;
   column-gap: 12px;                  /* small space between tables and button */

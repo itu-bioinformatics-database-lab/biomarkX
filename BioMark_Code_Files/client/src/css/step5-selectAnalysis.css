@@ -42,6 +42,10 @@
   border-radius: 5px 5px 0 0;
 }
 
+.analysis-category table {
+  border-bottom: 1px solid #ddd;
+}
+
 .analysis-selection table {
   width: 100%;
   margin-right: 20px;

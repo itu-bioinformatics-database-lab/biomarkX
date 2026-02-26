@@ -276,6 +276,7 @@ function App() {
   const [selectedAnalyzes, setSelectedAnalyzes] = useState({
     statisticalTest: [],
     dimensionalityReduction: [],
+    survivalAnalysis: [],
     classificationAnalysis: [],
     modelExplanation: []
   });
@@ -645,24 +646,25 @@ function App() {
     () => ENRICHMENT_ORDER.filter((key) => !completedEnrichmentTypes[key]),
     [completedEnrichmentTypes]
   );
-   // Memoize the first 10 columns for the current file (Step 3)
-   const firstTenColumns = useMemo(() => {
-    if (allColumns.length > 0 && columns.length === 0) {
-        return allColumns.slice(0, 10);
-    }
-    return columns.slice(0, 10);
-   }, [columns, allColumns]);
+  
+  // Memoize the first 10 columns for the current file (Step 3)
+  const firstTenColumns = useMemo(() => {
+   if (allColumns.length > 0 && columns.length === 0) {
+       return allColumns.slice(0, 10);
+   }
+   return columns.slice(0, 10);
+  }, [columns, allColumns]);
 
-   // First 10 columns for the analysis/merged file (Step 6)
-   const analysisFirstTenColumns = useMemo(() => {
-    if (analysisAllColumns.length > 0) {
-      return analysisAllColumns.slice(0, 10);
-    }
-    if (analysisUploadContext?.columns?.length) {
-      return analysisUploadContext.columns.slice(0, 10);
-    }
-    return [];
-   }, [analysisAllColumns, analysisUploadContext?.columns]);
+  // First 10 columns for the analysis/merged file (Step 6)
+  const analysisFirstTenColumns = useMemo(() => {
+   if (analysisAllColumns.length > 0) {
+     return analysisAllColumns.slice(0, 10);
+   }
+   if (analysisUploadContext?.columns?.length) {
+     return analysisUploadContext.columns.slice(0, 10);
+   }
+   return [];
+  }, [analysisAllColumns, analysisUploadContext?.columns]);
 
   // Load last used email from localStorage
   useEffect(() => {
@@ -2441,6 +2443,7 @@ function App() {
     const { 
       statisticalTest = [], 
       dimensionalityReduction = [], 
+      survivalAnalysis = [],
       classificationAnalysis = [], 
       modelExplanation = [], 
       useDefaultParams: useDefault, 
@@ -2454,7 +2457,7 @@ function App() {
         setIsDiffAnalysisClasses([]);
     }
 
-    setSelectedAnalyzes({ statisticalTest, dimensionalityReduction, classificationAnalysis, modelExplanation });
+    setSelectedAnalyzes({ statisticalTest, dimensionalityReduction, survivalAnalysis, classificationAnalysis, modelExplanation });
     setUseDefaultParams(useDefault);
 
     // Update parameters if custom params are selected
@@ -2494,7 +2497,7 @@ function App() {
     setInfo('Analysis method selected. You can now optionally exclude non-feature columns.');
     setTimeout(() => setInfo(''), 5000); // Message duration
 
-    console.log("handleAnalysisSelection finished. State updated:", { statisticalTest, dimensionalityReduction, classificationAnalysis, modelExplanation, useDefaultParams: useDefault });
+    console.log("handleAnalysisSelection finished. State updated:", { statisticalTest, dimensionalityReduction, survivalAnalysis, classificationAnalysis, modelExplanation, useDefaultParams: useDefault });
   };
 
 
@@ -2600,6 +2603,7 @@ function App() {
       selectedClasses: normalizeAndSortClasses(selectedClasses),
       statisticalTest: selectedAnalyzes.statisticalTest,
       dimensionalityReduction: selectedAnalyzes.dimensionalityReduction,
+      survivalAnalysis: selectedAnalyzes.survivalAnalysis,
       classificationAnalysis: selectedAnalyzes.classificationAnalysis,
       modelExplanation: selectedAnalyzes.modelExplanation,
       nonFeatureColumns: nonFeatureColumns,
@@ -2642,7 +2646,12 @@ function App() {
       setAnalyzing(false);
       return;
     }
-    if (selectedAnalyzes.statisticalTest.length === 0 && selectedAnalyzes.dimensionalityReduction.length === 0 && selectedAnalyzes.classificationAnalysis.length === 0) {
+    if (
+      selectedAnalyzes.statisticalTest.length === 0 &&
+      selectedAnalyzes.dimensionalityReduction.length === 0 &&
+      selectedAnalyzes.survivalAnalysis.length === 0 &&
+      selectedAnalyzes.classificationAnalysis.length === 0
+    ) {
       setError("Please select at least one analysis method in step 5.");
       setAnalyzing(false);
       return;
@@ -2696,6 +2705,7 @@ function App() {
         setSelectedAnalyzes({
           statisticalTest: [],
           dimensionalityReduction: [],
+          survivalAnalysis: [],
           classificationAnalysis: [],
           modelExplanation: []
         });
@@ -3353,7 +3363,7 @@ function App() {
     
     // Reset selections for new analysis (but keep columns and merge state)
     setselectedClasses([]);
-    setSelectedAnalyzes({ statisticalTest: [], dimensionalityReduction: [], classificationAnalysis: [], modelExplanation: [] });
+    setSelectedAnalyzes({ statisticalTest: [], dimensionalityReduction: [], survivalAnalysis: [], classificationAnalysis: [], modelExplanation: [] });
     setUseDefaultParams(true);
     setCanRunPathwayAnalysis(false);
     setEnrichmentAnalyses([]);
@@ -3423,6 +3433,7 @@ function App() {
     setSelectedAnalyzes({
       statisticalTest: [],
       dimensionalityReduction: [],
+      survivalAnalysis: [],
       classificationAnalysis: [],
       modelExplanation: []
     });

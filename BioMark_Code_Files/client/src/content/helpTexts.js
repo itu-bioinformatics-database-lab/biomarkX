@@ -22,6 +22,7 @@ export const helpTexts = {
       categories: {
         statisticalTest: "Run T-test/ANOVA/Wilcoxon rank-sum/Kruskal-Wallis to find features that differ between groups. Reports p-values and a ranked Top-N list (with multiple-testing adjustment).",
         dimensionalityReduction: "Use PCA/t-SNE/UMAP to project data into 2D/3D for inspecting group structure and outliers (labels are only used for coloring, not for fitting).",
+        survival: "Use Kaplan-Meier and Cox regression to analyze time-to-event outcomes, compare survival curves between groups, and estimate risk effects. The input dataset must include two specific columns: one for survival time (e.g., days/months) and another for event status (e.g., 1 for event, 0 for censored).",
         classification: "Train ML models (e.g., Logistic Regression, Random Forest, XGB) to predict class labels; outputs CV/Train/Test metrics (Accuracy, Precision, Recall, F1, ROC-AUC) and key settings.",
         explanation: "Explain model predictions with SHAP/LIME/Permutation importance; provides global feature ranking and per-sample contributions to understand why predictions were made.",
       },
@@ -36,6 +37,9 @@ export const helpTexts = {
         "PCA": "Linear projection maximizing variance; shows separation along principal components; sensitive to scaling.",
         "tSNE": "Non-linear embedding preserving local neighborhoods; clusters are illustrative, spacing not absolute; tune perplexity.",
         "UMAP": "Non-linear embedding preserving local+global structure; n_neighbors/min_dist control cluster tightness.",
+        // Survival Analysis
+        "Kaplan-Meier": "Estimates survival probability over time and compares survival curves between groups.",
+        "Cox Regression": "Semi-parametric time-to-event model that estimates hazard ratios for covariates.",
         // Classification Models
         "Logistic Regression": "Linear decision boundary; interpretable coefficients; works best with standardized features; strong baseline.",
         "Random Forest": "Ensemble of bagged trees; handles non-linearities/outliers; provides feature importance; less tuning sensitive.",

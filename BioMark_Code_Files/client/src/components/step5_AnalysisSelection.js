@@ -5,12 +5,15 @@ import Science from '@mui/icons-material/Science';
 import Hub from '@mui/icons-material/Hub';
 import AccountTree from '@mui/icons-material/AccountTree';
 import Insights from '@mui/icons-material/Insights';
+import FavoriteBorder from '@mui/icons-material/FavoriteBorder';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+
 
 function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggleAfterFS, canUseAfterFS, computedNumTopFeatures, onNumTopFeaturesChange, numSelectedClasses }) {
   const [selectedAnalyses, setSelectedAnalyses] = useState({
     statisticalTest: [],
     dimensionalityReduction: [],
+    survivalAnalysis: [],
     classificationAnalysis: [],
     modelExplanation: [],
   });
@@ -74,6 +77,7 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
   const analysisOptions = {
     statisticalTest: ['T-test', 'Anova', 'Wilcoxon-rank-sum', 'Kruskal-Wallis'],
     dimensionalityReduction: ['PCA', 'tSNE', 'UMAP'],
+    survivalAnalysis: ['Kaplan-Meier', 'Cox Regression'],
     classificationAnalysis: ['Logistic Regression', 'Random Forest', 'XGBClassifier', 'Decision Tree', 'Gradient Boosting', 'CatBoosting Classifier', 'AdaBoost Classifier', 'MLPClassifier', 'SVC'],
     modelExplanation: ['SHAP', 'LIME', 'Permutation-Feature-Importance']
   };
@@ -117,19 +121,26 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
       const emptyState = {
         statisticalTest: [],
         dimensionalityReduction: [],
+        survivalAnalysis: [],
         classificationAnalysis: [],
         modelExplanation: [],
       };
 
       if (isDeselecting) {
-        // If deselecting the active primary analysis, clear everything.
-        return emptyState;
+        // If deselecting the active primary analysis, clear only that primary category.
+        // Also clear model explanation if deselecting classification
+        if (category === 'classificationAnalysis') {
+          return { ...prev, [category]: [], modelExplanation: [] };
+        }
+        return { ...prev, [category]: [] };
       } else {
         // If selecting a new primary analysis:
-        // 1. Clear everything.
+        // 1. Clear primary categories.
         // 2. Set the new selection in its category.
+        // 3. Only preserve modelExplanation when selecting classification.
         return {
           ...emptyState,
+          modelExplanation: category === 'classificationAnalysis' ? prev.modelExplanation : [],
           [category]: [method]
         };
       }
@@ -203,11 +214,12 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
   
   // Send selection and parameters to parent component
   const completeSelection = () => {
-    const { statisticalTest, dimensionalityReduction, classificationAnalysis, modelExplanation } = selectedAnalyses;
+    const { statisticalTest, dimensionalityReduction, survivalAnalysis, classificationAnalysis, modelExplanation } = selectedAnalyses;
     
     const result = {
       statisticalTest,
       dimensionalityReduction,
+      survivalAnalysis,
       classificationAnalysis,
       modelExplanation,
       useDefaultParams: useDefaultParams,
@@ -238,7 +250,15 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
   };
 
   // Determine if at least one analysis method is selected
-  const isAnyAnalysisSelected = Object.values(selectedAnalyses).some(arr => arr.length > 0);
+  const isAnyPrimaryAnalysisSelected = (
+    selectedAnalyses.statisticalTest.length > 0 ||
+    selectedAnalyses.dimensionalityReduction.length > 0 ||
+    selectedAnalyses.survivalAnalysis.length > 0 ||
+    selectedAnalyses.classificationAnalysis.length > 0
+  );
+
+  // Model Explanation is only available when Classification is selected
+  const isClassificationSelected = selectedAnalyses.classificationAnalysis.length > 0;
 
   return (
     <div className="analysis-selection">
@@ -269,9 +289,9 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
       </div>
       <div className="analysis-content-wrapper">
         {/* Removed duplicate floating info; main Step 5 title carries the info in App.js */}
-        <div className='analysis-tables' style={{ maxWidth: 820 }}>
-          {/* First Row */}
-          <div className="analysis-row">
+        <div className='analysis-tables'>
+          {/* First Row: Statistical Test | Dimensionality Reduction | Survival Analysis */}
+          <div className="analysis-row" style={{ justifyContent: 'center' }}>
             {/* Statistical Test */}
             <div className="analysis-category">
               <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Science /> Statistical Test
@@ -329,91 +349,118 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
                 </tbody>
               </table>
             </div>
+
+            {/* Survival Analysis */}
+            <div className="analysis-category">
+              <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><FavoriteBorder /> Survival Analysis
+                <HelpTooltip text={helpTexts.steps.step5.categories.survival}>info</HelpTooltip>
+              </h4>
+              <table>
+                <tbody>
+                  {analysisOptions.survivalAnalysis.map((method) => {
+                    const compatible = isMethodCompatible(method);
+                    return (
+                    <tr
+                      key={method}
+                      className={`${selectedAnalyses.survivalAnalysis.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
+                      onClick={() => handleSelection(method, 'survivalAnalysis')}
+                      title={!compatible ? getDisabledTooltip(method) : ''}
+                    >
+                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
+                        <span>{method}</span>
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
+                        </span>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          {/* Second Row */}
-          <div className="analysis-row">
-            {/* Classification & Explanation Container */}
+          {/* Second Row: Classification Analysis ? Arrow ? Model Explanation */}
+          <div className="analysis-row" style={{ justifyContent: 'center' }}>
             <div className="classification-container">
-              {/* Classification Analysis table */}
-              <div className="analysis-category">
-                <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><AccountTree /> Classification Analysis
-                  <HelpTooltip text={helpTexts.steps.step5.categories.classification}>info</HelpTooltip>
-                </h4>
-                <table>
-                  <tbody>
-                    {analysisOptions.classificationAnalysis.map((method) => {
-                      const compatible = isMethodCompatible(method);
-                      return (
-                      <tr
-                        key={method}
-                        className={`${selectedAnalyses.classificationAnalysis.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
-                        onClick={() => handleSelection(method, 'classificationAnalysis')}
-                        title={!compatible ? getDisabledTooltip(method) : ''}
-                      >
-                        <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
-                          <span>{method}</span>
-                          <span onClick={(e) => e.stopPropagation()}>
-                            <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
-                          </span>
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            {/* Classification Analysis */}
+            <div className="analysis-category">
+              <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><AccountTree /> Classification Analysis
+                <HelpTooltip text={helpTexts.steps.step5.categories.classification}>info</HelpTooltip>
+              </h4>
+              <table>
+                <tbody>
+                  {analysisOptions.classificationAnalysis.map((method) => {
+                    const compatible = isMethodCompatible(method);
+                    return (
+                    <tr
+                      key={method}
+                      className={`${selectedAnalyses.classificationAnalysis.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
+                      onClick={() => handleSelection(method, 'classificationAnalysis')}
+                      title={!compatible ? getDisabledTooltip(method) : ''}
+                    >
+                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
+                        <span>{method}</span>
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
+                        </span>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-              {/* Connector Arrow */}
-              <div className={`connector ${selectedAnalyses.classificationAnalysis.length > 0 ? 'visible' : ''}`}>
-                <ArrowForwardIcon fontSize="large" />
-              </div>
+            {/* Arrow Connector */}
+            <div className={`connector${isClassificationSelected ? ' visible' : ''}`}>
+              <ArrowForwardIcon style={{ fontSize: 32 }} />
+            </div>
 
-              {/* Model Explanation - Conditionally Styled */}
-              <div className={`analysis-category model-explanation-category ${selectedAnalyses.classificationAnalysis.length > 0 ? 'visible' : ''}`}>
-                <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Insights /> Model Explanation
-                  <span className="optional-text">(Optional)</span>
-                  <HelpTooltip text={helpTexts.steps.step5.categories.explanation}>info</HelpTooltip>
-                </h4>
-                <table>
-                  <tbody>
-                    {analysisOptions.modelExplanation.map((method) => {
-                      const compatible = isMethodCompatible(method);
-                      return (
-                      <tr
-                        key={method}
-                        className={`${selectedAnalyses.modelExplanation.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
-                        onClick={() => handleSelection(method, 'modelExplanation')}
-                        title={!compatible ? getDisabledTooltip(method) : ''}
-                      >
-                        <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
-                          <span>{method}</span>
-                          <span onClick={(e) => e.stopPropagation()}>
-                            <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
-                          </span>
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            {/* Model Explanation - Only available when Classification is selected */}
+            <div className={`analysis-category model-explanation-category${isClassificationSelected ? ' visible' : ''}`}
+                 style={{ opacity: isClassificationSelected ? 1 : 0.45, pointerEvents: isClassificationSelected ? 'auto' : 'none' }}>
+              <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Insights /> Model Explanation
+                <span className="optional-text">(Optional)</span>
+                <HelpTooltip text={helpTexts.steps.step5.categories.explanation}>info</HelpTooltip>
+              </h4>
+              <table>
+                <tbody>
+                  {analysisOptions.modelExplanation.map((method) => {
+                    const compatible = isMethodCompatible(method);
+                    return (
+                    <tr
+                      key={method}
+                      className={`${selectedAnalyses.modelExplanation.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
+                      onClick={() => handleSelection(method, 'modelExplanation')}
+                      title={!compatible ? getDisabledTooltip(method) : ''}
+                    >
+                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
+                        <span>{method}</span>
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
+                        </span>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
             </div>
           </div>
         </div>
 
         {/* Confirm button retained in original place */}
-        {!confirmSelection && (
-        <div className='analysis-button'>
+        <div className='analysis-button' style={{ visibility: confirmSelection ? 'hidden' : 'visible' }}>
           <button
               onClick={handleConfirmSelection}
-              disabled={!isAnyAnalysisSelected}
+              disabled={!isAnyPrimaryAnalysisSelected}
             >
               Confirm Selection
             </button>
         </div>
-        )}
       </div>
         
       {/* Parameter Settings section - shown after Confirm Selection */}
@@ -427,6 +474,7 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
             {[
               ...selectedAnalyses.statisticalTest, 
               ...selectedAnalyses.dimensionalityReduction, 
+              ...selectedAnalyses.survivalAnalysis,
               ...selectedAnalyses.classificationAnalysis,
               ...selectedAnalyses.modelExplanation
             ].join(', ')}
