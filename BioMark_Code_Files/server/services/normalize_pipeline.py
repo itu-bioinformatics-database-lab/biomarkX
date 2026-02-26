@@ -42,6 +42,16 @@ def _coerce_column_list(value):
     return []
 
 
+def _dedupe_non_empty_columns(values):
+    deduped = []
+    seen = set()
+    for col in _coerce_column_list(values):
+        if col not in seen:
+            deduped.append(col)
+            seen.add(col)
+    return deduped
+
+
 def _collect_selected_columns(payload, singular_key, plural_key):
     merged = []
     merged.extend(_coerce_column_list(payload.get(plural_key)))
@@ -72,7 +82,7 @@ def _build_pipeline(raw_pipeline):
             "requested": _to_bool(batch_cfg.get("requested"), True),
             "method": str(batch_cfg.get("method", "combat")).lower(),
             "batchColumn": batch_cfg.get("batchColumn", ""),
-            "covariates": batch_cfg.get("covariates", []) if isinstance(batch_cfg.get("covariates", []), list) else [],
+            "covariates": _dedupe_non_empty_columns(batch_cfg.get("covariates", [])),
             "parametric": _to_bool(batch_cfg.get("parametric"), True),
         },
         "normalization": {
@@ -541,9 +551,24 @@ def _run_pipeline(file_path, pipeline, selected_illness_columns, selected_sample
     batch_column = pipeline.get("batchEffectCorrection", {}).get("batchColumn", "")
     if batch_column:
         batch_protected.add(batch_column)
-    covariates = pipeline.get("batchEffectCorrection", {}).get("covariates", [])
-    if isinstance(covariates, list):
-        batch_protected.update([c for c in covariates if isinstance(c, str)])
+
+    requested_covariates = _dedupe_non_empty_columns(
+        pipeline.get("batchEffectCorrection", {}).get("covariates", [])
+    )
+    forced_covariates = _dedupe_non_empty_columns(list(globally_protected))
+    effective_covariates = _dedupe_non_empty_columns([
+        *forced_covariates,
+        *requested_covariates,
+    ])
+
+    if batch_column:
+        effective_covariates = [c for c in effective_covariates if c != batch_column]
+
+    existing_columns = set(df.columns)
+    effective_covariates = [c for c in effective_covariates if c in existing_columns]
+
+    pipeline.setdefault("batchEffectCorrection", {})["covariates"] = effective_covariates
+    batch_protected.update(effective_covariates)
 
     batch_feature_cols = _feature_columns(df, batch_protected)
 

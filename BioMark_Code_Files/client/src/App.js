@@ -586,6 +586,28 @@ function App() {
     return Array.from(optionSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
   }, [requiresMerge, includedUploads, uploadContexts, selectedIllnessColumn, uploadedInfo?.filePath]);
 
+  const sampleColumnOptions = useMemo(() => {
+    const optionSet = new Set();
+    if (requiresMerge) {
+      includedUploads.forEach((info) => {
+        const ctx = uploadContexts[info.filePath];
+        if (ctx && ctx.sampleColumn) {
+          optionSet.add(ctx.sampleColumn);
+        }
+      });
+    }
+    if (uploadedInfo?.filePath) {
+      const currentCtx = uploadContexts[uploadedInfo.filePath];
+      if (currentCtx?.sampleColumn) {
+        optionSet.add(currentCtx.sampleColumn);
+      }
+    }
+    if (selectedSampleColumn) {
+      optionSet.add(selectedSampleColumn);
+    }
+    return Array.from(optionSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+  }, [requiresMerge, includedUploads, uploadContexts, selectedSampleColumn, uploadedInfo?.filePath]);
+
   const analysisFilePath = useMemo(() => {
     if (mergeMetadata?.filePath) {
       return mergeMetadata.filePath;
@@ -2175,21 +2197,6 @@ function App() {
     setError('');
     setInfo('Submitting normalization pipeline request...');
 
-    if (normalizationConfig?.batchCorrection?.covariates.includes(normalizationConfig?.batchCorrection?.batchColumn)) {
-      
-      // Covariates should not include the batch column used for correction
-      const filteredCovariates = normalizationConfig.batchCorrection.covariates.filter(
-        (covariate) => covariate !== normalizationConfig.batchCorrection.batchColumn
-      );
-      normalizationConfig = {
-        ...normalizationConfig,
-        batchCorrection: {
-          ...normalizationConfig.batchCorrection,
-          covariates: filteredCovariates
-        }
-      };
-    }
-
     const dedupeNonEmpty = (values = []) => {
       const seen = new Set();
       return values.filter((value) => {
@@ -2214,6 +2221,24 @@ function App() {
     );
 
     const selectedProtectedColumns = dedupeNonEmpty(normalizationConfig?.selectedProtectedColumns || []);
+    const batchColumn = normalizationConfig?.batchCorrection?.batchColumn || '';
+
+    const requestedCovariates = dedupeNonEmpty(
+      Array.isArray(normalizationConfig?.batchCorrection?.covariates)
+        ? normalizationConfig.batchCorrection.covariates
+        : []
+    ).filter((covariate) => covariate !== batchColumn);
+
+    const forcedCovariates = dedupeNonEmpty([
+      ...selectedProtectedColumns,
+      ...selectedIllnessColumns,
+      ...selectedSampleColumns,
+    ]).filter((covariate) => covariate !== batchColumn);
+
+    const mergedCovariates = dedupeNonEmpty([
+      ...forcedCovariates,
+      ...requestedCovariates,
+    ]);
 
     const payload = {
       filePath: analysisFilePath,
@@ -2233,10 +2258,8 @@ function App() {
         batchEffectCorrection: {
           requested: Boolean(normalizationConfig?.batchCorrection?.enabled),
           method: 'combat',
-          batchColumn: normalizationConfig?.batchCorrection?.batchColumn || '',
-          covariates: Array.isArray(normalizationConfig?.batchCorrection?.covariates)
-            ? normalizationConfig.batchCorrection.covariates
-            : [],
+          batchColumn,
+          covariates: mergedCovariates,
           parametric: Boolean(normalizationConfig?.batchCorrection?.parametric),
         },
         normalization: {
@@ -4105,6 +4128,7 @@ function App() {
                   <NormalizationConfigModal
                     columns={analysisAllColumns.length > 0 ? analysisAllColumns : allColumns}
                     illnessColumns={classColumnOptions}
+                    sampleColumns={sampleColumnOptions}
                     onClose={() => setShowNormConfigModal(false)}
                     onNormalize={handleNormalizeDataset}
                   />

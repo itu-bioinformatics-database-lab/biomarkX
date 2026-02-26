@@ -48,23 +48,43 @@ const DEFAULT_CONFIG = {
   },
 };
 
-const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessColumns = [] }) => {
+const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessColumns = [], sampleColumns = [] }) => {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
 
-  const selectableProtectedColumns = useMemo(() => {
-    const illnessSet = new Set(
-      (illnessColumns || [])
-        .filter((col) => typeof col === 'string')
-        .map((col) => col.trim())
-        .filter(Boolean)
-    );
+  const alwaysProtectedColumns = useMemo(() => {
+    const fixed = [];
+    (illnessColumns || []).forEach((col) => {
+      if (typeof col === 'string' && col.trim()) {
+        fixed.push(col.trim());
+      }
+    });
+    (sampleColumns || []).forEach((col) => {
+      if (typeof col === 'string' && col.trim()) {
+        fixed.push(col.trim());
+      }
+    });
 
+    if ((sampleColumns || []).length === 0 && (columns || []).includes('Sample ID')) {
+      fixed.push('Sample ID');
+    }
+
+    return Array.from(new Set(fixed));
+  }, [illnessColumns, sampleColumns, columns]);
+
+  const forcedProtectedColumns = useMemo(() => (
+    Array.from(new Set([
+      ...(config.selectedProtectedColumns || []),
+      ...alwaysProtectedColumns,
+    ]))
+  ), [config.selectedProtectedColumns, alwaysProtectedColumns]);
+
+  const selectableProtectedColumns = useMemo(() => {
     return (columns || []).filter((col) => {
       if (typeof col !== 'string') return false;
       const normalized = col.trim();
-      return Boolean(normalized) && !illnessSet.has(normalized);
+      return Boolean(normalized);
     });
-  }, [columns, illnessColumns]);
+  }, [columns]);
 
   const availableCovariateColumns = useMemo(() => {
     const selectedBatchColumn = config.batchCorrection.batchColumn;
@@ -77,6 +97,31 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
       document.body.classList.remove('norm-modal-open');
     };
   }, []);
+
+  useEffect(() => {
+    setConfig((prev) => {
+      const batchColumn = prev.batchCorrection.batchColumn;
+      const forced = forcedProtectedColumns.filter((c) => c && c !== batchColumn);
+      const existing = (prev.batchCorrection.covariates || []).filter((c) => c && c !== batchColumn);
+      const merged = Array.from(new Set([...forced, ...existing]))
+        .filter((c) => (columns || []).includes(c));
+
+      if (
+        merged.length === (prev.batchCorrection.covariates || []).length &&
+        merged.every((c, i) => c === (prev.batchCorrection.covariates || [])[i])
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        batchCorrection: {
+          ...prev.batchCorrection,
+          covariates: merged,
+        },
+      };
+    });
+  }, [forcedProtectedColumns, config.batchCorrection.batchColumn, columns]);
 
   const update = (section, field, value) => {
     setConfig((prev) => ({
@@ -97,51 +142,86 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
 
   const toggleCovariate = (columnName) => {
     setConfig((prev) => {
-      const current = Array.isArray(prev.batchCorrection.covariates)
-        ? prev.batchCorrection.covariates
-        : [];
+      if (forcedProtectedColumns.includes(columnName)) return prev; // cannot uncheck forced
+
+      const current = prev.batchCorrection.covariates || [];
       const next = current.includes(columnName)
-        ? current.filter((item) => item !== columnName)
+        ? current.filter((c) => c !== columnName)
         : [...current, columnName];
 
       return {
         ...prev,
-        batchCorrection: {
-          ...prev.batchCorrection,
-          covariates: next,
-        },
+        batchCorrection: { ...prev.batchCorrection, covariates: next },
       };
     });
   };
 
   const toggleProtectedColumn = (columnName) => {
     setConfig((prev) => {
-      const current = Array.isArray(prev.selectedProtectedColumns)
-        ? prev.selectedProtectedColumns
-        : [];
-      const next = current.includes(columnName)
-        ? current.filter((item) => item !== columnName)
-        : [...current, columnName];
+      const protectedCols = prev.selectedProtectedColumns || [];
+      const covariates = prev.batchCorrection.covariates || [];
+      const isProtected = protectedCols.includes(columnName);
+
+      const nextProtected = isProtected
+        ? protectedCols.filter((c) => c !== columnName)
+        : [...protectedCols, columnName];
+
+      const nextCovariates = isProtected
+        ? covariates.filter((c) => c !== columnName)
+        : covariates.includes(columnName)
+          ? covariates
+          : [...covariates, columnName];
 
       return {
         ...prev,
-        selectedProtectedColumns: next,
+        selectedProtectedColumns: nextProtected,
+        batchCorrection: { ...prev.batchCorrection, covariates: nextCovariates },
       };
     });
   };
 
   const selectAllProtectedColumns = () => {
-    setConfig((prev) => ({
-      ...prev,
-      selectedProtectedColumns: [...selectableProtectedColumns],
-    }));
+    setConfig((prev) => {
+      const covariatesCurrent = Array.isArray(prev.batchCorrection.covariates)
+        ? prev.batchCorrection.covariates
+        : [];
+      const forced = [...selectableProtectedColumns];
+      const nextCovariates = Array.from(new Set([...covariatesCurrent, ...forced]));
+
+      return {
+        ...prev,
+        selectedProtectedColumns: forced,
+        batchCorrection: {
+          ...prev.batchCorrection,
+          covariates: nextCovariates,
+        },
+      };
+    });
   };
 
   const clearAllProtectedColumns = () => {
-    setConfig((prev) => ({
-      ...prev,
-      selectedProtectedColumns: [],
-    }));
+    setConfig((prev) => {
+      const protectedCurrent = Array.isArray(prev.selectedProtectedColumns)
+        ? prev.selectedProtectedColumns
+        : [];
+      const covariatesCurrent = Array.isArray(prev.batchCorrection.covariates)
+        ? prev.batchCorrection.covariates
+        : [];
+
+      // remove previously forced columns from covariates
+      const nextCovariates = covariatesCurrent.filter(
+        (col) => !protectedCurrent.includes(col)
+      );
+
+      return {
+        ...prev,
+        selectedProtectedColumns: [],
+        batchCorrection: {
+          ...prev.batchCorrection,
+          covariates: nextCovariates,
+        },
+      };
+    });
   };
 
   const selectAllCovariates = () => {
@@ -155,13 +235,17 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
   };
 
   const clearAllCovariates = () => {
-    setConfig((prev) => ({
-      ...prev,
-      batchCorrection: {
-        ...prev.batchCorrection,
-        covariates: [],
-      },
-    }));
+    setConfig((prev) => {
+      const batchColumn = prev.batchCorrection.batchColumn;
+      const forced = forcedProtectedColumns.filter((c) => c && c !== batchColumn);
+      return {
+        ...prev,
+        batchCorrection: {
+          ...prev.batchCorrection,
+          covariates: forced, // keep forced ones
+        },
+      };
+    });
   };
 
   // Normalize button disabled when batch correction is enabled but no batch column selected
@@ -173,9 +257,24 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
   }, [config.batchCorrection.enabled, config.batchCorrection.batchColumn]);
 
   const handleNormalize = () => {
-    if (normalizeDisabled) return;
-    onNormalize(config);
+    const batchColumn = config.batchCorrection.batchColumn;
+    const protectedCols = forcedProtectedColumns.filter(Boolean);
+    const forced = protectedCols.filter((c) => c !== batchColumn);
+    const requested = (config.batchCorrection.covariates || []).filter((c) => c && c !== batchColumn);
+    const mergedCovariates = Array.from(new Set([...forced, ...requested]));
+
+    const payload = {
+      ...config,
+      selectedProtectedColumns: Array.from(new Set(protectedCols)),
+      batchCorrection: {
+        ...config.batchCorrection,
+        covariates: mergedCovariates,
+      },
+    };
+
+    onNormalize(payload);
   };
+
 
   return (
     <div className="norm-modal-overlay" onClick={onClose}>
@@ -214,11 +313,16 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
                         const checked = Array.isArray(config.selectedProtectedColumns)
                           ? config.selectedProtectedColumns.includes(columnName)
                           : false;
+
+                        const isSelectedIllness = (illnessColumns || []).includes(columnName);
+                        const isSelectedSample = (sampleColumns || []).includes(columnName)
+                          || ((sampleColumns || []).length === 0 && columnName === 'Sample ID');
                         return (
                           <label key={columnName} className="norm-covariate-item">
                             <input
                               type="checkbox"
-                              checked={checked}
+                              checked={checked || isSelectedIllness || isSelectedSample}
+                              disabled={isSelectedIllness || isSelectedSample}
                               onChange={() => toggleProtectedColumn(columnName)}
                             />
                             <span>{columnName}</span>
@@ -326,14 +430,15 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
                     {availableCovariateColumns.length > 0 ? (
                       <div className="norm-covariate-list">
                         {availableCovariateColumns.map((columnName) => {
-                          const checked = Array.isArray(config.batchCorrection.covariates)
-                            ? config.batchCorrection.covariates.includes(columnName)
-                            : false;
+                          const isProtected = forcedProtectedColumns.includes(columnName);
+                          const isChecked = isProtected || (config.batchCorrection.covariates || []).includes(columnName);
+
                           return (
                             <label key={columnName} className="norm-covariate-item">
                               <input
                                 type="checkbox"
-                                checked={checked}
+                                checked={isChecked}
+                                disabled={isProtected}
                                 onChange={() => toggleCovariate(columnName)}
                               />
                               <span>{columnName}</span>
