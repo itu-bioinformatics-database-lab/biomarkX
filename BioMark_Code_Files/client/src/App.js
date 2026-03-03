@@ -120,6 +120,31 @@ const parseClassPairFromUrl = (urlString) => {
   return null;
 };
 
+const parseClassesFromClassPair = (classPair) => {
+  if (!classPair) {
+    return [];
+  }
+  return String(classPair)
+    .split(/_vs_|_/i)
+    .map((part) => part.replace(/%20/g, ' ').trim())
+    .filter(Boolean);
+};
+
+const formatClassPairLabel = (classPair, fallbackClasses = []) => {
+  const parsed = parseClassesFromClassPair(classPair);
+  const normalizedFallback = Array.isArray(fallbackClasses)
+    ? fallbackClasses.map((cls) => String(cls || '').trim()).filter(Boolean)
+    : [];
+  const classes = parsed.length >= 2 ? parsed : normalizedFallback;
+  if (classes.length >= 2) {
+    return `${classes[0]} vs ${classes[1]}`;
+  }
+  if (classes.length === 1) {
+    return classes[0];
+  }
+  return 'N/A';
+};
+
 const deriveResultsDirFromUrl = (urlString) => {
   if (!urlString) {
     return null;
@@ -2981,6 +3006,7 @@ function App() {
           candidates.push({
             url,
             classPair: latest.classPair || null,
+            selectedClasses: parseClassesFromClassPair(latest.classPair),
           });
         }
       }
@@ -2998,6 +3024,9 @@ function App() {
               candidates.push({
                 url: link.href,
                 classPair: parseClassPairFromUrl(link.href),
+                selectedClasses: Array.isArray(analysis?.parameters?.selectedClasses)
+                  ? analysis.parameters.selectedClasses
+                  : [],
               });
             }
           });
@@ -3063,8 +3092,11 @@ function App() {
     };
 
     let resolvedClasses = Array.isArray(selectedClasses) ? selectedClasses.filter(Boolean) : [];
+    if (resolvedClasses.length < 2 && Array.isArray(chosenCandidate?.selectedClasses)) {
+      resolvedClasses = chosenCandidate.selectedClasses.filter(Boolean);
+    }
     if (resolvedClasses.length < 2 && chosenCandidate?.classPair) {
-      resolvedClasses = chosenCandidate.classPair.split('_').map((cls) => cls.replace(/%20/g, ' '));
+      resolvedClasses = parseClassesFromClassPair(chosenCandidate.classPair);
     }
     if (resolvedClasses.length >= 2) {
       payload.selectedClasses = resolvedClasses;
@@ -3094,7 +3126,22 @@ function App() {
 
       const detail = response.data.data || {};
       const downloadUrl = detail.pathwayResults ? buildUrl(`/${detail.pathwayResults}`) : null;
-      const classPair = detail.classPair || chosenCandidate?.classPair || null;
+      const detailClasses = Array.isArray(detail.selectedClasses)
+        ? detail.selectedClasses.filter(Boolean)
+        : [];
+      const chosenCandidateClasses = Array.isArray(chosenCandidate?.selectedClasses)
+        ? chosenCandidate.selectedClasses.filter(Boolean)
+        : [];
+      const classPairCandidates = [detail.classPair, chosenCandidate?.classPair].filter(Boolean);
+      const parsedPair = classPairCandidates.map(parseClassesFromClassPair).find((parts) => parts.length >= 2) || [];
+      const resolvedPairClasses = parsedPair.length >= 2
+        ? parsedPair
+        : (detailClasses.length >= 2
+          ? detailClasses
+          : (resolvedClasses.length >= 2 ? resolvedClasses : chosenCandidateClasses));
+      const classPair = resolvedPairClasses.length >= 2
+        ? `${resolvedPairClasses[0]}_${resolvedPairClasses[1]}`
+        : (classPairCandidates[0] || null);
       let table = null;
       if (detail.pathwayResults) {
         table = await fetchEnrichmentResultTable(detail.pathwayResults);
@@ -3113,6 +3160,7 @@ function App() {
           significantPathwayCount: detail.significantPathwayCount ?? 0,
           totalPathways: detail.totalPathways ?? 0,
           inputGeneCount: detail.inputGeneCount ?? selectedGenes.length,
+          selectedClasses: resolvedPairClasses,
           classPair,
           downloadUrl,
           rawPath: detail.pathwayResults || null,
@@ -4859,7 +4907,7 @@ function App() {
                   {enrichmentAnalyses.length > 0 && (
                     <div className="kegg-analysis-results">
                       {enrichmentAnalyses.map((entry) => {
-                        const friendlyPair = entry.classPair ? entry.classPair.split('_').join(' vs ') : 'All Classes';
+                        const friendlyPair = formatClassPairLabel(entry.classPair, entry.selectedClasses);
                         const rows = Array.isArray(entry.table?.rows) ? entry.table.rows : [];
                         const displayedRows = rows.slice(0, KEGG_PREVIEW_LIMIT);
                         const columns = buildKeggColumns(entry.table);
