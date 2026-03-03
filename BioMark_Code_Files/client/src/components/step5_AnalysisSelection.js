@@ -9,7 +9,7 @@ import FavoriteBorder from '@mui/icons-material/FavoriteBorder';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
 
-function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggleAfterFS, canUseAfterFS, computedNumTopFeatures, onNumTopFeaturesChange, numSelectedClasses }) {
+function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggleAfterFS, canUseAfterFS, computedNumTopFeatures, onNumTopFeaturesChange, numSelectedClasses, availableColumns = [], selectedIllnessColumn = '', selectedSampleColumn = '' }) {
   const [selectedAnalyses, setSelectedAnalyses] = useState({
     statisticalTest: [],
     dimensionalityReduction: [],
@@ -51,10 +51,20 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
   const [saveLabelEncoder, setSaveLabelEncoder] = useState(true);
   const [verbose, setVerbose] = useState(true);
   const [usePreprocessing, setUsePreprocessing] = useState(false);
+  const [survivalTimeColumn, setSurvivalTimeColumn] = useState("");
+  const [eventStatusColumn, setEventStatusColumn] = useState("");
+  const [kmConfidenceLevel, setKmConfidenceLevel] = useState(0.95);
+  const [coxPenalizer, setCoxPenalizer] = useState(0.0);
+  const [coxTieMethod, setCoxTieMethod] = useState("efron");
+  const [survivalValidationError, setSurvivalValidationError] = useState("");
   
   // Common parameters
   const [testSize, setTestSize] = useState(0.2);
   const [nFolds, setNFolds] = useState(5);
+
+  const survivalColumnOptions = availableColumns.filter((column) => (
+    column !== selectedIllnessColumn && column !== selectedSampleColumn
+  ));
   
   // Scroll to parameter settings when shown
   useEffect(() => {
@@ -176,6 +186,9 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
   const handleParamChange = () => {
     setParamsChanged(true);
     setUseDefaultParams(false);
+    if (survivalValidationError) {
+      setSurvivalValidationError('');
+    }
   };
 
   // Update parameter settings
@@ -209,11 +222,53 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
     setTestSize(0.2);
     setNFolds(5);
     setUsePreprocessing(false);
+    setSurvivalTimeColumn("");
+    setEventStatusColumn("");
+    setKmConfidenceLevel(0.95);
+    setCoxPenalizer(0.0);
+    setCoxTieMethod("efron");
+    setSurvivalValidationError("");
     completeSelection();
+  };
+
+  const isSurvivalSelected = selectedAnalyses.survivalAnalysis.length > 0;
+  const hasBothSurvivalColumns = survivalTimeColumn && eventStatusColumn;
+  const hasDistinctSurvivalColumns = survivalTimeColumn !== eventStatusColumn;
+  const isSurvivalConfigValid = !isSurvivalSelected || (hasBothSurvivalColumns && hasDistinctSurvivalColumns);
+  const survivalInlineValidationMessage = survivalValidationError || (
+    isSurvivalSelected && !isSurvivalConfigValid
+      ? (!hasBothSurvivalColumns
+          ? 'Select both Survival Time and Event Status columns to continue.'
+          : 'Survival Time and Event Status must be different columns.')
+      : ''
+  );
+
+  const validateSurvivalConfig = () => {
+    if (!isSurvivalSelected) {
+      setSurvivalValidationError('');
+      return true;
+    }
+
+    if (!survivalTimeColumn || !eventStatusColumn) {
+      setSurvivalValidationError('Select both Survival Time and Event Status columns to continue.');
+      return false;
+    }
+
+    if (survivalTimeColumn === eventStatusColumn) {
+      setSurvivalValidationError('Survival Time and Event Status must be different columns.');
+      return false;
+    }
+
+    setSurvivalValidationError('');
+    return true;
   };
   
   // Send selection and parameters to parent component
   const completeSelection = () => {
+    if (!validateSurvivalConfig()) {
+      return;
+    }
+
     const { statisticalTest, dimensionalityReduction, survivalAnalysis, classificationAnalysis, modelExplanation } = selectedAnalyses;
     
     const result = {
@@ -243,7 +298,12 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
         verbose,
         testSize,
         nFolds,
-        usePreprocessing
+        usePreprocessing,
+        survivalTimeColumn,
+        eventStatusColumn,
+        kmConfidenceLevel,
+        coxPenalizer,
+        coxTieMethod
       }
     };
     onAnalysisSelection(result);
@@ -492,7 +552,101 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
               </label>
             </div>
           )}
+
+          {isSurvivalSelected && (
+            <div className="param-container">
+              <div className="param-section">
+                <div className="param-row">
+                  <div className="param-label">
+                    survival_time_column
+                    <span className="param-tooltip">Column containing time-to-event values (e.g., days or months).</span>
+                  </div>
+                  <div className="param-input">
+                    <select
+                      value={survivalTimeColumn}
+                      onChange={(e) => { setSurvivalTimeColumn(e.target.value); handleParamChange(); }}
+                      className={!survivalTimeColumn && isSurvivalSelected ? 'required-param-missing' : ''}
+                    >
+                      <option value="">Select survival time column</option>
+                      {survivalColumnOptions.map((column) => (
+                        <option key={`survival-time-${column}`} value={column}>{column}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="param-row">
+                  <div className="param-label">
+                    event_status_column
+                    <span className="param-tooltip">Column indicating event occurrence (typically 1=event, 0=censored).</span>
+                  </div>
+                  <div className="param-input">
+                    <select
+                      value={eventStatusColumn}
+                      onChange={(e) => { setEventStatusColumn(e.target.value); handleParamChange(); }}
+                      className={!eventStatusColumn && isSurvivalSelected ? 'required-param-missing' : ''}
+                    >
+                      <option value="">Select event status column</option>
+                      {survivalColumnOptions.map((column) => (
+                        <option key={`event-status-${column}`} value={column}>{column}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {selectedAnalyses.survivalAnalysis.includes('Kaplan-Meier') && (
+                  <div className="param-row">
+                    <div className="param-label">
+                      km_confidence_level
+                      <span className="param-tooltip">Confidence level for Kaplan-Meier confidence intervals.</span>
+                    </div>
+                    <div className="param-input">
+                      <select value={kmConfidenceLevel} onChange={(e) => { setKmConfidenceLevel(Number(e.target.value)); handleParamChange(); }}>
+                        {[0.8, 0.9, 0.95, 0.99].map((level) => (<option key={level} value={level}>{level}</option>))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {selectedAnalyses.survivalAnalysis.includes('Cox Regression') && (
+                  <>
+                    <div className="param-row">
+                      <div className="param-label">
+                        cox_penalizer
+                        <span className="param-tooltip">Regularization strength for Cox regression (0 means no penalization).</span>
+                      </div>
+                      <div className="param-input">
+                        <select value={coxPenalizer} onChange={(e) => { setCoxPenalizer(Number(e.target.value)); handleParamChange(); }}>
+                          {[0.0, 0.01, 0.05, 0.1, 0.5, 1.0].map((value) => (<option key={value} value={value}>{value}</option>))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="param-row">
+                      <div className="param-label">
+                        cox_tie_method
+                        <span className="param-tooltip">Method to handle tied event times in Cox regression.</span>
+                      </div>
+                      <div className="param-input">
+                        <select value={coxTieMethod} onChange={(e) => { setCoxTieMethod(e.target.value); handleParamChange(); }}>
+                          <option value="efron">efron</option>
+                          <option value="breslow">breslow</option>
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {survivalInlineValidationMessage && (
+                <div className="survival-validation-error" role="alert">{survivalInlineValidationMessage}</div>
+              )}
+            </div>
+          )}
           
+          {(selectedAnalyses.statisticalTest.length > 0 ||
+            selectedAnalyses.modelExplanation.length > 0 ||
+            selectedAnalyses.classificationAnalysis.length > 0 ||
+            selectedAnalyses.dimensionalityReduction.length > 0) && (
           <div className="param-container">
             {/* Common parameters for any analysis that outputs a feature list */}
             {(selectedAnalyses.statisticalTest.length > 0 || selectedAnalyses.modelExplanation.length > 0 || selectedAnalyses.classificationAnalysis.some(m => m === 'Random Forest' || m === 'XGBClassifier')) && (
@@ -592,7 +746,7 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
             )}
 
             {/* Parameters for any model-based analysis (Classification, Dimensionality, Explanation) */}
-            {(selectedAnalyses.classificationAnalysis.length > 0 || selectedAnalyses.dimensionalityReduction.length > 0 || selectedAnalyses.modelExplanation.length > 0) && (
+            {(selectedAnalyses.classificationAnalysis.length > 0  || selectedAnalyses.modelExplanation.length > 0) && (
               <div className="param-section">
                 <div className="param-row">
                   <div className="param-label">
@@ -756,18 +910,19 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
               </div>
             )}
           </div>
+          )}
           
           {/* Parameter buttons */}
           <div className="param-buttons">
             <div className="default-param-option">
-              <button onClick={handleUseDefaultParams}>
+              <button onClick={handleUseDefaultParams} disabled={!isSurvivalConfigValid || isSurvivalSelected} title={!isSurvivalConfigValid || isSurvivalSelected ? 'Update Parameters to Continue' : ''}>
                 Use default parameter settings
               </button>
             </div>
             
             {paramsChanged && (
               <div className="param-update-button">
-                <button onClick={handleUpdateParams}>
+                <button onClick={handleUpdateParams} disabled={!isSurvivalConfigValid} title={!isSurvivalConfigValid ? 'Select Survival Time and Event Status columns to continue.' : ''}>
                   Update Parameter Settings
                 </button>
               </div>

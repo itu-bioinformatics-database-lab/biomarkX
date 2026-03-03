@@ -460,6 +460,7 @@ app.post('/analyze', async (req, res) => {
         selectedClasses, 
         statisticalTest, 
         dimensionalityReduction, 
+        survivalAnalysis,
         classificationAnalysis, 
         modelExplanation,
         nonFeatureColumns, 
@@ -487,6 +488,11 @@ app.post('/analyze', async (req, res) => {
         testSize,
         nFolds,
         usePreprocessing,
+        survivalTimeColumn,
+        eventStatusColumn,
+        kmConfidenceLevel,
+        coxPenalizer,
+        coxTieMethod,
         normalizationGatePassed,
         normalizationMode,
         normalizationConfig,
@@ -580,6 +586,7 @@ app.post('/analyze', async (req, res) => {
             selectedClasses: selectedClasses || [],
             statisticalTest: statisticalTest || [],
             dimensionalityReduction: dimensionalityReduction || [],
+            survivalAnalysis: survivalAnalysis || [],
             classificationAnalysis: classificationAnalysis || [],
             modelExplanation: modelExplanation || [],
             nonFeatureColumns: nonFeatureColumns || [],
@@ -605,6 +612,11 @@ app.post('/analyze', async (req, res) => {
             verbose: verbose !== undefined ? verbose : true,
             testSize: testSize || 0.2,
             nFolds: nFolds || 10,
+            survivalTimeColumn: survivalTimeColumn || null,
+            eventStatusColumn: eventStatusColumn || null,
+            kmConfidenceLevel: kmConfidenceLevel || 0.95,
+            coxPenalizer: coxPenalizer || 0.0,
+            coxTieMethod: coxTieMethod || 'efron',
             normalizationGatePassed: normalizationGatePassed === true,
             normalizationMode: normalizationMode || null,
             normalizationConfig: normalizationConfig || null,
@@ -612,6 +624,7 @@ app.post('/analyze', async (req, res) => {
             analysisMethods: {
                 differential: statisticalTest || [],
                 clustering: dimensionalityReduction || [],
+                survival: survivalAnalysis || [],
                 classification: [...(classificationAnalysis || []), ...(modelExplanation || [])]
             }
         };
@@ -657,6 +670,7 @@ app.post('/analyze', async (req, res) => {
             analysisMethods: {
                 statisticalTest,
                 dimensionalityReduction,
+                survivalAnalysis,
                 classificationAnalysis,
                 modelExplanation,
             },
@@ -685,6 +699,11 @@ app.post('/analyze', async (req, res) => {
                 testSize,
                 nFolds,
                 usePreprocessing,
+                survivalTimeColumn,
+                eventStatusColumn,
+                kmConfidenceLevel,
+                coxPenalizer,
+                coxTieMethod,
                 isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
                 afterFeatureSelection: afterFeatureSelection === undefined ? false : afterFeatureSelection
             } : null

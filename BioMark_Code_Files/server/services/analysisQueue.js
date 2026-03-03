@@ -117,6 +117,11 @@ analysisQueue.process(async (job) => {
         use_preprocessing: customParams.usePreprocessing !== false,
         test_size: customParams.testSize || 0.2,
         n_folds: customParams.nFolds || 5,
+        survival_time_column: customParams.survivalTimeColumn || "",
+        event_status_column: customParams.eventStatusColumn || "",
+        km_confidence_level: customParams.kmConfidenceLevel || 0.95,
+        cox_penalizer: customParams.coxPenalizer || 0.0,
+        cox_tie_method: customParams.coxTieMethod || "efron",
         is_diff_analysis: Array.isArray(safeIsDiffAnalysis) ? safeIsDiffAnalysis.join(',') : '',
         after_feature_selection: String(safeAfterFeatureSelection)
       }));

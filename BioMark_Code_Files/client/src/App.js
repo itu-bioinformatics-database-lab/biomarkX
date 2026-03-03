@@ -327,6 +327,11 @@ function App() {
   const [verbose, setVerbose] = useState(true);
   // eslint-disable-next-line no-unused-vars
   const [usePreprocessing, setUsePreprocessing] = useState(false);
+  const [survivalTimeColumn, setSurvivalTimeColumn] = useState('');
+  const [eventStatusColumn, setEventStatusColumn] = useState('');
+  const [kmConfidenceLevel, setKmConfidenceLevel] = useState(0.95);
+  const [coxPenalizer, setCoxPenalizer] = useState(0.0);
+  const [coxTieMethod, setCoxTieMethod] = useState('efron');
   // Common Parameters
   const [testSize, setTestSize] = useState(0.2);
   const [nFolds, setNFolds] = useState(5);
@@ -2450,6 +2455,20 @@ function App() {
       parameters 
     } = selectedAnalyzesUpdate;
 
+    const selectedSurvivalTimeColumn = parameters?.survivalTimeColumn ?? '';
+    const selectedEventStatusColumn = parameters?.eventStatusColumn ?? '';
+    if (survivalAnalysis.length > 0) {
+      if (!selectedSurvivalTimeColumn || !selectedEventStatusColumn) {
+        setError('Survival Time and Event Status columns are required for survival analyses.');
+        return;
+      }
+      if (selectedSurvivalTimeColumn === selectedEventStatusColumn) {
+        setError('Survival Time and Event Status must be different columns.');
+        return;
+      }
+    }
+    setError('');
+
     // Update states
     if (statisticalTest.length > 0 || modelExplanation.length > 0) {
       setIsDiffAnalysisClasses(normalizeAndSortClasses(selectedClasses));
@@ -2482,6 +2501,11 @@ function App() {
         setTestSize(parameters.testSize ?? 0.2);
         setNFolds(parameters.nFolds ?? 5);
         setUsePreprocessing(parameters.usePreprocessing ?? false);
+        setSurvivalTimeColumn(parameters.survivalTimeColumn ?? '');
+        setEventStatusColumn(parameters.eventStatusColumn ?? '');
+        setKmConfidenceLevel(parameters.kmConfidenceLevel ?? 0.95);
+        setCoxPenalizer(parameters.coxPenalizer ?? 0.0);
+        setCoxTieMethod(parameters.coxTieMethod ?? 'efron');
         // Aggregation params (optional)
         if (parameters.aggregationMethod !== undefined) setAggregationMethod?.(parameters.aggregationMethod);
         if (parameters.aggregationWeights !== undefined) setAggregationWeights?.(parameters.aggregationWeights);
@@ -2629,6 +2653,11 @@ function App() {
       verbose: verbose,
       testSize: testSize,
       nFolds: nFolds,
+      survivalTimeColumn: survivalTimeColumn,
+      eventStatusColumn: eventStatusColumn,
+      kmConfidenceLevel: kmConfidenceLevel,
+      coxPenalizer: coxPenalizer,
+      coxTieMethod: coxTieMethod,
       normalizationGatePassed: normalizationGatePassed,
       normalizationMode: normalizationMode,
       normalizationConfig: executedNormalizationConfig,
@@ -4224,6 +4253,9 @@ function App() {
                     computedNumTopFeatures={numTopFeatures}
                     onNumTopFeaturesChange={setNumTopFeatures}
                     numSelectedClasses={selectedClasses.length}
+                    availableColumns={analysisAllColumns.length > 0 ? analysisAllColumns : allColumns}
+                    selectedIllnessColumn={selectedIllnessColumn}
+                    selectedSampleColumn={selectedSampleColumn}
                   />
                 )}
               </div>
