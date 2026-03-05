@@ -123,7 +123,9 @@ analysisQueue.process(async (job) => {
         cox_penalizer: customParams.coxPenalizer || 0.0,
         cox_tie_method: customParams.coxTieMethod || "efron",
         is_diff_analysis: Array.isArray(safeIsDiffAnalysis) ? safeIsDiffAnalysis.join(',') : '',
-        after_feature_selection: String(safeAfterFeatureSelection)
+        after_feature_selection: String(safeAfterFeatureSelection),
+        resampling_method: customParams.resamplingMethod || null,
+        resampling_params: customParams.resamplingParams || {}
       }));
     }
 

@@ -21,6 +21,8 @@ from sklearn.preprocessing import OneHotEncoder,StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score
 
+from imblearn.over_sampling import SMOTE, ADASYN
+
 
 from modules.exception import CustomException
 from modules.logger import logging
@@ -100,7 +102,9 @@ class Classification:
                  verbose:bool = True,
                  scoring:str = "f1",
                  num_top_features:int = 20,
-                 use_preprocessing: bool = False
+                 use_preprocessing: bool = False,
+                 resampling_method: str = None,
+                 resampling_params: dict = None
                  ):
         """
         Initialize the Classification class with dataset and configuration options.
@@ -129,6 +133,8 @@ class Classification:
         self.num_top_features = num_top_features
         self.scoring = scoring
         self.use_preprocessing = use_preprocessing
+        self.resampling_method = (resampling_method or '').lower().strip() or None
+        self.resampling_params = resampling_params or {}
         # Will be populated after fitting the transformer when categorical encoding is applied
         self.categorical_encoding_info = {}
         
@@ -312,8 +318,105 @@ class Classification:
             if self.save_data_transformer:
                 save_object(f"{self.outdir}/artifacts/preprocessor.pkl", self.preprocessor)
 
+            # Apply resampling to training data (SMOTE / ADASYN)
+            self.apply_resampling()
+
         except Exception as e:
             raise CustomException(e,sys)
+
+    def apply_resampling(self):
+        """Apply SMOTE or ADASYN oversampling to the training set to handle class imbalance.
+
+        The resampling is applied **after** the train/test split and **after** preprocessing
+        (imputation, encoding, scaling) so that:
+        - Test set remains completely untouched (no data leakage).
+        - Synthetic samples are created in the transformed feature space.
+
+        The method modifies ``self.X_train`` and ``self.y_train`` in place.  If
+        ``imbalanced-learn`` is not installed or the requested method is unknown
+        the step is silently skipped.
+        """
+        if not self.resampling_method:
+            return
+
+        method = self.resampling_method  # 'smote' | 'adasyn'
+        params = self.resampling_params or {}
+
+        # Convert pandas DataFrame X_train to numpy for imblearn compatibility
+        X_arr = self.X_train.values if hasattr(self.X_train, 'values') else np.array(self.X_train)
+        y_arr = self.y_train if isinstance(self.y_train, np.ndarray) else np.array(self.y_train)
+
+        # Determine the smallest class size to avoid k_neighbors > n_samples - 1
+        from collections import Counter
+        class_counts = Counter(y_arr)
+        min_class_size = min(class_counts.values())
+
+        try:
+            if method == 'smote':
+                k_neighbors = int(params.get('k_neighbors', 5))
+                # Clamp k_neighbors so it never exceeds min_class_size - 1
+                k_neighbors = min(k_neighbors, min_class_size - 1)
+                if k_neighbors < 1:
+                    logging.warning(
+                        f"SMOTE: minority class has only {min_class_size} sample(s). "
+                        "Need at least 2 to apply SMOTE. Skipping resampling."
+                    )
+                    return
+                sampling_strategy = params.get('sampling_strategy', 'auto')
+                resampler = SMOTE(
+                    k_neighbors=k_neighbors,
+                    sampling_strategy=sampling_strategy,
+                    random_state=42
+                )
+                logging.info(
+                    f"Applying SMOTE (k_neighbors={k_neighbors}, "
+                    f"sampling_strategy={sampling_strategy}) to training set."
+                )
+            elif method == 'adasyn':
+                n_neighbors = int(params.get('n_neighbors', 5))
+                n_neighbors = min(n_neighbors, min_class_size - 1)
+                if n_neighbors < 1:
+                    logging.warning(
+                        f"ADASYN: minority class has only {min_class_size} sample(s). "
+                        "Need at least 2 to apply ADASYN. Skipping resampling."
+                    )
+                    return
+                sampling_strategy = params.get('sampling_strategy', 'auto')
+                resampler = ADASYN(
+                    n_neighbors=n_neighbors,
+                    sampling_strategy=sampling_strategy,
+                    random_state=42
+                )
+                logging.info(
+                    f"Applying ADASYN (n_neighbors={n_neighbors}, "
+                    f"sampling_strategy={sampling_strategy}) to training set."
+                )
+            else:
+                logging.warning(f"Unknown resampling method '{method}'. Skipping.")
+                return
+
+            original_shape = X_arr.shape
+            X_res, y_res = resampler.fit_resample(X_arr, y_arr)
+            logging.info(
+                f"Resampling complete: {original_shape[0]} → {X_res.shape[0]} training samples."
+            )
+            print(
+                f"RESAMPLING_APPLIED: method={method}, "
+                f"original_samples={original_shape[0]}, "
+                f"resampled_samples={X_res.shape[0]}"
+            )
+
+            # Reconstruct DataFrame with original column names so downstream code is consistent
+            if hasattr(self.X_train, 'columns'):
+                self.X_train = pd.DataFrame(X_res, columns=self.X_train.columns)
+            else:
+                self.X_train = X_res
+            self.y_train = y_res
+
+        except Exception as exc:
+            logging.error(f"Resampling failed ({method}): {exc}. Continuing without resampling.")
+            print(f"RESAMPLING_WARNING: {exc}")
+
 
     
     def initiate_model_trainer(self, return_models=False):

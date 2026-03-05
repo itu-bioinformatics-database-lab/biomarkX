@@ -17,6 +17,7 @@ import LongRunNotificationModal from './components/common/LongRunNotificationMod
 import { buildKeggColumns, KEGG_PREVIEW_LIMIT } from './utils/keggTable';
 import { LOGIN_PATH } from './constants/routes';
 import NormalizationConfigModal from './components/NormalizationConfigModal';
+import ResamplingConfigModal from './components/ResamplingConfigModal';
 
 
 const ENRICHMENT_OPTIONS = {
@@ -273,7 +274,7 @@ function App() {
   const [showStepFive, setShowStepFive] = useState(false);
   const [showStepSix, setShowStepSix] = useState(false);
   const [showStepAnalysis, setShowStepAnalysis] = useState(false);
-  const [classTable, setClassTable] = useState({ class: [] }); // Stores class table
+  const [classTable, setClassTable] = useState({ class: [], classCounts: {} }); // Stores class table
   // eslint-disable-next-line no-unused-vars
   const [_isDiffAnalysisClasses, setIsDiffAnalysisClasses] = useState([]); // Stores classes for differential analysis
   const [afterFeatureSelection, setAfterFeatureSelection] = useState(false);
@@ -397,6 +398,11 @@ function App() {
   const [normalizationMode, setNormalizationMode] = useState(null); // 'normalized' | 'skipped' | null
   const [executedNormalizationConfig, setExecutedNormalizationConfig] = useState(null);
   const [normalizedAnalysisFilePath, setNormalizedAnalysisFilePath] = useState(null);
+  // Step 4.5 – Resampling (class imbalance handling)
+  const [showResamplingModal, setShowResamplingModal] = useState(false);
+  const [resamplingConfig, setResamplingConfig] = useState(null); // { method, params } | null
+  const [resamplingMode, setResamplingMode] = useState(null); // 'configured' | 'skipped' | null
+  const [resamplingGatePassed, setResamplingGatePassed] = useState(false);
   const columnFetchInFlightRef = useRef(new Set());
   const visibleColumnFetchesRef = useRef(0);
   const classCacheRef = useRef(new Map());
@@ -424,6 +430,9 @@ function App() {
     setNormalizationMode(null);
     setExecutedNormalizationConfig(null);
     setNormalizedAnalysisFilePath(null);
+    setResamplingGatePassed(false);
+    setResamplingMode(null);
+    setResamplingConfig(null);
     setselectedClasses([]);
     classCacheRef.current = new Map();
   }, [classCacheRef]);
@@ -792,6 +801,10 @@ function App() {
             setNormalizationGatePassed(true);
             setNormalizationMode(restoredNormalization.mode);
             setExecutedNormalizationConfig(restoredNormalization.config || null);
+            // Resampling gate: auto-pass for previously loaded analyses
+            setResamplingGatePassed(true);
+            setResamplingMode('skipped');
+            setResamplingConfig(null);
             const metadataFilePath = typeof firstMetadata?.filePath === 'string' && firstMetadata.filePath.trim()
               ? firstMetadata.filePath.trim()
               : (typeof firstMetadata?.normalizedFilePath === 'string' && firstMetadata.normalizedFilePath.trim()
@@ -1907,12 +1920,21 @@ function App() {
         // Safely parse JSON
         let classes = [];
         let diagramUrl = '';
+        let classCounts = {};
         let parseFailed = false;
         try {
-          // If classList_ is an array like ['[...]','path/to/img.png']
+          // New format (3 lines): [classNamesList, countsJSON, imagePath]
+          // Old format (2 lines): [classNamesList, imagePath]
           if (Array.isArray(response.data.classList_) && response.data.classList_.length >= 2) {
             classes = JSON.parse(response.data.classList_[0].replace(/'/g, '"'));
-            diagramUrl = response.data.classList_[1];
+            if (response.data.classList_.length >= 3) {
+              // New format — index 1 is counts JSON, index 2 is image path
+              try { classCounts = JSON.parse(response.data.classList_[1]); } catch (_e) {}
+              diagramUrl = response.data.classList_[2];
+            } else {
+              // Old format — index 1 is image path
+              diagramUrl = response.data.classList_[1];
+            }
           } else {
             // Maybe only class list is returned
             classes = JSON.parse(response.data.classList_.replace(/'/g, '"'));
@@ -1924,9 +1946,30 @@ function App() {
           parseFailed = true;
         }
 
+        // Remap classCounts keys to exactly match the class name values in `classes`.
+        // Python may emit numeric keys as "1.0"/"2.0" while JSON-parsed classes are 1/2,
+        // so we do a fuzzy numeric match and re-key using the actual class values.
+        if (classes.length > 0 && Object.keys(classCounts).length > 0) {
+          const remapped = {};
+          classes.forEach((cls) => {
+            const clsKey = String(cls);
+            if (classCounts[clsKey] !== undefined) {
+              remapped[clsKey] = classCounts[clsKey];
+            } else {
+              const clsNum = parseFloat(cls);
+              const matchKey = Object.keys(classCounts).find(
+                (k) => parseFloat(k) === clsNum
+              );
+              if (matchKey !== undefined) remapped[clsKey] = classCounts[matchKey];
+            }
+          });
+          classCounts = remapped;
+        }
+
         const classPayload = {
           class: classes,
-          classDiagramUrl: diagramUrl
+          classDiagramUrl: diagramUrl,
+          classCounts: classCounts
         };
         if (cacheKey && !parseFailed) {
           classCacheRef.current.set(cacheKey, classPayload);
@@ -2430,28 +2473,46 @@ function App() {
     }
   }, [normalizationPrereqReady, normalizationGatePassed, showStepFour, setShowStepFour, setShowStepFive, setShowStepSix, setShowStepAnalysis, setselectedClasses, setClassTable, stepFourRef, scrollToStep]);
 
-  // Show Step 5: When Step 4 is visible and 2 or more classes are selected
+  // Show Step 5: When Step 4 is visible, 2+ classes selected, AND resampling gate passed
   useEffect(() => {
-    if (showStepFour && selectedClasses.length >= 2) {
+    if (showStepFour && selectedClasses.length >= 2 && resamplingGatePassed) {
         setShowStepFive(true);
+        setTimeout(() => {
+          if (stepFiveRef.current) scrollToStep(stepFiveRef);
+        }, 100);
     } else {
         setShowStepFive(false);
         // When Step 5 is hidden, also hide later steps
         setShowStepSix(false);
         setShowStepAnalysis(false);
     }
-  }, [showStepFour, showStepFive, selectedClasses, setShowStepFive, setShowStepSix, setShowStepAnalysis]);
+  }, [showStepFour, showStepFive, selectedClasses, resamplingGatePassed, setShowStepFive, setShowStepSix, setShowStepAnalysis, scrollToStep]);
+
+  const handleApplyResampling = (config) => {
+    setResamplingConfig(config);
+    setResamplingMode('configured');
+    setResamplingGatePassed(true);
+    setShowResamplingModal(false);
+  };
+
+  const handleSkipResampling = () => {
+    setResamplingConfig(null);
+    setResamplingMode('skipped');
+    setResamplingGatePassed(true);
+    setShowResamplingModal(false);
+  };
 
   const handleClassSelection = async (newlySelectedClasses) => {
     const sortedSelection = normalizeAndSortClasses(newlySelectedClasses);
+    // Reset resampling gate whenever the class selection changes
+    setResamplingGatePassed(false);
+    setResamplingMode(null);
+    setResamplingConfig(null);
     if (sortedSelection.length >= 2) {
         setselectedClasses(sortedSelection);
         console.log("Selected classes:", sortedSelection);
-        setShowStepFive(true);
-
-        setTimeout(() => {
-          if (stepFiveRef.current) scrollToStep(stepFiveRef);
-        }, 100);
+        // Step 5 visibility is controlled by the useEffect that checks resamplingGatePassed.
+        // Do NOT set showStepFive(true) here directly.
     } else {
         console.warn("handleClassSelection received invalid selection:", newlySelectedClasses);
         setselectedClasses([]);
@@ -2687,6 +2748,9 @@ function App() {
       normalizationMode: normalizationMode,
       normalizationConfig: executedNormalizationConfig,
       normalizedFilePath: normalizedAnalysisFilePath,
+      // Step 4.5 resampling
+      resamplingMethod: resamplingConfig?.method || null,
+      resamplingParams: resamplingConfig?.params || {},
       datasetNames: datasetNamesForReport, // Add dataset names for PDF filename
       parentAnalysisId: parentId, // Include parent ID if this is a child analysis
       display_name: parentId ? null : (analysisDisplayName && analysisDisplayName.trim() ? analysisDisplayName.trim() : null) // Only include display name for parent analysis
@@ -3295,6 +3359,10 @@ function App() {
     setNormalizationGatePassed(true);
     setNormalizationMode(restoredNormalization.mode);
     setExecutedNormalizationConfig(restoredNormalization.config || null);
+    // Resampling gate: start fresh for new analysis continuation (user can configure it again)
+    setResamplingGatePassed(false);
+    setResamplingMode(null);
+    setResamplingConfig(null);
     
     console.log('[handlePerformAnotherAnalysis] Last payload:', lastPayload);
     console.log('[handlePerformAnotherAnalysis] analysisFilePath:', analysisFilePath);
@@ -3505,6 +3573,9 @@ function App() {
     setNormalizationGatePassed(false);
     setNormalizationMode(null);
     setExecutedNormalizationConfig(null);
+    setResamplingGatePassed(false);
+    setResamplingMode(null);
+    setResamplingConfig(null);
     classCacheRef.current = new Map();
 
     setSelectedAnalyzes({
@@ -3748,6 +3819,9 @@ function App() {
     setNormalizationGatePassed(false);
     setNormalizationMode(null);
     setExecutedNormalizationConfig(null);
+    setResamplingGatePassed(false);
+    setResamplingMode(null);
+    setResamplingConfig(null);
 
     // Navigate to login page
     navigate(LOGIN_PATH);
@@ -4278,6 +4352,118 @@ function App() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+              {/* Step 4.5: Class Imbalance Resampling (Optional) */}
+              {showStepFour && !previousAnalyses[index] && selectedClasses && selectedClasses.length >= 2 && (
+                <div style={{ padding: '0 20px', marginTop: '20px', marginBottom: '20px' }}>
+                <div className="normalize-section">
+                  <div className="step-and-instruction">
+                    <h2 className="title">Optional: Handle Class Imbalance (Step 4.5)</h2>
+                  </div>
+
+                  {/* Class distribution table */}
+                  {(() => {
+                    const counts = classTable.classCounts || {};
+                    const hasCounts = selectedClasses.some(cls => counts[String(cls)] > 0);
+                    const distRows = selectedClasses.map(cls => ({
+                      name: String(cls),
+                      total: counts[String(cls)] || 0,
+                      train: counts[String(cls)] ? Math.round(counts[String(cls)] * 0.8) : 0,
+                    }));
+                    const maxTrain = Math.max(...distRows.map(r => r.train), 0);
+                    const isImbalanced = hasCounts && distRows.some(r => r.train < maxTrain);
+
+                    return (
+                      hasCounts ? (
+                        <div className="resampling-dist-table-wrapper">
+                          {isImbalanced && (
+                            <p className="resampling-imbalance-warning">
+                              ⚠ Class imbalance detected. Consider applying SMOTE or ADASYN to improve model training.
+                            </p>
+                          )}
+                          <table className="resampling-dist-table">
+                            <thead>
+                              <tr>
+                                <th>Class</th>
+                                <th>Total samples</th>
+                                <th>~Training samples (80%)</th>
+                                <th>After SMOTE/ADASYN (auto)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {distRows.map(row => {
+                                const synthetic = row.train < maxTrain ? maxTrain - row.train : 0;
+                                return (
+                                  <tr key={row.name} className={row.train < maxTrain ? 'resampling-row-minority' : 'resampling-row-majority'}>
+                                    <td><strong>{row.name}</strong></td>
+                                    <td>{row.total.toLocaleString()}</td>
+                                    <td>{row.train.toLocaleString()}</td>
+                                    <td>
+                                      {synthetic > 0
+                                        ? <span className="resampling-synthetic-badge">{row.train.toLocaleString()} + {synthetic.toLocaleString()} synthetic → {maxTrain.toLocaleString()}</span>
+                                        : <span className="resampling-majority-badge">{maxTrain.toLocaleString()} (majority, unchanged)</span>
+                                      }
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                          <p className="resampling-table-note">
+                            Training set size estimate uses an 80/20 train-test split. Synthetic sample count is an
+                            approximation for the <em>auto</em> strategy; actual numbers vary by method and configuration.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="normalize-hint">
+                          If your selected classes have significantly different sample counts, you can apply
+                          SMOTE or ADASYN to generate synthetic minority-class samples for the training set
+                          before running the analysis pipeline.
+                        </p>
+                      )
+                    );
+                  })()}
+
+                  <div className="normalize-action-row">
+                    <button
+                      className="normalize-button"
+                      onClick={() => setShowResamplingModal(true)}
+                      disabled={resamplingGatePassed}
+                    >
+                      Configure Resampling
+                    </button>
+                    <button
+                      className="normalize-button normalize-button--secondary"
+                      onClick={handleSkipResampling}
+                      disabled={resamplingGatePassed}
+                    >
+                      Skip Resampling
+                    </button>
+                    {resamplingMode === 'configured' && (
+                      <span className="normalize-status normalize-status--success">
+                        {resamplingConfig?.method?.toUpperCase()} resampling configured. Step 5 is now unlocked.
+                      </span>
+                    )}
+                    {resamplingMode === 'skipped' && (
+                      <span className="normalize-status normalize-status--info">
+                        Resampling skipped. Step 5 is now unlocked.
+                      </span>
+                    )}
+                  </div>
+                  {showResamplingModal && (
+                    <ResamplingConfigModal
+                      onClose={() => setShowResamplingModal(false)}
+                      onApply={handleApplyResampling}
+                      classDistribution={
+                        selectedClasses.map(cls => ({
+                          name: String(cls),
+                          count: (classTable.classCounts || {})[String(cls)] || 0
+                        }))
+                      }
+                    />
+                  )}
+                </div>
                 </div>
               )}
               {/* Step 5: Select analysis method*/}

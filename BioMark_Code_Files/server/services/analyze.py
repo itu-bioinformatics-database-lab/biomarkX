@@ -45,6 +45,10 @@ save_data_transformer = True   # Whether to save the data transformation model
 save_label_encoder = True      # Whether to save the label encoder
 verbose = True                 # Show detailed output during analysis
 
+# Resampling Parameters (Step 4.5 - Class Imbalance Handling)
+resampling_method = None       # 'smote' | 'adasyn' | None (disabled)
+resampling_params = {}         # e.g. {'k_neighbors': 5, 'sampling_strategy': 'auto'}
+
 # Differential Analysis and Classification Analysis Parameters
 test_size = 0.2                # Test set ratio for model training (0.2 for model and diff analysis, 0.3 for clustering)
 n_folds = 5                    # Number of cross-validation folds (5 for model and diff analysis, 3 for clustering)
@@ -149,7 +153,9 @@ def run_model_explanation(data, selectedIllnessColumn, selectedSampleColumn, out
         verbose=False,
         scoring=scoring,
         num_top_features=num_top_features,
-        use_preprocessing=False
+        use_preprocessing=False,
+        resampling_method=resampling_method,
+        resampling_params=resampling_params
     )
     clf.data_transfrom()
     # Emit categorical encoding info for frontend modal if available
@@ -223,7 +229,9 @@ def initial_model_training(data, selectedIllnessColumn, selectedSampleColumn, ou
             verbose=verbose,
             scoring=scoring,
             num_top_features=num_top_features,
-            use_preprocessing=False
+            use_preprocessing=False,
+            resampling_method=resampling_method,
+            resampling_params=resampling_params
         )
         clf.data_transfrom()
         # Emit categorical encoding info for frontend modal if available
@@ -317,7 +325,9 @@ def model_training_after_feature_selection(data, selectedIllnessColumn, outdir, 
             model_list=model_list,
             verbose=verbose,
             num_top_features=num_top_features,
-            use_preprocessing=False
+            use_preprocessing=False,
+            resampling_method=resampling_method,
+            resampling_params=resampling_params
         )
         clf.data_transfrom()
         clf.initiate_model_trainer()
@@ -431,6 +441,12 @@ if __name__ == "__main__":
                 globals()["verbose"] = params_json["verbose"]
             if "use_preprocessing" in params_json:
                 globals()["use_preprocessing"] = params_json["use_preprocessing"]
+
+            # Resampling Parameters
+            if "resampling_method" in params_json:
+                globals()["resampling_method"] = params_json["resampling_method"]
+            if "resampling_params" in params_json:
+                globals()["resampling_params"] = params_json["resampling_params"]
             
             # Update Common Parameters
             if "test_size" in params_json:

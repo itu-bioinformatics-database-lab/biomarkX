@@ -496,7 +496,9 @@ app.post('/analyze', async (req, res) => {
         normalizationGatePassed,
         normalizationMode,
         normalizationConfig,
-        display_name
+        display_name,
+        resamplingMethod,
+        resamplingParams
     } = req.body;
 
     console.log('[Analyze] Received display_name from frontend:', display_name);
@@ -705,7 +707,9 @@ app.post('/analyze', async (req, res) => {
                 coxPenalizer,
                 coxTieMethod,
                 isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
-                afterFeatureSelection: afterFeatureSelection === undefined ? false : afterFeatureSelection
+                afterFeatureSelection: afterFeatureSelection === undefined ? false : afterFeatureSelection,
+                resamplingMethod: resamplingMethod || null,
+                resamplingParams: resamplingParams || {}
             } : null
         };
         

@@ -1,4 +1,5 @@
 import os, sys
+import json
 import argparse
 import matplotlib
 matplotlib.use("Agg")  # ensure headless-friendly backend
@@ -36,6 +37,9 @@ def load_data(data_path, column_name, outdir):
         df = df_all[[column_name]]
     # Print unique classes (list)
     print(df[column_name].dropna().unique().tolist())
+    # Print per-class sample counts as JSON (line 2 of output)
+    counts_dict = {str(k): int(v) for k, v in df[column_name].dropna().value_counts().items()}
+    print(json.dumps(counts_dict))
     return df
 
 # Visualize the distribution of a categorical column in the data
