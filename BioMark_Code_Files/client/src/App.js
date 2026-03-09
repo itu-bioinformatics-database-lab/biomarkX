@@ -666,17 +666,26 @@ function App() {
   }, [analysisFilePath, uploadContexts]);
 
   const datasetNamesForReport = useMemo(() => {
+    const extractFileName = (name) => {
+      if (!name) return name;
+      const parts = name.split(/[/\\]/);
+      let fileName = parts.pop() || name;
+      // Remove UUID prefix if present (e.g., "adea6f0e-7437-..._filename.csv" -> "filename.csv")
+      fileName = fileName.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/i, '');
+      return fileName;
+    };
     if (mergeMetadata?.name) {
-      return [mergeMetadata.name];
+      return [extractFileName(mergeMetadata.name)];
     }
     const includedNames = includedUploads
       .map((info) => info?.name)
-      .filter((name) => typeof name === 'string' && name.trim().length > 0);
+      .filter((name) => typeof name === 'string' && name.trim().length > 0)
+      .map(extractFileName);
     if (includedNames.length > 0) {
       return includedNames;
     }
     if (uploadedInfo?.name) {
-      return [uploadedInfo.name];
+      return [extractFileName(uploadedInfo.name)];
     }
     return [];
   }, [mergeMetadata?.name, includedUploads, uploadedInfo?.name]);
@@ -765,7 +774,8 @@ function App() {
                   statisticalTest: metadata?.analysisMethods?.differential || [],
                   dimensionalityReduction: metadata?.analysisMethods?.clustering || [],
                   classificationAnalysis: metadata?.analysisMethods?.classification || [],
-                  modelExplanation: []
+                  modelExplanation: [],
+                  survivalAnalysis: metadata?.analysisMethods?.survival || []
                 },
                 bestParams: metadata?.bestParams || null,
                 analysisId: analysisData.analysisId
@@ -2589,6 +2599,20 @@ function App() {
         setUsePreprocessing(parameters.usePreprocessing ?? false);
         setSurvivalTimeColumn(parameters.survivalTimeColumn ?? '');
         setEventStatusColumn(parameters.eventStatusColumn ?? '');
+        // Auto-remove survival columns from the exclusion list when they are selected
+        if (parameters.survivalTimeColumn || parameters.eventStatusColumn) {
+          setNonFeatureColumns((prev) => {
+            const toRemove = new Set([parameters.survivalTimeColumn, parameters.eventStatusColumn].filter(Boolean));
+            const updated = prev.filter((col) => !toRemove.has(col));
+            if (updated.length !== prev.length) {
+              const filePath = uploadedInfo?.filePath || normalizedAnalysisFilePath || analysisFilePath;
+              if (filePath) {
+                updateUploadContext(filePath, (entry) => ({ ...entry, nonFeatureColumns: updated }));
+              }
+            }
+            return updated;
+          });
+        }
         setKmConfidenceLevel(parameters.kmConfidenceLevel ?? 0.95);
         setCoxPenalizer(parameters.coxPenalizer ?? 0.0);
         setCoxTieMethod(parameters.coxTieMethod ?? 'efron');
@@ -2613,9 +2637,14 @@ function App() {
 
   // 6.Adım: Non-feature sütun ekleme (Listeden seçildiğinde)
   const handleAddNonFeatureColumn = (columnToAdd) => {
-    // The selected column cannot be illness or sample column
+    // The selected column cannot be illness, sample, or survival columns
     if (columnToAdd === selectedIllnessColumn || columnToAdd === selectedSampleColumn) {
         setInfo(`Column "${columnToAdd}" is already selected as Patient Group or Sample ID and cannot be excluded.`);
+        setTimeout(() => setInfo(''), 3000);
+      return;
+    }
+    if (selectedAnalyzes.survivalAnalysis?.length > 0 && (columnToAdd === survivalTimeColumn || columnToAdd === eventStatusColumn)) {
+        setInfo(`Column "${columnToAdd}" is selected as a survival analysis column and cannot be excluded.`);
         setTimeout(() => setInfo(''), 3000);
       return;
     }
@@ -4551,6 +4580,10 @@ function App() {
                       allColumns={analysisAllColumns}
                         onSelect={handleAddNonFeatureColumn}
                         selectedColumns={nonFeatureColumns}
+                        disabledColumns={[
+                          ...(selectedAnalyzes.survivalAnalysis?.length > 0 && survivalTimeColumn ? [survivalTimeColumn] : []),
+                          ...(selectedAnalyzes.survivalAnalysis?.length > 0 && eventStatusColumn ? [eventStatusColumn] : [])
+                        ]}
                         placeholder="Search columns to exclude..."
                         listHeight="200px"
                         isLoading={loadingAllColumns}
@@ -4673,7 +4706,8 @@ function App() {
                                 analysisInformation[index].statisticalTest?.length > 0 && `Statistical Test: ${analysisInformation[index].statisticalTest.join(', ')}`,
                                 analysisInformation[index].dimensionalityReduction?.length > 0 && `Dimensionality Reduction: ${analysisInformation[index].dimensionalityReduction.join(', ')}`,
                                 analysisInformation[index].classificationAnalysis?.length > 0 && `Classification: ${analysisInformation[index].classificationAnalysis.join(', ')}`,
-                                analysisInformation[index].modelExplanation?.length > 0 && `Explanation: ${analysisInformation[index].modelExplanation.join(', ')}`
+                                analysisInformation[index].modelExplanation?.length > 0 && `Explanation: ${analysisInformation[index].modelExplanation.join(', ')}`,
+                                analysisInformation[index].survivalAnalysis?.length > 0 && `Survival Analysis: ${analysisInformation[index].survivalAnalysis.join(', ')}`
                               ].filter(Boolean).join(' | ')}
                             </span>
                           </div>
@@ -4717,8 +4751,14 @@ function App() {
                           {analysisInformation[index].classificationAnalysis?.length > 0 && (
                               <><th>Param Finetune</th><th>Finetune Frac</th><th>Save Model</th><th>Std Scaling</th><th>Save Transformer</th><th>Save Encoder</th><th>Verbose</th></>
                           )}
-                          {/* Common */}
-                          <th>Test Size</th><th>N Folds</th>
+                          {/* Survival */}
+                          {analysisInformation[index].survivalAnalysis?.length > 0 && (
+                              <><th>Time Column</th><th>Event Column</th><th>KM Confidence</th><th>Cox Penalizer</th><th>Cox Tie Method</th></>
+                          )}
+                          {/* Common (only for non-survival analyses) */}
+                          {(analysisInformation[index].statisticalTest?.length > 0 || analysisInformation[index].dimensionalityReduction?.length > 0 || analysisInformation[index].classificationAnalysis?.length > 0 || analysisInformation[index].modelExplanation?.length > 0) && (
+                            <><th>Test Size</th><th>N Folds</th></>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
@@ -4764,8 +4804,21 @@ function App() {
                               </>
                           )}
                           
-                          {/* Common */}
-                          <td>{analysisInformation[index].testSize}</td><td>{analysisInformation[index].nFolds}</td>
+                          {/* Survival */}
+                          {analysisInformation[index].survivalAnalysis?.length > 0 && (
+                              <>
+                                  <td>{analysisInformation[index].survivalTimeColumn}</td>
+                                  <td>{analysisInformation[index].eventStatusColumn}</td>
+                                  <td>{analysisInformation[index].kmConfidenceLevel}</td>
+                                  <td>{analysisInformation[index].coxPenalizer}</td>
+                                  <td>{analysisInformation[index].coxTieMethod}</td>
+                              </>
+                          )}
+
+                          {/* Common (only for non-survival analyses) */}
+                          {(analysisInformation[index].statisticalTest?.length > 0 || analysisInformation[index].dimensionalityReduction?.length > 0 || analysisInformation[index].classificationAnalysis?.length > 0 || analysisInformation[index].modelExplanation?.length > 0) && (
+                            <><td>{analysisInformation[index].testSize}</td><td>{analysisInformation[index].nFolds}</td></>
+                          )}
                         </tr>
                       </tbody>
                     </table>
@@ -4875,7 +4928,7 @@ function App() {
                     })
                     .map((imagePath, imgIndex) => {
                     // Extract file name
-                    const rawImageName = imagePath.split('/').pop(); // Get the full file name
+                    const rawImageName = imagePath.split(/[/\\]/).pop(); // Get the full file name
                     
                     let imageName = rawImageName
                       .replace(/_/g, ' ') // Replace '_' characters with space
@@ -4943,7 +4996,13 @@ function App() {
                     // Determine contextual help text by filename
                     const lower = imagePath.toLowerCase();
                     let contextualHelp = null;
-                    if (lower.includes('results.png')) {
+                    if (lower.includes('logrank')) {
+                      contextualHelp = 'Log-rank test compares survival distributions between groups. Bars show -log10(p-value); values beyond the red dashed line (p < 0.05) indicate statistically significant differences in survival.';
+                    } else if (lower.includes('km_survival') || lower.includes('kaplan')) {
+                      contextualHelp = 'Kaplan-Meier survival curves show the estimated survival probability over time for each group. Shaded bands represent confidence intervals. A steeper drop indicates faster event occurrence.';
+                    } else if (lower.includes('cox_forest') || lower.includes('cox_multivariate')) {
+                      contextualHelp = 'Cox regression forest plot shows hazard ratios for each feature. HR > 1 indicates higher risk; HR < 1 indicates a protective effect. Error bars show 95% confidence intervals. Red bars are statistically significant (p < 0.05).';
+                    } else if (lower.includes('results.png')) {
                       contextualHelp = 'Performance table: Rows indicate Cross-Validation, Train and Test sets; columns show metrics (Accuracy, Precision, Recall, F1, ROC-AUC) and Support (number of samples). Under class imbalance, prioritize Recall/F1 over Accuracy.';
                     } else if (lower.includes('pca')) {
                       contextualHelp = helpTexts.results.dimReduction.pca;
@@ -5242,7 +5301,7 @@ function App() {
                       const analysisParams = analysis.parameters; // Parameters specific to each analysis (payload)
 
                       const images = (analysis.results || []).map((imagePath, imgIdx) => {
-                        const rawImageName = imagePath.split('/').pop();
+                        const rawImageName = imagePath.split(/[/\\]/).pop();
                         let imageName = rawImageName
                           .replace(/_/g, ' ')
                           .replace('.png', '')
@@ -5284,7 +5343,8 @@ function App() {
                           statisticalTest: analysisParams.statisticalTest || [],
                           dimensionalityReduction: analysisParams.dimensionalityReduction || [],
                           classificationAnalysis: analysisParams.classificationAnalysis || [],
-                          modelExplanation: analysisParams.modelExplanation || []
+                          modelExplanation: analysisParams.modelExplanation || [],
+                          survivalAnalysis: analysisParams.survivalAnalysis || []
                         },
                         parameters: analysisParams // All other parameters that might be needed in the report
                       };

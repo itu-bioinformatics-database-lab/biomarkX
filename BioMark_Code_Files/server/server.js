@@ -985,7 +985,7 @@ app.post('/summarize_statistical_methods', async (req, res) => {
                 console.log("No class pairs found with ranked_features_df.csv and none derivable from feature_importances.json");
                 return res.status(400).json({ 
                     success: false, 
-                    message: 'No class pairs found with ranked_features_df.csv files' 
+                    message: 'No features are ranked for any class pairs with these analyses.' 
                 });
             }
         }

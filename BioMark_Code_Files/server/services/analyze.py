@@ -16,6 +16,7 @@ from modules.machineLearning.classification import Classification
 from modules.statisticalTests.statistical_tests import StatisticalTestAnalysis
 from modules.modelExplanation.model_explanation import ModelExplanationAnalysis
 from modules.dataVisualization.dimensionality_reduction import Dimensionality_Reduction
+from modules.survivalAnalyses.survival_analyses import SurvivalAnalysis
 from modules.feature_selection import feature_rank
 from modules.utils import load_json
 from modules.utils import load_table
@@ -332,6 +333,34 @@ def model_training_after_feature_selection(data, selectedIllnessColumn, outdir, 
         clf.data_transfrom()
         clf.initiate_model_trainer()
 
+# Survival Analysis Function
+def run_survival_analysis(data, selectedIllnessColumn, selectedSampleColumn, outdir,
+                         survival_methods, params_json):
+    """Run survival analyses (Kaplan-Meier / Cox Regression)."""
+    time_col = params_json.get("survival_time_column", "")
+    event_col = params_json.get("event_status_column", "")
+    if not time_col or not event_col:
+        print("ERROR: survival_time_column and event_status_column are required for survival analysis.")
+        return
+    confidence = float(params_json.get("km_confidence_level", 0.95))
+    penalizer = float(params_json.get("cox_penalizer", 0.0))
+    tie_method = str(params_json.get("cox_tie_method", "efron"))
+
+    analyzer = SurvivalAnalysis(
+        data=data,
+        time_column=time_col,
+        event_column=event_col,
+        labels_column=selectedIllnessColumn,
+        sample_id_column=selectedSampleColumn,
+        outdir=outdir,
+        analyses=survival_methods,
+        confidence_level=confidence,
+        cox_penalizer=penalizer,
+        cox_tie_method=tie_method,
+        top_features_to_plot=num_top_features,
+    )
+    analyzer.run_all_analyses()
+
 # Main script execution
 if __name__ == "__main__":
     # Set up command line arguments
@@ -347,6 +376,7 @@ if __name__ == "__main__":
     parser.add_argument('nonFeatureColumns', help='Non-feature columns')
     parser.add_argument('isDiffAnalysis', help='Whether to perform differential analysis')
     parser.add_argument('afterFeatureSelection', help='Whether to perform analysis after feature selection')
+    parser.add_argument('survivalAnalyzes', help='Survival analysis methods')
     parser.add_argument('--params', help='Parameter settings (in JSON format)', default='{}')
 
     args = parser.parse_args()
@@ -362,13 +392,14 @@ if __name__ == "__main__":
         if not arg:
             return []
         # Standardize format and split
-        return [item.strip() for item in arg.lower().replace('-', '_').split(",") if item.strip()]
+        return [item.strip() for item in arg.lower().replace('-', '_').replace(' ', '_').split(",") if item.strip()]
 
     statistical_tests = process_arg(args.differentialAnalyzes)  # legacy arg name, now statistical tests
     dimensionality_reduction = process_arg(args.clusteringAnalyzes)
     classification_methods = process_arg(args.classificationAnalyzes)
     explanation_methods = process_arg(args.explanationAnalyzes)
-    nonFeatureColumns = process_arg(args.nonFeatureColumns)
+    survival_methods = process_arg(args.survivalAnalyzes)
+    nonFeatureColumns = [item.strip() for item in args.nonFeatureColumns.split(",") if item.strip()] if args.nonFeatureColumns else []
     selected_diff_analyses = process_arg(args.isDiffAnalysis)
     afterFeatureSelection = args.afterFeatureSelection.lower() == 'true'
 
@@ -742,5 +773,17 @@ if __name__ == "__main__":
                     RESULTS_PATH,
                     model_list
                 )
+
+    # Run survival analysis
+    if survival_methods and survival_methods != ['']:
+        print("\nrun_survival_analysis function for SURVIVAL ANALYSES.....\n")
+        run_survival_analysis(
+            data,
+            selectedIllnessColumn,
+            selectedSampleColumn,
+            RESULTS_PATH,
+            survival_methods,
+            params_json
+        )
 
     exit()

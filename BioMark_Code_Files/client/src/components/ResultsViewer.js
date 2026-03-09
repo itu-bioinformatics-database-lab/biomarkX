@@ -131,7 +131,13 @@ export default function ResultsViewer() {
 
     const lower = imagePath.toLowerCase();
     let contextualHelp = null;
-    if (lower.includes('results.png')) {
+    if (lower.includes('logrank')) {
+      contextualHelp = 'Log-rank test compares survival distributions between groups. Bars show -log10(p-value); values beyond the red dashed line (p < 0.05) indicate statistically significant differences in survival.';
+    } else if (lower.includes('km_survival') || lower.includes('kaplan')) {
+      contextualHelp = 'Kaplan-Meier survival curves show the estimated survival probability over time for each group. Shaded bands represent confidence intervals. A steeper drop indicates faster event occurrence.';
+    } else if (lower.includes('cox_forest') || lower.includes('cox_multivariate')) {
+      contextualHelp = 'Cox regression forest plot shows hazard ratios for each feature. HR > 1 indicates higher risk; HR < 1 indicates a protective effect. Error bars show 95% confidence intervals. Red bars are statistically significant (p < 0.05).';
+    } else if (lower.includes('results.png')) {
       contextualHelp = 'Performance table: Rows indicate Cross-Validation, Train and Test sets; columns show metrics (Accuracy, Precision, Recall, F1, ROC-AUC) and Support.';
     } else if (lower.includes('pca')) {
       contextualHelp = helpTexts?.results?.dimReduction?.pca;
@@ -170,7 +176,7 @@ export default function ResultsViewer() {
 
       // Optional phase between classPair and method (e.g., 'initial', 'AfterFeatureSelection')
       const afterPair = parts.slice(idxRes + 3);
-      const methodKeys = new Set(['t_test', 'anova', 'wilcoxon_rank_sum', 'kruskal_wallis', 'shap', 'lime', 'feature_importance', 'models', 'summaryStatisticalMethods']);
+      const methodKeys = new Set(['t_test', 'anova', 'wilcoxon_rank_sum', 'kruskal_wallis', 'shap', 'lime', 'feature_importance', 'models', 'summaryStatisticalMethods', 'kaplan_meier', 'cox_regression']);
       const foundIdx = afterPair.findIndex(seg => methodKeys.has(seg));
       const phase = foundIdx > 0 ? afterPair.slice(0, foundIdx).join('/') : (foundIdx === 0 ? '' : afterPair.slice(0, 1).join('/'));
       const sub1 = foundIdx >= 0 ? afterPair[foundIdx] : afterPair[0];
@@ -253,6 +259,19 @@ export default function ResultsViewer() {
           links.push({ href: buildUrl(`${basePrefix}/models/${modelName}/${modelName}_results.csv`), label: 'Download Model Details as CSV' });
           links.push({ href: buildUrl(`${basePrefix}/models/${modelName}/${modelName}_cv_folds.csv`), label: 'Download CV CSV' });
         }
+        return links;
+      }
+
+      // Survival: Kaplan-Meier
+      if (sub1 === 'kaplan_meier') {
+        links.push({ href: buildUrl(`${basePrefix}/kaplan_meier/km_summary.csv`), label: 'Download KM Summary CSV' });
+        links.push({ href: buildUrl(`${basePrefix}/kaplan_meier/logrank_test_results.csv`), label: 'Download Log-Rank Results CSV' });
+        return links;
+      }
+      // Survival: Cox Regression
+      if (sub1 === 'cox_regression') {
+        links.push({ href: buildUrl(`${basePrefix}/cox_regression/cox_regression_results.csv`), label: 'Download Cox Results CSV' });
+        links.push({ href: buildUrl(`${basePrefix}/cox_regression/cox_multivariate_results.csv`), label: 'Download Multivariate Cox CSV' });
         return links;
       }
 

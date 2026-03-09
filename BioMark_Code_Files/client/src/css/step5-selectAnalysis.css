@@ -196,6 +196,19 @@
   box-shadow: 0 0 0 1px rgba(217, 83, 79, 0.2);
 }
 
+.param-input.required-param-missing-border .searchable-column-list-container {
+  border: 1px solid #d9534f;
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 0 0 1px rgba(217, 83, 79, 0.2);
+}
+
+.survival-column-row .param-input .searchable-column-list-container {
+  margin-top: 4px;
+  margin-bottom: 0;
+  max-width: 100%;
+}
+
 .survival-validation-error {
   margin-top: 10px;
   padding: 10px 12px;

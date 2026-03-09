@@ -6,6 +6,7 @@ function SearchableColumnList({
   allColumns = [],
   onSelect,
   selectedColumns = [], // For multi-select or to highlight single selection
+  disabledColumns = [], // Columns that are blocked (shown as unavailable, not highlighted)
   placeholder = "Search columns...",
   listHeight = '200px', // Adjustable list height
   className = '', // For adding extra class
@@ -44,6 +45,7 @@ function SearchableColumnList({
 
   // Convert selected columns to a Set for faster lookup
   const selectedSet = useMemo(() => new Set(Array.isArray(selectedColumns) ? selectedColumns : [selectedColumns]), [selectedColumns]);
+  const disabledSet = useMemo(() => new Set(Array.isArray(disabledColumns) ? disabledColumns : []), [disabledColumns]);
 
   return (
     // Main container for the searchable column list
@@ -70,6 +72,7 @@ function SearchableColumnList({
               className={`
                 column-list-item
                 ${selectedSet.has(column) ? 'selected' : ''}
+                ${disabledSet.has(column) ? 'locked' : ''}
                 ${disabled ? 'disabled' : ''}
               `}
               title={column} // Add title for long names

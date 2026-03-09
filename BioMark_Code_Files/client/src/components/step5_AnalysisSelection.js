@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import HelpTooltip from './common/HelpTooltip';
+import SearchableColumnList from './SearchableColumnList';
 import { helpTexts } from '../content/helpTexts';
 import Science from '@mui/icons-material/Science';
 import Hub from '@mui/icons-material/Hub';
@@ -556,41 +557,39 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
           {isSurvivalSelected && (
             <div className="param-container">
               <div className="param-section">
-                <div className="param-row">
+                <div className="param-row survival-column-row">
                   <div className="param-label">
                     survival_time_column
                     <span className="param-tooltip">Column containing time-to-event values (e.g., days or months).</span>
                   </div>
-                  <div className="param-input">
-                    <select
-                      value={survivalTimeColumn}
-                      onChange={(e) => { setSurvivalTimeColumn(e.target.value); handleParamChange(); }}
-                      className={!survivalTimeColumn && isSurvivalSelected ? 'required-param-missing' : ''}
-                    >
-                      <option value="">Select survival time column</option>
-                      {survivalColumnOptions.map((column) => (
-                        <option key={`survival-time-${column}`} value={column}>{column}</option>
-                      ))}
-                    </select>
+                  <div className={`param-input ${!survivalTimeColumn && isSurvivalSelected ? 'required-param-missing-border' : ''}`}>
+                    <SearchableColumnList
+                      allColumns={survivalColumnOptions}
+                      onSelect={(col) => { setSurvivalTimeColumn(prev => prev === col ? '' : col); handleParamChange(); }}
+                      selectedColumns={survivalTimeColumn || []}
+                      disabledColumns={eventStatusColumn ? [eventStatusColumn] : []}
+                      placeholder="Search survival time column..."
+                      listHeight="150px"
+                      useAllColumnsAsDefault
+                    />
                   </div>
                 </div>
 
-                <div className="param-row">
+                <div className="param-row survival-column-row">
                   <div className="param-label">
                     event_status_column
                     <span className="param-tooltip">Column indicating event occurrence (typically 1=event, 0=censored).</span>
                   </div>
-                  <div className="param-input">
-                    <select
-                      value={eventStatusColumn}
-                      onChange={(e) => { setEventStatusColumn(e.target.value); handleParamChange(); }}
-                      className={!eventStatusColumn && isSurvivalSelected ? 'required-param-missing' : ''}
-                    >
-                      <option value="">Select event status column</option>
-                      {survivalColumnOptions.map((column) => (
-                        <option key={`event-status-${column}`} value={column}>{column}</option>
-                      ))}
-                    </select>
+                  <div className={`param-input ${!eventStatusColumn && isSurvivalSelected ? 'required-param-missing-border' : ''}`}>
+                    <SearchableColumnList
+                      allColumns={survivalColumnOptions}
+                      onSelect={(col) => { setEventStatusColumn(prev => prev === col ? '' : col); handleParamChange(); }}
+                      selectedColumns={eventStatusColumn || []}
+                      disabledColumns={survivalTimeColumn ? [survivalTimeColumn] : []}
+                      placeholder="Search event status column..."
+                      listHeight="150px"
+                      useAllColumnsAsDefault
+                    />
                   </div>
                 </div>
 

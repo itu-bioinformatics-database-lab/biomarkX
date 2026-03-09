@@ -58,6 +58,12 @@
     cursor: not-allowed;
     background-color: #fafafa;
   }
+
+  .column-list-item.locked {
+    color: #000000;
+    cursor: not-allowed;
+    background-color: #fafafa;
+  }
   
   .column-list-item-no-results {
     padding: 8px 12px;

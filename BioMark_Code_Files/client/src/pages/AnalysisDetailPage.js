@@ -129,7 +129,7 @@ export default function AnalysisDetailPage() {
                 return {
                   id: `img-${singleAnalysis.id}-${trimmedPath}`,
                   path: trimmedPath,
-                  caption: trimmedPath.split('/').pop(),
+                  caption: trimmedPath.split('/').pop().replace(/_/g, ' ').replace(/\.png$/i, ''),
                   analysisId: singleAnalysis.id,
                   classPair: metadata.selectedClasses ? metadata.selectedClasses.join(' vs ') : 'N/A'
                 };
@@ -172,7 +172,8 @@ export default function AnalysisDetailPage() {
           types: {
             differential: analysisData.metadata?.analysisMethods?.differential || [],
             clustering: analysisData.metadata?.analysisMethods?.clustering || [],
-            classification: analysisData.metadata?.analysisMethods?.classification || []
+            classification: analysisData.metadata?.analysisMethods?.classification || [],
+            survival: analysisData.metadata?.analysisMethods?.survival || []
           },
           parameters: analysisData.metadata
         }]);
@@ -420,7 +421,7 @@ export default function AnalysisDetailPage() {
               </span>
               {!isGuestUser() && (
                 <button className="title-rename-btn" onClick={startEditingName} title="Rename analysis">
-                  ✏️
+                  ✞︞
                 </button>
               )}
             </h1>
@@ -518,6 +519,13 @@ export default function AnalysisDetailPage() {
                             <div className="info-item">
                               <span className="info-label">Classification:</span>
                               <span className="info-value">{metadata.analysisMethods.classification.join(', ')}</span>
+                            </div>
+                          )}
+                          
+                          {metadata.analysisMethods.survival?.length > 0 && (
+                            <div className="info-item">
+                              <span className="info-label">Survival Analysis:</span>
+                              <span className="info-value">{metadata.analysisMethods.survival.join(', ')}</span>
                             </div>
                           )}
                         </>
@@ -625,7 +633,7 @@ export default function AnalysisDetailPage() {
                           />
                         </div>
                         <div className="result-caption">
-                          {path.split('/').pop()}
+                          {path.split('/').pop().replace(/_/g, ' ').replace(/\.png$/i, '')}
                         </div>
                         <a 
                           href={buildBackendUrl(path)} 
@@ -688,7 +696,7 @@ export default function AnalysisDetailPage() {
                                 />
                               </div>
                               <div className="result-caption">
-                                {path.split('/').pop()}
+                                {path.split('/').pop().replace(/_/g, ' ').replace(/\.png$/i, '')}
                               </div>
                               <a 
                                 href={buildBackendUrl(path)} 
@@ -749,7 +757,7 @@ export default function AnalysisDetailPage() {
                   return {
                     id: `img-${singleAnalysis.id}-${trimmedPath}`,
                     path: trimmedPath,
-                    caption: trimmedPath.split('/').pop()
+                    caption: trimmedPath.split('/').pop().replace(/_/g, ' ').replace(/\.png$/i, '')
                   };
                 });
             }
@@ -763,7 +771,8 @@ export default function AnalysisDetailPage() {
               types: {
                 differential: metadata.analysisMethods?.differential || [],
                 clustering: metadata.analysisMethods?.clustering || [],
-                classification: metadata.analysisMethods?.classification || []
+                classification: metadata.analysisMethods?.classification || [],
+                survival: metadata.analysisMethods?.survival || []
               },
               parameters: metadata
             };
@@ -804,7 +813,8 @@ export default function AnalysisDetailPage() {
                   selectedAnalyzes={[
                     ...(analysis.metadata?.analysisMethods?.differential || []),
                     ...(analysis.metadata?.analysisMethods?.clustering || []),
-                    ...(analysis.metadata?.analysisMethods?.classification || [])
+                    ...(analysis.metadata?.analysisMethods?.classification || []),
+                    ...(analysis.metadata?.analysisMethods?.survival || [])
                   ]}
                   featureCount={20}
                   summaryImagePath=""

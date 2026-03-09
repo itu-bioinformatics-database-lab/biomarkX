@@ -90,7 +90,9 @@ analysisQueue.process(async (job) => {
         ? analysisMethods.modelExplanation.join(',') : '',
       Array.isArray(nonFeatureColumns) ? nonFeatureColumns : [],
       Array.isArray(safeIsDiffAnalysis) ? safeIsDiffAnalysis.join(',') : '',
-      String(safeAfterFeatureSelection)
+      String(safeAfterFeatureSelection),
+      Array.isArray(analysisMethods.survivalAnalysis) && analysisMethods.survivalAnalysis.length > 0 
+        ? analysisMethods.survivalAnalysis.join(',') : ''
     ];
     
     // If not using default parameters, add custom parameters

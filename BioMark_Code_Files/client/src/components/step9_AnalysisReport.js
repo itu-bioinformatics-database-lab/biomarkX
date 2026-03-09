@@ -95,6 +95,7 @@ const AnalysisReport = ({
     add(typesObj.dimensionalityReduction, 'Dimensionality Reduction');
     add(typesObj.classificationAnalysis, 'Classification');
     add(typesObj.modelExplanation, 'Model Explanation');
+    add(typesObj.survivalAnalysis, 'Survival Analysis');
     // Backward-compatibility with old keys
     add(typesObj.differential, 'Statistical Test');
     add(typesObj.clustering, 'Dimensionality Reduction');
