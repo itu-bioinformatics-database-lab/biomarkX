@@ -627,7 +627,29 @@ const AnalysisReport = ({
             pdf.text('Execution Time:', leftColumnX + 10, yPosition);
             pdf.setFont('helvetica', 'normal');
             pdf.text(analysis.time || 'N/A', leftColumnX + 40, yPosition);
-            yPosition += lineHeight + 5;
+            yPosition += lineHeight;
+
+            // Resampling / class imbalance handling
+            const resMethod = analysis.parameters?.resamplingMethod;
+            if (resMethod) {
+              const resParams = analysis.parameters?.resamplingParams || {};
+              const methodLabel = resMethod.toUpperCase();
+              const resParts = [];
+              if (methodLabel === 'SMOTE') {
+                resParts.push(`k_neighbors=${resParams.k_neighbors ?? 5}`);
+              } else if (methodLabel === 'ADASYN') {
+                resParts.push(`n_neighbors=${resParams.n_neighbors ?? 5}`);
+              }
+              if (resParams.sampling_strategy) resParts.push(`strategy=${resParams.sampling_strategy}`);
+              const resamplingText = resParts.length ? `${methodLabel} (${resParts.join(', ')})` : methodLabel;
+              if (yPosition > pageHeight - 30) { pdf.addPage(); yPosition = topMargin - 20; }
+              pdf.setFont('helvetica', 'bold');
+              pdf.text('Resampling:', leftColumnX + 10, yPosition);
+              pdf.setFont('helvetica', 'normal');
+              pdf.text(resamplingText, leftColumnX + 40, yPosition);
+              yPosition += lineHeight;
+            }
+            yPosition += 5;
             globalAnalysisIndex++;
           }
           
@@ -1606,6 +1628,22 @@ const AnalysisReport = ({
                         <span className="label">Execution Time:</span>
                         <span className="value">{analysis.time || 'N/A'}</span>
                       </div>
+                      {analysis.parameters?.resamplingMethod && (
+                        <div className="info-row">
+                          <span className="label">Resampling:</span>
+                          <span className="value">
+                            {(() => {
+                              const m = analysis.parameters.resamplingMethod.toUpperCase();
+                              const p = analysis.parameters.resamplingParams || {};
+                              const parts = [];
+                              if (m === 'SMOTE') parts.push(`k_neighbors=${p.k_neighbors ?? 5}`);
+                              else if (m === 'ADASYN') parts.push(`n_neighbors=${p.n_neighbors ?? 5}`);
+                              if (p.sampling_strategy) parts.push(`strategy=${p.sampling_strategy}`);
+                              return parts.length ? `${m} (${parts.join(', ')})` : m;
+                            })()}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

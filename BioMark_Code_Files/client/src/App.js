@@ -3373,8 +3373,12 @@ function App() {
     
     if (lastPayload) {
       // Restore previously selected columns from the last analysis
-      const savedIllnessColumn = lastPayload.IlnessColumnName;
-      const savedSampleColumn = lastPayload.SampleColumnName;
+      // Support both client-side keys (IlnessColumnName/SampleColumnName from buildRunPayload)
+      // AND server-side keys (illnessColumn/sampleColumn from server metadata).
+      // When continuing from "My Analysis" page, analysisInformation contains server metadata,
+      // which uses illnessColumn/sampleColumn, not the client-side key names.
+      const savedIllnessColumn = lastPayload.IlnessColumnName || lastPayload.illnessColumn || selectedIllnessColumn || '';
+      const savedSampleColumn = lastPayload.SampleColumnName || lastPayload.sampleColumn || selectedSampleColumn || '';
       const savedNonFeatureColumns = lastPayload.nonFeatureColumns || [];
       
       console.log('[handlePerformAnotherAnalysis] Restoring columns from last analysis:', {
@@ -3447,7 +3451,7 @@ function App() {
         }
       }
       
-      // Set the columns immediately so Step 3 shows them
+      // Always set columns so Step 3 shows them correctly
       if (savedIllnessColumn) {
         console.log('[handlePerformAnotherAnalysis] Setting illness column:', savedIllnessColumn);
         setSelectedIllnessColumn(savedIllnessColumn);
@@ -3459,6 +3463,17 @@ function App() {
       if (savedNonFeatureColumns.length > 0) {
         console.log('[handlePerformAnotherAnalysis] Setting non-feature columns:', savedNonFeatureColumns);
         setNonFeatureColumns(savedNonFeatureColumns);
+      }
+
+      // Ensure the upload context has the column selections so the useEffect
+      // that syncs from activeUploadContext does not wipe them out
+      if (savedFilePath && savedIllnessColumn) {
+        updateUploadContext(savedFilePath, (prev) => ({
+          ...prev,
+          illnessColumn: savedIllnessColumn,
+          sampleColumn: savedSampleColumn || prev?.sampleColumn || '',
+          nonFeatureColumns: savedNonFeatureColumns.length > 0 ? savedNonFeatureColumns : (prev?.nonFeatureColumns || [])
+        }));
       }
       
       // Check if we need to fetch columns
@@ -3473,17 +3488,20 @@ function App() {
           console.log('[handlePerformAnotherAnalysis] Using existing columns from context:', hasContext.columns?.length, 'columns');
         }
         
-        // Trigger class fetch if we have illness column
-        // This ensures the chart is fetched and shown in Step 4
-        // Don't await - let it load in background like the normal flow
-        if (savedIllnessColumn) {
+        // Always trigger class fetch to ensure the chart is fetched and shown in Step 4.
+        // Use forceFetch to bypass the normalization gate check — we already passed the gate.
+        // This is critical for the continuation flow from "My Analysis" page where
+        // the class data may not be cached or may need to be re-fetched.
+        const effectiveIllnessColumn = savedIllnessColumn;
+        if (effectiveIllnessColumn) {
           console.log('[handlePerformAnotherAnalysis] Triggering class fetch for chart');
-          handleIllnessColumnSelection(savedIllnessColumn, {
+          handleIllnessColumnSelection(effectiveIllnessColumn, {
             skipSampleReset: true,
             sampleValue: savedSampleColumn,
             skipMergeGuard: true,
             overrideFilePath: savedFilePath,
-            allowStepFour: true
+            allowStepFour: true,
+            forceFetch: true
           }).catch(err => {
             console.error('[handlePerformAnotherAnalysis] Error fetching classes:', err);
           });

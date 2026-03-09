@@ -622,6 +622,9 @@ app.post('/analyze', async (req, res) => {
             normalizationGatePassed: normalizationGatePassed === true,
             normalizationMode: normalizationMode || null,
             normalizationConfig: normalizationConfig || null,
+            // Class imbalance resampling info
+            resamplingMethod: resamplingMethod || null,
+            resamplingParams: resamplingParams || {},
             // Also store old format for compatibility with AnalysisReport component
             analysisMethods: {
                 differential: statisticalTest || [],

@@ -808,6 +808,17 @@ export default function AnalysisResultsPage() {
                         {getStatusBadge(analysis.status)}
                       </div>
                     </div>
+                    {analysis.status === 'failed' && !analysis.result_path && (
+                      <div className="analysis-actions">
+                        <button
+                          className="delete-button"
+                          onClick={() => setShowDeleteConfirm(analysis.id)}
+                          title="Delete failed analysis"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
 
                     {analysis.result_path && (
                       <div className="analysis-actions">
@@ -840,6 +851,7 @@ export default function AnalysisResultsPage() {
                         </button>
                       </div>
                     )}
+
                   </div>
                 ))}
               </div>

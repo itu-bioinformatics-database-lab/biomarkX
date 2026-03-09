@@ -475,6 +475,28 @@ export default function AnalysisDetailPage() {
                           <span className="info-value">{metadata.selectedClasses.join(', ')}</span>
                         </div>
                       )}
+
+                      {metadata.resamplingMethod && (
+                        <div className="info-item">
+                          <span className="info-label">Class Imbalance Handling:</span>
+                          <span className="info-value">
+                            {(() => {
+                              const method = metadata.resamplingMethod.toUpperCase();
+                              const params = metadata.resamplingParams || {};
+                              const parts = [];
+                              if (method === 'SMOTE') {
+                                parts.push(`k_neighbors=${params.k_neighbors ?? 5}`);
+                              } else if (method === 'ADASYN') {
+                                parts.push(`n_neighbors=${params.n_neighbors ?? 5}`);
+                              }
+                              if (params.sampling_strategy) {
+                                parts.push(`strategy=${params.sampling_strategy}`);
+                              }
+                              return `${method} applied${parts.length ? ` (${parts.join(', ')})` : ''}`;
+                            })()}
+                          </span>
+                        </div>
+                      )}
                       
                       {metadata.analysisMethods && (
                         <>
