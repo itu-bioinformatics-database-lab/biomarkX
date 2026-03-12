@@ -10,7 +10,7 @@ import FavoriteBorder from '@mui/icons-material/FavoriteBorder';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
 
-function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggleAfterFS, canUseAfterFS, computedNumTopFeatures, onNumTopFeaturesChange, numSelectedClasses, availableColumns = [], selectedIllnessColumn = '', selectedSampleColumn = '' }) {
+function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatureSelection, onToggleAfterFS, canUseAfterFS, computedNumTopFeatures, onNumTopFeaturesChange, numSelectedClasses, availableColumns = [], selectedIllnessColumn = '', selectedSampleColumn = '' }) {
   const [selectedAnalyses, setSelectedAnalyses] = useState({
     statisticalTest: [],
     dimensionalityReduction: [],
@@ -161,6 +161,7 @@ function AnalysisSelection({ onAnalysisSelection, afterFeatureSelection, onToggl
     setConfirmSelection(false);
     setShowParamsDropdown(false);
     setButtonPressed(false);
+    if (onSelectionChange) onSelectionChange();
   };
   
   // Handle confirm selection button click

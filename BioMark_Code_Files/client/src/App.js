@@ -363,7 +363,9 @@ function App() {
   const [nFolds, setNFolds] = useState(5);
   
   const stepThreeRef = useRef(null);
+  const stepNormalizationRef = useRef(null);
   const stepFourRef = useRef(null);
+  const stepResamplingRef = useRef(null);
   const stepFiveRef = useRef(null);
   const stepSixRef = useRef(null);
   const stepAnalysisRef = useRef(null);
@@ -2483,6 +2485,24 @@ function App() {
     }
   }, [normalizationPrereqReady, normalizationGatePassed, showStepFour, setShowStepFour, setShowStepFive, setShowStepSix, setShowStepAnalysis, setselectedClasses, setClassTable, stepFourRef, scrollToStep]);
 
+  // Scroll to normalization section when it becomes visible
+  useEffect(() => {
+    if (normalizationPrereqReady) {
+      setTimeout(() => {
+        if (stepNormalizationRef.current) scrollToStep(stepNormalizationRef);
+      }, 100);
+    }
+  }, [normalizationPrereqReady, scrollToStep]);
+
+  // Scroll to resampling section when it becomes visible
+  useEffect(() => {
+    if (showStepFour && selectedClasses.length >= 2) {
+      setTimeout(() => {
+        if (stepResamplingRef.current) scrollToStep(stepResamplingRef);
+      }, 100);
+    }
+  }, [showStepFour, selectedClasses.length, scrollToStep]);
+
   // Show Step 5: When Step 4 is visible, 2+ classes selected, AND resampling gate passed
   useEffect(() => {
     if (showStepFour && selectedClasses.length >= 2 && resamplingGatePassed) {
@@ -4287,7 +4307,7 @@ function App() {
                 {error && <div className="error-message step-error">{error}</div>}
                 {/* Optional Normalization */}
                 {normalizationPrereqReady && (
-                  <div className="normalize-section">
+                  <div ref={stepNormalizationRef} className="normalize-section">
                     <div className="step-and-instruction">
                       <h2 className="title">Optional: Normalize Dataset</h2>
                     </div>
@@ -4403,7 +4423,7 @@ function App() {
               )}
               {/* Step 4.5: Class Imbalance Resampling (Optional) */}
               {showStepFour && !previousAnalyses[index] && selectedClasses && selectedClasses.length >= 2 && (
-                <div style={{ padding: '0 20px', marginTop: '20px', marginBottom: '20px' }}>
+                <div ref={stepResamplingRef} style={{ padding: '0 20px', marginTop: '20px', marginBottom: '20px' }}>
                 <div className="normalize-section">
                   <div className="step-and-instruction">
                     <h2 className="title">Optional: Handle Class Imbalance (Step 4.5)</h2>
@@ -4528,6 +4548,7 @@ function App() {
                 {selectedClasses.length > 0 && (
                   <AnalysisSelection
                     onAnalysisSelection={handleAnalysisSelection}
+                    onSelectionChange={() => setShowStepSix(false)}
                     afterFeatureSelection={afterFeatureSelection}
                     onToggleAfterFS={setAfterFeatureSelection}
                     canUseAfterFS={canUseAfterFS}
