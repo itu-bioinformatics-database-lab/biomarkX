@@ -443,18 +443,93 @@ class Classification:
         """
         try:
 
-            models_base = {
-                "logistic regression": LogisticRegression(random_state = 42, solver = "lbfgs", penalty = "l2", max_iter = 2000),
-                "random forest": RandomForestClassifier(random_state = 42, n_jobs=-1),
-                "xgbclassifier": XGBClassifier(random_state = 42, n_jobs=-1),
-                "decision tree": DecisionTreeClassifier(random_state = 42), 
-                "gradient boosting": GradientBoostingClassifier(random_state = 42),
-                "catboosting classifier": CatBoostClassifier(random_state = 42,verbose=False),
-                "adaboost classifier": AdaBoostClassifier(random_state = 42),
-                "mlpclassifier": MLPClassifier(random_state = 42, verbose=False),
-                "svc": SVC(kernel="rbf",random_state = 42, probability=True)
-                }
-            models = {model_name:models_base[model_name] for model_name in self.model_list}
+            def _normalize_model_name(name):
+                return re.sub(r'[^a-z0-9]+', '_', str(name).strip().lower()).strip('_')
+
+            model_catalog = {
+                "logistic_regression": (
+                    "Logistic Regression",
+                    LogisticRegression(random_state=42, solver="lbfgs", penalty="l2", max_iter=2000),
+                ),
+                "random_forest": (
+                    "Random Forest",
+                    RandomForestClassifier(random_state=42, n_jobs=-1),
+                ),
+                "xgbclassifier": (
+                    "XGBClassifier",
+                    XGBClassifier(random_state=42, n_jobs=-1),
+                ),
+                "decision_tree": (
+                    "Decision Tree",
+                    DecisionTreeClassifier(random_state=42),
+                ),
+                "gradient_boosting": (
+                    "Gradient Boosting",
+                    GradientBoostingClassifier(random_state=42),
+                ),
+                "catboosting_classifier": (
+                    "CatBoosting Classifier",
+                    CatBoostClassifier(random_state=42, verbose=False),
+                ),
+                "adaboost_classifier": (
+                    "AdaBoost Classifier",
+                    AdaBoostClassifier(random_state=42),
+                ),
+                "mlpclassifier": (
+                    "MLPClassifier",
+                    MLPClassifier(random_state=42, verbose=False),
+                ),
+                "svc": (
+                    "SVC",
+                    SVC(kernel="rbf", random_state=42, probability=True),
+                ),
+            }
+
+            alias_to_canonical = {
+                "logistic_regression": "logistic_regression",
+                "logisticregression": "logistic_regression",
+                "random_forest": "random_forest",
+                "randomforest": "random_forest",
+                "xgbclassifier": "xgbclassifier",
+                "xgb_classifier": "xgbclassifier",
+                "xgboost": "xgbclassifier",
+                "xgboost_classifier": "xgbclassifier",
+                "decision_tree": "decision_tree",
+                "decisiontree": "decision_tree",
+                "gradient_boosting": "gradient_boosting",
+                "gradientboosting": "gradient_boosting",
+                "catboosting_classifier": "catboosting_classifier",
+                "catboost_classifier": "catboosting_classifier",
+                "catboost": "catboosting_classifier",
+                "adaboost_classifier": "adaboost_classifier",
+                "adaboost": "adaboost_classifier",
+                "mlpclassifier": "mlpclassifier",
+                "mlp_classifier": "mlpclassifier",
+                "svc": "svc",
+            }
+
+            unknown_models = []
+            models = {}
+            for requested_model in (self.model_list or []):
+                normalized_requested = _normalize_model_name(requested_model)
+                canonical_key = alias_to_canonical.get(normalized_requested, normalized_requested)
+
+                if canonical_key not in model_catalog:
+                    unknown_models.append(str(requested_model))
+                    continue
+
+                display_name, estimator = model_catalog[canonical_key]
+                models[display_name] = estimator
+
+            if unknown_models:
+                supported = sorted([v[0] for v in model_catalog.values()])
+                raise CustomException(
+                    f"Unsupported model(s): {unknown_models}. Supported models: {supported}",
+                    sys,
+                )
+
+            if not models:
+                raise CustomException("No valid classification model selected.", sys)
             
             params = getparams()
 

@@ -375,7 +375,8 @@ export default function AnalysisResultsPage() {
                 differential: metadata.analysisMethods?.differential || [],
                 clustering: metadata.analysisMethods?.clustering || [],
                 classification: metadata.analysisMethods?.classification || []
-              }
+              },
+              parameters: metadata
             });
           }
           
@@ -574,7 +575,7 @@ export default function AnalysisResultsPage() {
                     className={`nav-item ${selectedFolder === 'favorites' ? 'active' : ''}`}
                     onClick={() => setSelectedFolder('favorites')}
                   >
-                    <span className="nav-icon">⭐</span>
+                    <span className="nav-icon">⭞</span>
                     <span className="nav-label">Favorites</span>
                     <span className="nav-count">{getFolderCount('favorites')}</span>
                   </button>
@@ -633,7 +634,7 @@ export default function AnalysisResultsPage() {
                               }}
                               title="Rename list"
                             >
-                              ✎
+                              ✞
                             </button>
                             <button 
                               className="folder-action-btn delete"
@@ -777,7 +778,7 @@ export default function AnalysisResultsPage() {
                               onClick={() => startEditingAnalysisName(analysis)}
                               title="Rename analysis"
                             >
-                              ✏️
+                              &#9998;
                             </button>
                             {analysis.isGroup && (
                               <span className="analysis-count-badge">

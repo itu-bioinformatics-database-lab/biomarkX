@@ -520,12 +520,34 @@ function App() {
 
     if (!config && metadata.normalizationPipeline && typeof metadata.normalizationPipeline === 'object') {
       const pipeline = metadata.normalizationPipeline;
+      const pipelineType = (metadata.normalizationPipelineType || (pipeline.mogonetPreprocess ? 'mogonet' : 'standard')).toLowerCase();
+
+      if (pipelineType === 'mogonet') {
+        const mogonetCfg = pipeline.mogonetPreprocess || {};
+        config = {
+          pipelineType: 'mogonet',
+          selectedProtectedColumns: Array.isArray(metadata.selectedProtectedColumns) ? metadata.selectedProtectedColumns : [],
+          mogonet: {
+            omicsType: mogonetCfg.omicsType || 'mRNA',
+            fdrAlpha: mogonetCfg.fdrAlpha ?? 0.05,
+            varThreshMrna: mogonetCfg.varThreshMrna ?? 0.1,
+            varThreshMeth: mogonetCfg.varThreshMeth ?? 0.001,
+            pc1Max: mogonetCfg.pc1Max ?? 0.5,
+            minKeep: mogonetCfg.minKeep ?? 200,
+            maxKeep: mogonetCfg.maxKeep ?? 300,
+            hm27Restriction: Boolean(mogonetCfg.hm27Restriction),
+            hm27ArtifactPath: mogonetCfg.hm27ArtifactPath || '../artifacts/hm27_probe_ids.json',
+            verbose: Boolean(mogonetCfg.verbose),
+          },
+        };
+      } else {
       const log = pipeline.logTransformation || {};
       const batch = pipeline.batchEffectCorrection || {};
       const norm = pipeline.normalization || {};
       const outlier = pipeline.outlierDetection || {};
 
       config = {
+        pipelineType: 'standard',
         logTransform: {
           enabled: Boolean(log.requested),
           base: log.base,
@@ -554,6 +576,7 @@ function App() {
           action: outlier.action || 'impute',
         },
       };
+      }
     }
 
     if (config) {
@@ -575,13 +598,25 @@ function App() {
     if (!executedNormalizationConfig) return [];
 
     const details = [];
+    const pipelineType = (executedNormalizationConfig.pipelineType || 'standard').toLowerCase();
+
+    if (pipelineType === 'mogonet') {
+      const mogonetCfg = executedNormalizationConfig.mogonet || {};
+      details.push('Pipeline: MOGONET-Style');
+      details.push(`Omics Type: ${mogonetCfg.omicsType || 'mRNA'}`);
+      details.push(`FDR Alpha: ${mogonetCfg.fdrAlpha ?? 0.05}`);
+      details.push(`PC1 Max Ratio: ${mogonetCfg.pc1Max ?? 0.5}`);
+      details.push(`Keep Range: ${(mogonetCfg.minKeep ?? 200)}-${(mogonetCfg.maxKeep ?? 300)}`);
+      details.push(`Variance Thresholds: mRNA=${mogonetCfg.varThreshMrna ?? 0.1}, meth=${mogonetCfg.varThreshMeth ?? 0.001}`);
+      details.push(`HM27 Restriction: ${mogonetCfg.hm27Restriction ? `Enabled (${mogonetCfg.hm27ArtifactPath || '../artifacts/hm27_probe_ids.json'})` : 'Disabled'}`);
+      return details;
+    }
+
+    details.push('Pipeline: Standard');
     const logCfg = executedNormalizationConfig.logTransform || {};
     const batchCfg = executedNormalizationConfig.batchCorrection || {};
     const normCfg = executedNormalizationConfig.normalization || {};
     const outlierCfg = executedNormalizationConfig.outlierDetection || {};
-
-    console.log("normCfg:", normCfg);
-    console.log("outlierCfg:", outlierCfg);
 
     details.push(`Log Transformation: ${logCfg.enabled ? `Enabled (base=${logCfg.base}, offset=${logCfg.offset})` : 'Skipped'}`);
     details.push(`Batch Effect Correction: ${batchCfg.enabled ? `Enabled (batch=${batchCfg.batchColumn || 'N/A'}, covariates={${Array.isArray(batchCfg.covariates) ? batchCfg.covariates.join(', ') || 'none' : 'none'}}, ${batchCfg.parametric ? 'Parametric' : 'Non-parametric'})` : 'Skipped'}`);
@@ -2308,6 +2343,7 @@ function App() {
     );
 
     const selectedProtectedColumns = dedupeNonEmpty(normalizationConfig?.selectedProtectedColumns || []);
+    const pipelineType = (normalizationConfig?.pipelineType || 'standard').toLowerCase();
     const batchColumn = normalizationConfig?.batchCorrection?.batchColumn || '';
 
     const requestedCovariates = dedupeNonEmpty(
@@ -2335,35 +2371,52 @@ function App() {
       selectedIllnessColumns,
       selectedSampleColumns,
       selectedProtectedColumns,
+      normalizationPipelineType: pipelineType,
       requestedBy: isGuestUser() ? 'guest' : (username || 'authenticated-user'),
-      normalizationPipeline: {
-        logTransformation: {
-          requested: Boolean(normalizationConfig?.logTransform?.enabled),
-          base: normalizationConfig?.logTransform?.base,
-          offset: normalizationConfig?.logTransform?.offset,
-        },
-        batchEffectCorrection: {
-          requested: Boolean(normalizationConfig?.batchCorrection?.enabled),
-          method: 'combat',
-          batchColumn,
-          covariates: mergedCovariates,
-          parametric: Boolean(normalizationConfig?.batchCorrection?.parametric),
-        },
-        normalization: {
-          requested: Boolean(normalizationConfig?.normalization?.enabled),
-          method: normalizationConfig?.normalization?.method || 'zscore',
-          zscore: normalizationConfig?.normalization?.zscore || { center: true, scale: true },
-          minmax: normalizationConfig?.normalization?.minmax || { rangeMin: 0, rangeMax: 1 },
-          quantile: normalizationConfig?.normalization?.quantile || { tieBreaking: 'mean' },
-        },
-        outlierDetection: {
-          requested: Boolean(normalizationConfig?.outlierDetection?.enabled),
-          method: normalizationConfig?.outlierDetection?.method || 'iqr',
-          iqrCoefficient: normalizationConfig?.outlierDetection?.iqrCoefficient,
-          zscoreDeviation: normalizationConfig?.outlierDetection?.zscoreDeviation,
-          action: normalizationConfig?.outlierDetection?.action || 'impute',
-        },
-      },
+      normalizationPipeline: pipelineType === 'mogonet'
+        ? {
+            mogonetPreprocess: {
+              requested: true,
+              omicsType: normalizationConfig?.mogonet?.omicsType || 'mRNA',
+              fdrAlpha: normalizationConfig?.mogonet?.fdrAlpha,
+              varThreshMrna: normalizationConfig?.mogonet?.varThreshMrna,
+              varThreshMeth: normalizationConfig?.mogonet?.varThreshMeth,
+              pc1Max: normalizationConfig?.mogonet?.pc1Max,
+              minKeep: normalizationConfig?.mogonet?.minKeep,
+              maxKeep: normalizationConfig?.mogonet?.maxKeep,
+              hm27Restriction: Boolean(normalizationConfig?.mogonet?.hm27Restriction),
+              hm27ArtifactPath: normalizationConfig?.mogonet?.hm27ArtifactPath,
+              verbose: Boolean(normalizationConfig?.mogonet?.verbose),
+            },
+          }
+        : {
+            logTransformation: {
+              requested: Boolean(normalizationConfig?.logTransform?.enabled),
+              base: normalizationConfig?.logTransform?.base,
+              offset: normalizationConfig?.logTransform?.offset,
+            },
+            batchEffectCorrection: {
+              requested: Boolean(normalizationConfig?.batchCorrection?.enabled),
+              method: 'combat',
+              batchColumn,
+              covariates: mergedCovariates,
+              parametric: Boolean(normalizationConfig?.batchCorrection?.parametric),
+            },
+            normalization: {
+              requested: Boolean(normalizationConfig?.normalization?.enabled),
+              method: normalizationConfig?.normalization?.method || 'zscore',
+              zscore: normalizationConfig?.normalization?.zscore || { center: true, scale: true },
+              minmax: normalizationConfig?.normalization?.minmax || { rangeMin: 0, rangeMax: 1 },
+              quantile: normalizationConfig?.normalization?.quantile || { tieBreaking: 'mean' },
+            },
+            outlierDetection: {
+              requested: Boolean(normalizationConfig?.outlierDetection?.enabled),
+              method: normalizationConfig?.outlierDetection?.method || 'iqr',
+              iqrCoefficient: normalizationConfig?.outlierDetection?.iqrCoefficient,
+              zscoreDeviation: normalizationConfig?.outlierDetection?.zscoreDeviation,
+              action: normalizationConfig?.outlierDetection?.action || 'impute',
+            },
+          },
     };
 
     try {

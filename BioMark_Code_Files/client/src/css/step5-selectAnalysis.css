@@ -206,7 +206,7 @@
 .survival-column-row .param-input .searchable-column-list-container {
   margin-top: 4px;
   margin-bottom: 0;
-  max-width: 100%;
+  max-width: 16%;
 }
 
 .survival-validation-error {

@@ -83,6 +83,120 @@ const AnalysisReport = ({
     ? datasetNameList.join('_').replace(/[\s,]+/g, '_').replace(/[<>:"/\\|?*]/g, '')
     : 'Unknown_File';
 
+  const deriveNormalizationDetails = useCallback((metadata = {}) => {
+    if (!metadata || typeof metadata !== 'object') {
+      return ['Normalization: Not applied'];
+    }
+
+    let config = metadata.normalizationConfig || metadata.executedNormalizationConfig || null;
+
+    if (!config && metadata.normalizationPipeline && typeof metadata.normalizationPipeline === 'object') {
+      const pipeline = metadata.normalizationPipeline;
+      const pipelineType = (metadata.normalizationPipelineType || (pipeline.mogonetPreprocess ? 'mogonet' : 'standard')).toLowerCase();
+
+      if (pipelineType === 'mogonet') {
+        const mogonetCfg = pipeline.mogonetPreprocess || {};
+        config = {
+          pipelineType: 'mogonet',
+          mogonet: {
+            omicsType: mogonetCfg.omicsType || 'mRNA',
+            fdrAlpha: mogonetCfg.fdrAlpha ?? 0.05,
+            varThreshMrna: mogonetCfg.varThreshMrna ?? 0.1,
+            varThreshMeth: mogonetCfg.varThreshMeth ?? 0.001,
+            pc1Max: mogonetCfg.pc1Max ?? 0.5,
+            minKeep: mogonetCfg.minKeep ?? 200,
+            maxKeep: mogonetCfg.maxKeep ?? 300,
+            hm27Restriction: Boolean(mogonetCfg.hm27Restriction),
+            hm27ArtifactPath: mogonetCfg.hm27ArtifactPath || '../artifacts/hm27_probe_ids.json',
+          },
+        };
+      } else {
+        const log = pipeline.logTransformation || {};
+        const batch = pipeline.batchEffectCorrection || {};
+        const norm = pipeline.normalization || {};
+        const outlier = pipeline.outlierDetection || {};
+
+        config = {
+          pipelineType: 'standard',
+          logTransform: {
+            enabled: Boolean(log.requested),
+            base: log.base,
+            offset: log.offset,
+          },
+          batchCorrection: {
+            enabled: Boolean(batch.requested),
+            batchColumn: batch.batchColumn || '',
+            covariates: Array.isArray(batch.covariates) ? batch.covariates : [],
+            parametric: Boolean(batch.parametric),
+          },
+          normalization: {
+            enabled: Boolean(norm.requested),
+            method: norm.method || 'zscore',
+            zscore: norm.zscore || { center: true, scale: true },
+            minmax: norm.minmax || { rangeMin: 0, rangeMax: 1 },
+            quantile: {
+              tieBreaking: norm?.quantile?.tieBreaking || norm?.quantile?.tieBreakingMethod || 'mean',
+            },
+          },
+          outlierDetection: {
+            enabled: Boolean(outlier.requested),
+            method: outlier.method || 'iqr',
+            iqrCoefficient: outlier.iqrCoefficient,
+            zscoreDeviation: outlier.zscoreDeviation,
+            action: outlier.action || 'impute',
+          },
+        };
+      }
+    }
+
+    if (!config) {
+      if (metadata.normalizationMode === 'skipped') return ['Normalization: Skipped'];
+      if (metadata.normalizationMode === 'normalized') return ['Normalization: Applied (details unavailable)'];
+      if (metadata.normalizationMode === 'preloaded') return ['Normalization: Loaded from previous results (no saved config)'];
+      return ['Normalization: Not applied'];
+    }
+
+    const pipelineType = (config.pipelineType || 'standard').toLowerCase();
+    if (pipelineType === 'mogonet') {
+      const mogonetCfg = config.mogonet || {};
+      return [
+        'Normalization: Applied (MOGONET-Style)',
+        `Omics Type=${mogonetCfg.omicsType || 'mRNA'}, FDR Alpha=${mogonetCfg.fdrAlpha ?? 0.05}`,
+        `Keep Range=${mogonetCfg.minKeep ?? 200}-${mogonetCfg.maxKeep ?? 300}, PC1 Max=${mogonetCfg.pc1Max ?? 0.5}`,
+      ];
+    }
+
+    const logCfg = config.logTransform || {};
+    const batchCfg = config.batchCorrection || {};
+    const normCfg = config.normalization || {};
+    const outlierCfg = config.outlierDetection || {};
+
+    return [
+      'Normalization: Applied (Standard Pipeline)',
+      `Log=${logCfg.enabled ? `on (base=${logCfg.base}, offset=${logCfg.offset})` : 'off'}`,
+      `Batch=${batchCfg.enabled ? `on (column=${batchCfg.batchColumn || 'N/A'}, ${batchCfg.parametric ? 'parametric' : 'non-parametric'})` : 'off'}`,
+      `Norm=${normCfg.enabled ? `${normCfg.method || 'zscore'}` : 'off'}, Outlier=${outlierCfg.enabled ? `${outlierCfg.method || 'iqr'} (${outlierCfg.action || 'impute'})` : 'off'}`,
+    ];
+  }, []);
+
+  const normalizationSummaryLines = useMemo(() => {
+    if (!Array.isArray(analysisResults) || analysisResults.length === 0) {
+      return ['Normalization: Not applied'];
+    }
+
+    const detailsPerAnalysis = analysisResults.map((analysis) => ({
+      classPair: analysis?.classPair || 'N/A',
+      lines: deriveNormalizationDetails(analysis?.parameters || {}),
+    }));
+
+    const uniqueSignatures = new Set(detailsPerAnalysis.map((entry) => entry.lines.join('|')));
+    if (uniqueSignatures.size <= 1) {
+      return detailsPerAnalysis[0]?.lines || ['Normalization: Not applied'];
+    }
+
+    return detailsPerAnalysis.map((entry) => `${entry.classPair}: ${entry.lines.join(' | ')}`);
+  }, [analysisResults, deriveNormalizationDetails]);
+
   // Helper to render analysis type selections (supports old and new keys)
   const buildAnalysisTypesText = (typesObj) => {
     if (!typesObj || typeof typesObj !== 'object') return 'N/A';
@@ -576,6 +690,14 @@ const AnalysisReport = ({
         const lines = pdf.splitTextToSize(datasetNamesDisplay, maxLineWidth);
         pdf.text(lines, leftColumnX + 40, yPosition);
         yPosition += lineHeight * lines.length + 5;
+
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Normalization:', leftColumnX, yPosition);
+        pdf.setFont('helvetica', 'normal');
+        const normalizationText = normalizationSummaryLines.join('\n');
+        const normLines = pdf.splitTextToSize(normalizationText, maxLineWidth);
+        pdf.text(normLines, leftColumnX + 40, yPosition);
+        yPosition += lineHeight * normLines.length + 6;
       }
 
       if (Object.keys(groupedAnalyses).length > 0) {
@@ -693,7 +815,9 @@ const AnalysisReport = ({
           pdf.setFontSize(12);
           pdf.setFont('helvetica', 'bold');
           pdf.setTextColor(70, 70, 70);
-          const formattedClassPair = summaryAnalysis.classPair ? summaryAnalysis.classPair.split('_').join(' vs ') : 'All Classes';
+          // classPair = ClassA_vs_ClassB_vs_ClassC -> ClassA vs ClassB vs ClassC
+          // not ClassA vs vs vs ClassB vs vs vs ClassC
+          const formattedClassPair = summaryAnalysis.classPair ? summaryAnalysis.classPair.replaceAll('_', ' ') : 'All Classes';
           pdf.text(`Summary for: ${formattedClassPair}`, marginLeft, yPosition);
           yPosition += 8;
 
@@ -737,7 +861,7 @@ const AnalysisReport = ({
               pdf.setFontSize(12);
               pdf.setFont('helvetica', 'bold');
               pdf.setTextColor(70, 70, 70);
-              const formattedClassPairContinued = summaryAnalysis.classPair ? summaryAnalysis.classPair.split('_').join(' vs ') : 'All Classes';
+              const formattedClassPairContinued = summaryAnalysis.classPair ? summaryAnalysis.classPair.replaceAll('_', ' ') : 'All Classes';
               pdf.text(`Summary for: ${formattedClassPairContinued} (Continued)`, marginLeft, yPosition);
               yPosition += 8;
             }
@@ -898,7 +1022,7 @@ const AnalysisReport = ({
             yPosition = topMargin - 20;
           }
 
-          const friendlyPair = entry.classPair ? entry.classPair.split('_').join(' vs ') : `Analysis ${index + 1}`;
+          const friendlyPair = entry.classPair ? entry.classPair.replaceAll('_', ' ') : `Analysis ${index + 1}`;
           const displayName = entry.analysisDisplayName || entry.analysisType || 'Pathway Enrichment';
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(12);
@@ -1605,10 +1729,20 @@ const AnalysisReport = ({
           <div className="report-section">
             <h3>1. Analysis Summary</h3>
             {datasetNameList.length > 0 && (
-              <div className="info-row">
-                <span className="label">{datasetNameList.length > 1 ? 'Dataset Files:' : 'Dataset Filename:'}</span>
-                <span className="value">{datasetNamesDisplay}</span>
-              </div>
+              <>
+                <div className="info-row">
+                  <span className="label">{datasetNameList.length > 1 ? 'Dataset Files:' : 'Dataset Filename:'}</span>
+                  <span className="value">{datasetNamesDisplay}</span>
+                </div>
+                <div className="info-row normalization-info-row">
+                  <span className="label">Normalization:</span>
+                  <span className="value normalization-details-list">
+                    {normalizationSummaryLines.map((line) => (
+                      <span key={line} className="normalization-details-line">{line}</span>
+                    ))}
+                  </span>
+                </div>
+              </>
             )}
             {Object.keys(groupedAnalyses).length > 0 ? (
               Object.entries(groupedAnalyses).map(([classPair, analysesInGroup]) => (
@@ -1685,7 +1819,7 @@ const AnalysisReport = ({
               <h3>{enrichmentSectionNumber}. Enrichment Analyses</h3>
               <div className="kegg-analysis-results">
                 {enrichmentAnalyses.map((entry, index) => {
-                  const friendlyPair = entry.classPair ? entry.classPair.split('_').join(' vs ') : 'All Classes';
+                  const friendlyPair = entry.classPair ? entry.classPair.replaceAll('_', ' ') : 'All Classes';
                   const displayName = entry.analysisDisplayName || entry.analysisType || 'Pathway Enrichment';
                   const rows = Array.isArray(entry.table?.rows) ? entry.table.rows : [];
                   const columns = buildKeggColumns(entry.table);

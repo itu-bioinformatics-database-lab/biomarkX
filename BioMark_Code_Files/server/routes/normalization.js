@@ -6,9 +6,10 @@ const router = express.Router();
 
 const getPythonCommand = () => (process.platform === 'win32' ? 'python' : 'python3');
 const NORMALIZATION_SCRIPT = path.join(__dirname, '..', 'services', 'normalize_pipeline.py');
+const MOGONET_PREPROCESS_SCRIPT = path.join(__dirname, '..', 'services', 'mogonet_preprocess_pipeline.py');
 
-const runNormalizationTemplate = (payload) => new Promise((resolve, reject) => {
-  const python = spawn(getPythonCommand(), ['-Xfrozen_modules=off', NORMALIZATION_SCRIPT], {
+const runNormalizationTemplate = (scriptPath, payload) => new Promise((resolve, reject) => {
+  const python = spawn(getPythonCommand(), ['-Xfrozen_modules=off', scriptPath], {
     stdio: ['pipe', 'pipe', 'pipe']
   });
 
@@ -51,6 +52,7 @@ const runNormalizationTemplate = (payload) => new Promise((resolve, reject) => {
 router.post('/normalize-dataset', async (req, res) => {
   try {
     const body = req.body || {};
+    const requestedPipelineType = String(body.normalizationPipelineType || 'standard').toLowerCase();
 
     if (!body.filePath || typeof body.filePath !== 'string') {
       return res.status(400).json({
@@ -66,7 +68,19 @@ router.post('/normalize-dataset', async (req, res) => {
       });
     }
 
-    const result = await runNormalizationTemplate(body);
+    let scriptPath = NORMALIZATION_SCRIPT;
+
+    if (requestedPipelineType === 'mogonet') {
+      if (!body.normalizationPipeline.mogonetPreprocess || typeof body.normalizationPipeline.mogonetPreprocess !== 'object') {
+        return res.status(400).json({
+          success: false,
+          message: 'normalizationPipeline.mogonetPreprocess object is required for MOGONET preprocessing.'
+        });
+      }
+      scriptPath = MOGONET_PREPROCESS_SCRIPT;
+    }
+
+    const result = await runNormalizationTemplate(scriptPath, body);
 
     if (!result || result.success === false) {
       return res.status(400).json({

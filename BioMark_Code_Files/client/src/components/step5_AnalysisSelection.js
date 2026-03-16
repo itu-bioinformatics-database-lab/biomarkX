@@ -330,20 +330,23 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
           <div className="stage-switch" style={{ display: 'inline-flex', border: '1px solid #d7e2ff', borderRadius: 999, overflow: 'hidden' }}>
             <button
               type="button"
-              onClick={() => onToggleAfterFS && onToggleAfterFS(false)}
-              style={{ padding: '6px 12px', background: afterFeatureSelection ? '#fff' : '#eef3fd', color: afterFeatureSelection ? '#2b365a' : '#2f4fb5', border: 'none', fontWeight: 700, cursor: 'pointer', position: 'static', marginTop: 0 }}
+              onClick={() => { onToggleAfterFS && onToggleAfterFS(false); }}
+              style={{ padding: '6px 12px', background: !afterFeatureSelection ? '#eef3fd' : '#fff', color: !afterFeatureSelection ? '#2f4fb5' : '#2b365a', border: 'none', fontWeight: 700, cursor: 'pointer', position: 'static', marginTop: 0 }}
             >
               All Features
             </button>
-            <button
-              type="button"
-              title={canUseAfterFS ? "Use ranked top-N features" : "Top-N selection is disabled until a prior run produces feature importances."}
-              onClick={() => (canUseAfterFS && onToggleAfterFS) ? onToggleAfterFS(true) : null}
-              disabled={!canUseAfterFS}
-              style={{ padding: '6px 12px', background: afterFeatureSelection ? '#eef3fd' : '#fff', color: afterFeatureSelection ? '#2f4fb5' : '#2b365a', border: 'none', fontWeight: 700, cursor: canUseAfterFS ? 'pointer' : 'not-allowed', opacity: canUseAfterFS ? 1 : 0.6, position: 'static', marginTop: 0 }}
-            >
-              Selected Top-{computedNumTopFeatures ?? numTopFeatures}
-            </button>
+            {[10, 20, 30].map(n => (
+              <button
+                key={n}
+                type="button"
+                title={canUseAfterFS ? `Use ranked top-${n} features` : "Top-N selection is disabled until a prior run produces feature importances."}
+                onClick={() => { if (canUseAfterFS && onToggleAfterFS) { onToggleAfterFS(true); onNumTopFeaturesChange && onNumTopFeaturesChange(n); setNumTopFeatures(n); } }}
+                disabled={!canUseAfterFS}
+                style={{ padding: '6px 12px', background: afterFeatureSelection && (computedNumTopFeatures ?? numTopFeatures) === n ? '#eef3fd' : '#fff', color: afterFeatureSelection && (computedNumTopFeatures ?? numTopFeatures) === n ? '#2f4fb5' : '#2b365a', border: 'none', fontWeight: 700, cursor: canUseAfterFS ? 'pointer' : 'not-allowed', opacity: canUseAfterFS ? 1 : 0.6, position: 'static', marginTop: 0 }}
+              >
+                Selected Top-{n}
+              </button>
+            ))}
           </div>
           <span style={{ marginLeft: 6, padding: '4px 10px', borderRadius: 999, background: '#f1f5ff', border: '1px solid #d7e2ff', color: '#2f4fb5', fontSize: 12, fontWeight: 700 }}>
             {afterFeatureSelection ? `Will run on: Selected Top-${computedNumTopFeatures ?? numTopFeatures} Features` : 'Will run on: All Features'}

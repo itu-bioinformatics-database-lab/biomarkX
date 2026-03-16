@@ -117,6 +117,20 @@
   color: #666;
 }
 
+.normalization-info-row {
+  align-items: flex-start;
+}
+
+.normalization-details-list {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.normalization-details-line {
+  display: block;
+}
+
 .summary-image {
   margin: 20px 0;
   text-align: center;

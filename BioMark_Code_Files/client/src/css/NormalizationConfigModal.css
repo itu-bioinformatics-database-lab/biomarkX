@@ -125,6 +125,29 @@
 	color: #1c2b61;
 }
 
+.norm-pipeline-options {
+	display: flex;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.norm-pipeline-option {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	border: 1px solid #d7e2ff;
+	border-radius: 8px;
+	background: #ffffff;
+	cursor: pointer;
+	font-size: 13px;
+	color: #334;
+}
+
+.norm-pipeline-option input[type="radio"] {
+	accent-color: #2f4fb5;
+}
+
 /* ?? Params area ?? */
 .norm-step-params {
 	padding: 12px 14px;

@@ -411,8 +411,8 @@ export default function AnalysisDetailPage() {
                 className="analysis-title-input"
                 style={{ minWidth: '300px', width: `${Math.max(300, editNameValue.length * 18 + 40)}px` }}
               />
-              <button className="title-save-btn" onClick={saveDisplayName} title="Save">✓</button>
-              <button className="title-cancel-btn" onClick={cancelEditingName} title="Cancel">✕</button>
+              <button className="title-save-btn" onClick={saveDisplayName} title="Save">&#10004;</button>
+              <button className="title-cancel-btn" onClick={cancelEditingName} title="Cancel">&#10008;</button>
             </div>
           ) : (
             <h1>
@@ -421,7 +421,7 @@ export default function AnalysisDetailPage() {
               </span>
               {!isGuestUser() && (
                 <button className="title-rename-btn" onClick={startEditingName} title="Rename analysis">
-                  ✞︞
+                  &#9998;
                 </button>
               )}
             </h1>

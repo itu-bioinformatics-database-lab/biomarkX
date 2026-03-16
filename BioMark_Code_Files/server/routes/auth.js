@@ -165,7 +165,7 @@ router.post('/guest', async (req, res) => {
 });
 
 // Profile update endpoint
-router.post('/profile', async (req, res) => {
+const updateProfileHandler = async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ success: false, message: 'Missing token' });
   
@@ -232,6 +232,10 @@ router.post('/profile', async (req, res) => {
     console.error('Profile update error:', err);
     return res.status(500).json({ success: false, message: 'Failed to update profile' });
   }
-});
+};
+
+// Keep POST for backward compatibility and support PUT from current client.
+router.post('/profile', updateProfileHandler);
+router.put('/profile', updateProfileHandler);
 
 module.exports = router;

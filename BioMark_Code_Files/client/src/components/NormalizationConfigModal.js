@@ -2,6 +2,19 @@ import React, { useState, useMemo, useEffect } from 'react';
 import HelpTooltip from './common/HelpTooltip';
 import '../css/NormalizationConfigModal.css';
 
+const PIPELINE_OPTIONS = [
+  { value: 'standard', label: 'Standard Pipeline' },
+  { value: 'mogonet', label: 'MOGONET-Style Pipeline' },
+];
+
+const MOGONET_OMICS_TYPES = [
+  { value: 'mRNA', label: 'mRNA' },
+  { value: 'meth', label: 'DNA Methylation' },
+  { value: 'miRNA', label: 'miRNA' },
+  { value: 'proteomics', label: 'Proteomics' },
+  { value: 'metabolomics', label: 'Metabolomics' },
+];
+
 const NORMALIZATION_METHODS = [
   { value: 'zscore', label: 'Z-Score' },
   { value: 'minmax', label: 'Min-Max' },
@@ -20,6 +33,7 @@ const OUTLIER_ACTIONS = [
 ];
 
 const DEFAULT_CONFIG = {
+  pipelineType: 'standard',
   selectedProtectedColumns: [],
   logTransform: {
     enabled: true,
@@ -45,6 +59,18 @@ const DEFAULT_CONFIG = {
     iqrCoefficient: 1.5,
     zscoreDeviation: 3,
     action: 'impute',
+  },
+  mogonet: {
+    omicsType: 'mRNA',
+    fdrAlpha: 0.05,
+    varThreshMrna: 0.1,
+    varThreshMeth: 0.001,
+    pc1Max: 0.5,
+    minKeep: 200,
+    maxKeep: 300,
+    hm27Restriction: false,
+    hm27ArtifactPath: '../artifacts/hm27_probe_ids.json',
+    verbose: true,
   },
 };
 
@@ -248,13 +274,18 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
     });
   };
 
-  // Normalize button disabled when batch correction is enabled but no batch column selected
+  const isStandardPipeline = config.pipelineType === 'standard';
+
+  // Normalize button disabled when required options are missing
   const normalizeDisabled = useMemo(() => {
-    if (config.batchCorrection.enabled && !config.batchCorrection.batchColumn) {
+    if (isStandardPipeline && config.batchCorrection.enabled && !config.batchCorrection.batchColumn) {
+      return true;
+    }
+    if (!isStandardPipeline && !config.mogonet.omicsType) {
       return true;
     }
     return false;
-  }, [config.batchCorrection.enabled, config.batchCorrection.batchColumn]);
+  }, [isStandardPipeline, config.batchCorrection.enabled, config.batchCorrection.batchColumn, config.mogonet.omicsType]);
 
   const handleNormalize = () => {
     const batchColumn = config.batchCorrection.batchColumn;
@@ -263,14 +294,26 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
     const requested = (config.batchCorrection.covariates || []).filter((c) => c && c !== batchColumn);
     const mergedCovariates = Array.from(new Set([...forced, ...requested]));
 
-    const payload = {
-      ...config,
-      selectedProtectedColumns: Array.from(new Set(protectedCols)),
-      batchCorrection: {
-        ...config.batchCorrection,
-        covariates: mergedCovariates,
-      },
-    };
+    let payload;
+    if (config.pipelineType === 'mogonet') {
+      payload = {
+        pipelineType: 'mogonet',
+        selectedProtectedColumns: Array.from(new Set(protectedCols)),
+        mogonet: {
+          ...config.mogonet,
+        },
+      };
+    } else {
+      payload = {
+        ...config,
+        pipelineType: 'standard',
+        selectedProtectedColumns: Array.from(new Set(protectedCols)),
+        batchCorrection: {
+          ...config.batchCorrection,
+          covariates: mergedCovariates,
+        },
+      };
+    }
 
     onNormalize(payload);
   };
@@ -286,6 +329,31 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
         </div>
 
         <div className="norm-modal-body">
+
+          {/* Pipeline Selection */}
+          <div className="norm-pipeline-step">
+            <div className="norm-step-header">
+              <label className="norm-checkbox-label">
+                <span className="norm-step-title">Pipeline Selection</span>
+              </label>
+              <HelpTooltip useFixedPosition placement="right" text="Choose one preprocessing pipeline. Selecting MOGONET-Style disables the Standard pipeline checks.">info</HelpTooltip>
+            </div>
+            <div className="norm-step-params">
+              <div className="norm-pipeline-options">
+                {PIPELINE_OPTIONS.map((option) => (
+                  <label key={option.value} className="norm-pipeline-option">
+                    <input
+                      type="radio"
+                      name="pipelineType"
+                      checked={config.pipelineType === option.value}
+                      onChange={() => setConfig((prev) => ({ ...prev, pipelineType: option.value }))}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
 
           {/*  0. Protected Columns  */}
           <div className="norm-pipeline-step">
@@ -337,6 +405,10 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
               </div>
             </div>
           </div>
+
+          {/* Standard Pipeline */}
+          {isStandardPipeline && (
+            <>
 
           {/*  1. Log Transformation  */}
           <div className={`norm-pipeline-step ${!config.logTransform.enabled ? 'is-disabled' : ''}`}>
@@ -658,12 +730,168 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
             )}
           </div>
 
+            </>
+          )}
+
+          {/* MOGONET-Style Pipeline */}
+          {!isStandardPipeline && (
+            <div className="norm-pipeline-step">
+              <div className="norm-step-header">
+                <label className="norm-checkbox-label">
+                  <span className="norm-step-title">MOGONET-Style Feature Preprocessing</span>
+                </label>
+                <HelpTooltip useFixedPosition placement="right" text="Runs supervised feature preprocessing inspired by MOGONET: variance filtering, ANOVA+FDR ranking, PC1-constrained feature count selection, and min-max scaling.">info</HelpTooltip>
+              </div>
+              <div className="norm-step-params">
+                <div className="norm-param-row">
+                  <label>
+                    Omics Type
+                    <HelpTooltip useFixedPosition text="Choose the omics mode to apply type-specific variance thresholds and optional HM27 restriction for methylation.">info</HelpTooltip>
+                  </label>
+                  <select
+                    value={config.mogonet.omicsType}
+                    onChange={(e) => update('mogonet', 'omicsType', e.target.value)}
+                  >
+                    {MOGONET_OMICS_TYPES.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="norm-param-row">
+                  <label>
+                    FDR Alpha
+                    <HelpTooltip useFixedPosition text="Benjamini-Hochberg FDR threshold used during ANOVA preselection.">info</HelpTooltip>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.001}
+                    value={config.mogonet.fdrAlpha}
+                    onChange={(e) => update('mogonet', 'fdrAlpha', Number(e.target.value))}
+                  />
+                </div>
+
+                <div className="norm-param-row">
+                  <label>
+                    PC1 Max Ratio
+                    <HelpTooltip useFixedPosition text="Increase selected features until PC1 explained variance is below this threshold.">info</HelpTooltip>
+                  </label>
+                  <input
+                    type="number"
+                    min={0.01}
+                    max={0.99}
+                    step={0.01}
+                    value={config.mogonet.pc1Max}
+                    onChange={(e) => update('mogonet', 'pc1Max', Number(e.target.value))}
+                  />
+                </div>
+
+                <div className="norm-param-row norm-param-row--inline">
+                  <label>
+                    Keep Range
+                    <HelpTooltip useFixedPosition text="Minimum and maximum number of features to keep after ranking.">info</HelpTooltip>
+                  </label>
+                  <div className="norm-range-inputs">
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={config.mogonet.minKeep}
+                      onChange={(e) => update('mogonet', 'minKeep', Number(e.target.value))}
+                    />
+                    <span>to</span>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={config.mogonet.maxKeep}
+                      onChange={(e) => update('mogonet', 'maxKeep', Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+
+                <div className="norm-param-row norm-param-row--inline">
+                  <label>
+                    Variance Thresholds
+                    <HelpTooltip useFixedPosition text="Type-specific variance thresholds: mRNA and methylation.">info</HelpTooltip>
+                  </label>
+                  <div className="norm-range-inputs">
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.001}
+                      value={config.mogonet.varThreshMrna}
+                      onChange={(e) => update('mogonet', 'varThreshMrna', Number(e.target.value))}
+                    />
+                    <span>mRNA</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.0001}
+                      value={config.mogonet.varThreshMeth}
+                      onChange={(e) => update('mogonet', 'varThreshMeth', Number(e.target.value))}
+                    />
+                    <span>meth</span>
+                  </div>
+                </div>
+
+                <div className="norm-param-row">
+                  <label>
+                    HM27 Restriction
+                    <HelpTooltip useFixedPosition text="For methylation datasets, restrict probes to HM27 list from the artifact path.">info</HelpTooltip>
+                  </label>
+                  <select
+                    value={config.mogonet.hm27Restriction ? 'true' : 'false'}
+                    onChange={(e) => update('mogonet', 'hm27Restriction', e.target.value === 'true')}
+                  >
+                    <option value="false">False</option>
+                    <option value="true">True</option>
+                  </select>
+                </div>
+
+                {config.mogonet.hm27Restriction && (
+                  <div className="norm-param-row">
+                    <label>
+                      HM27 Artifact Path
+                      <HelpTooltip useFixedPosition text="JSON file path containing HM27 probe ids array.">info</HelpTooltip>
+                    </label>
+                    <input
+                      type="text"
+                      value={config.mogonet.hm27ArtifactPath}
+                      onChange={(e) => update('mogonet', 'hm27ArtifactPath', e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <div className="norm-param-row">
+                  <label>
+                    Verbose Logs
+                    <HelpTooltip useFixedPosition text="Include detailed step statistics in the normalization log output.">info</HelpTooltip>
+                  </label>
+                  <select
+                    value={config.mogonet.verbose ? 'true' : 'false'}
+                    onChange={(e) => update('mogonet', 'verbose', e.target.value === 'true')}
+                  >
+                    <option value="true">True</option>
+                    <option value="false">False</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
 
         {/* Footer */}
         <div className="norm-modal-footer">
           {normalizeDisabled && (
-            <span className="norm-footer-hint">Select a Batch Column to enable normalization</span>
+            <span className="norm-footer-hint">
+              {isStandardPipeline
+                ? 'Select a Batch Column to enable normalization'
+                : 'Select Omics Type to enable preprocessing'}
+            </span>
           )}
           <div className="norm-footer-buttons">
             <button className="norm-btn-cancel" onClick={onClose}>Cancel</button>

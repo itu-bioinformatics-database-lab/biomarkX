@@ -107,7 +107,7 @@ export default function ProfilePage() {
         updateData.newPassword = formData.newPassword;
       }
 
-      const response = await api.put('/auth/update-profile', updateData, {
+      const response = await api.put('/auth/profile', updateData, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
