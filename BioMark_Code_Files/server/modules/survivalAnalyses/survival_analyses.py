@@ -17,6 +17,7 @@ from lifelines.statistics import logrank_test
 from sklearn.preprocessing import LabelEncoder
 
 from modules.logger import logging
+from modules.feature_selection import feature_rank
 
 
 class SurvivalAnalysis:
@@ -113,6 +114,63 @@ class SurvivalAnalysis:
             self.class_names = sorted(self.data[self.labels_column].dropna().unique().tolist(), key=str)
         else:
             self.class_names = []
+
+    def _save_cox_ranking_outputs(self, results_df):
+        """Persist Cox feature scores for the shared ranking pipeline."""
+        if results_df is None or results_df.empty:
+            return
+
+        # Convert Cox p-values to a higher-is-better importance score for rank fusion.
+        cox_scores = {}
+        for _, row in results_df.iterrows():
+            feature_name = str(row.get("Feature", "")).strip()
+            if not feature_name:
+                continue
+            p_val = pd.to_numeric(row.get("p_value"), errors="coerce")
+            if pd.isna(p_val):
+                continue
+            bounded_p = float(max(min(p_val, 1.0), 1e-300))
+            cox_scores[feature_name] = float(-np.log10(bounded_p))
+
+        if not cox_scores:
+            return
+
+        base_outdir = os.path.dirname(self.outdir)
+        json_path = os.path.join(base_outdir, "feature_importances.json")
+
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
+                try:
+                    existing_data = json.load(f)
+                except json.JSONDecodeError:
+                    existing_data = {}
+        else:
+            existing_data = {}
+
+        class_pair = "_vs_".join(sorted(str(c) for c in self.class_names)) if len(self.class_names) >= 2 else "all_classes"
+        if class_pair not in existing_data:
+            existing_data[class_pair] = {}
+
+        existing_data[class_pair]["cox_regression"] = {
+            feature: float(score) for feature, score in cox_scores.items()
+        }
+
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(existing_data, f, indent=4)
+
+        # Also generate method-specific ranking CSV so Cox appears alongside other analyses.
+        filtered_for_ranking = {
+            class_pair: {
+                "cox_regression": cox_scores,
+            }
+        }
+        feature_rank(
+            top_features=filtered_for_ranking,
+            num_top_features=self.top_features_to_plot,
+            feature_type="microRNA",
+            outdir=base_outdir,
+            subdir_label="method=survival_analysis,analysis=cox_regression",
+        )
 
     # ------------------------------------------------------------------
     # Kaplan-Meier
@@ -276,14 +334,11 @@ class SurvivalAnalysis:
         drop_cols = []
         if self.sample_id_column in self.data.columns:
             drop_cols.append(self.sample_id_column)
+        # Never model the selected illness/group column as a predictor.
+        if self.labels_column in self.data.columns and self.labels_column not in [self.time_column, self.event_column]:
+            drop_cols.append(self.labels_column)
 
         model_data = self.data.drop(columns=drop_cols, errors='ignore').copy()
-
-        # Encode categorical label column if present as a feature
-        if self.labels_column in model_data.columns:
-            if model_data[self.labels_column].dtype == object or model_data[self.labels_column].dtype.name == 'category':
-                le = LabelEncoder()
-                model_data[self.labels_column] = le.fit_transform(model_data[self.labels_column].astype(str))
 
         # Convert remaining object columns to numeric or encode
         for col in model_data.columns:
@@ -310,7 +365,7 @@ class SurvivalAnalysis:
 
         # Feature columns (everything except time and event)
         feature_cols = [c for c in model_data.columns
-                        if c not in [self.time_column, self.event_column]]
+                        if c not in [self.time_column, self.event_column, self.sample_id_column, self.labels_column]]
 
         if not feature_cols:
             print("ERROR: No feature columns available for Cox regression.")
@@ -356,6 +411,11 @@ class SurvivalAnalysis:
         # Save full results CSV
         csv_path = os.path.join(cox_dir, "cox_regression_results.csv")
         results_df.to_csv(csv_path, index=False, sep=";", encoding="utf-8-sig")
+
+        try:
+            self._save_cox_ranking_outputs(results_df)
+        except Exception as e:
+            print(f"WARNING: Failed to save Cox ranking outputs: {e}")
 
         # --- Forest plot of top features ---
         top_n = results_df.head(self.top_features_to_plot).copy()

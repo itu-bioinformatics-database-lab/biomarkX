@@ -168,7 +168,7 @@ def _load_hm27_ids(path_value):
 def mogonet_preprocess(
     X,
     y,
-    omics_type,
+    omics_type="mRNA",
     fdr_alpha=0.05,
     var_thresh_mrna=0.1,
     var_thresh_meth=0.001,
@@ -176,6 +176,7 @@ def mogonet_preprocess(
     min_keep=200,
     max_keep=300,
     hm27_probe_ids=None,
+    apply_log_transform=None,
     training_mask=None,
 ):
     if training_mask is None:
@@ -184,7 +185,10 @@ def mogonet_preprocess(
     X_train = X.loc[training_mask]
     y_train = y.loc[training_mask]
 
-    if omics_type in {"proteomics", "metabolomics"}:
+    if apply_log_transform is None:
+        apply_log_transform = str(omics_type).lower() in {"proteomics", "metabolomics"}
+
+    if apply_log_transform:
         X = X.apply(pd.to_numeric, errors="coerce")
         X_train = X_train.apply(pd.to_numeric, errors="coerce")
 
@@ -202,7 +206,7 @@ def mogonet_preprocess(
         X = np.log10(X + pseudocount)
         X_train = np.log10(X_train + pseudocount)
 
-    if omics_type == "meth" and hm27_probe_ids is not None:
+    if hm27_probe_ids is not None:
         keep_cols = [c for c in X.columns if c in hm27_probe_ids]
         if not keep_cols:
             return pd.DataFrame(index=X.index), {
@@ -225,10 +229,10 @@ def mogonet_preprocess(
             "reason": "no_features_after_zero_variance_filter",
         }
 
-    if omics_type == "mRNA":
-        vt = VarianceThreshold(threshold=float(var_thresh_mrna))
-    elif omics_type == "meth":
+    if hm27_probe_ids is not None or omics_type == "meth":
         vt = VarianceThreshold(threshold=float(var_thresh_meth))
+    elif omics_type == "mRNA":
+        vt = VarianceThreshold(threshold=float(var_thresh_mrna))
     else:
         vt = VarianceThreshold(threshold=0.0)
 
@@ -279,8 +283,9 @@ def mogonet_preprocess(
         "selectedFeatureCount": int(X_sel.shape[1]),
         "pc1Max": float(pc1_max),
         "fdrAlpha": float(fdr_alpha),
+        "logTransformApplied": bool(apply_log_transform),
         "significantFeatureCount": int((qvals <= float(fdr_alpha)).sum()),
-        "hm27Restricted": bool(omics_type == "meth" and hm27_probe_ids is not None),
+        "hm27Restricted": bool(hm27_probe_ids is not None),
         "hm27KeptCount": int(len([c for c in X_sel.columns if hm27_probe_ids and c in hm27_probe_ids])) if hm27_probe_ids is not None else None,
     }
     return X_sel, stats
@@ -321,15 +326,22 @@ def _run_pipeline(payload):
         raise ValueError("MOGONET preprocessing requires at least two classes in selected illness column.")
 
     omics_type = str(mogonet_cfg.get("omicsType", "mRNA"))
+    apply_log_transform_raw = mogonet_cfg.get("applyLogTransform")
+    if apply_log_transform_raw is None:
+        apply_log_transform = str(omics_type).lower() in {"proteomics", "metabolomics"}
+    else:
+        apply_log_transform = _to_bool(apply_log_transform_raw, False)
+
     hm27_probe_ids = None
     hm27_restriction = _to_bool(mogonet_cfg.get("hm27Restriction"), False)
-    if hm27_restriction and omics_type == "meth":
+    if hm27_restriction:
         hm27_probe_ids = _load_hm27_ids(mogonet_cfg.get("hm27ArtifactPath", ""))
 
     X_sel, mogonet_stats = mogonet_preprocess(
         X=X,
         y=y,
         omics_type=omics_type,
+        apply_log_transform=apply_log_transform,
         fdr_alpha=mogonet_cfg.get("fdrAlpha", 0.05),
         var_thresh_mrna=mogonet_cfg.get("varThreshMrna", 0.1),
         var_thresh_meth=mogonet_cfg.get("varThreshMeth", 0.001),
@@ -358,14 +370,14 @@ def _run_pipeline(payload):
     effective_pipeline = {
         "mogonetPreprocess": {
             "requested": True,
-            "omicsType": omics_type,
+            "applyLogTransform": bool(apply_log_transform),
             "fdrAlpha": float(mogonet_cfg.get("fdrAlpha", 0.05)),
             "varThreshMrna": float(mogonet_cfg.get("varThreshMrna", 0.1)),
             "varThreshMeth": float(mogonet_cfg.get("varThreshMeth", 0.001)),
             "pc1Max": float(mogonet_cfg.get("pc1Max", 0.5)),
             "minKeep": int(mogonet_cfg.get("minKeep", 200)),
             "maxKeep": int(mogonet_cfg.get("maxKeep", 300)),
-            "hm27Restriction": bool(hm27_restriction and omics_type == "meth"),
+            "hm27Restriction": bool(hm27_restriction),
             "hm27ArtifactPath": mogonet_cfg.get("hm27ArtifactPath"),
             "verbose": _to_bool(mogonet_cfg.get("verbose"), True),
         }

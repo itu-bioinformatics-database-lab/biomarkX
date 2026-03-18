@@ -10,7 +10,7 @@ import FavoriteBorder from '@mui/icons-material/FavoriteBorder';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
 
-function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatureSelection, onToggleAfterFS, canUseAfterFS, computedNumTopFeatures, onNumTopFeaturesChange, numSelectedClasses, availableColumns = [], selectedIllnessColumn = '', selectedSampleColumn = '' }) {
+function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatureSelection, onToggleAfterFS, canUseAfterFS, selectedTopFeaturesCount = 20, onSelectedTopFeaturesChange, numSelectedClasses, availableColumns = [], selectedIllnessColumn = '', selectedSampleColumn = '' }) {
   const [selectedAnalyses, setSelectedAnalyses] = useState({
     statisticalTest: [],
     dimensionalityReduction: [],
@@ -62,6 +62,18 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
   // Common parameters
   const [testSize, setTestSize] = useState(0.2);
   const [nFolds, setNFolds] = useState(5);
+
+  const baseTopFeatureOptions = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  const maxNumTopFeatures = afterFeatureSelection ? selectedTopFeaturesCount : 100;
+  const allowedNumTopFeatureOptions = baseTopFeatureOptions.filter((num) => num <= maxNumTopFeatures);
+
+  useEffect(() => {
+    if (afterFeatureSelection && numTopFeatures > selectedTopFeaturesCount) {
+      setNumTopFeatures(selectedTopFeaturesCount);
+      setParamsChanged(true);
+      setUseDefaultParams(false);
+    }
+  }, [afterFeatureSelection, selectedTopFeaturesCount, numTopFeatures]);
 
   const survivalColumnOptions = availableColumns.filter((column) => (
     column !== selectedIllnessColumn && column !== selectedSampleColumn
@@ -327,6 +339,7 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
       {/* Centered feature stage row above confirm button and tables */}
       <div className="feature-stage-row" style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, padding: '10px 0 8px 0', flexWrap: 'wrap' }}>
           <div style={{ fontWeight: 700 }}>Feature selection stage</div>
+          <HelpTooltip text={"Select the number of features to use for analysis. Top-N features will be selected based on their importance scores of the last combined result or the last executed analysis. If there are less than N features available, all available features will be used."} />
           <div className="stage-switch" style={{ display: 'inline-flex', border: '1px solid #d7e2ff', borderRadius: 999, overflow: 'hidden' }}>
             <button
               type="button"
@@ -340,16 +353,16 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
                 key={n}
                 type="button"
                 title={canUseAfterFS ? `Use ranked top-${n} features` : "Top-N selection is disabled until a prior run produces feature importances."}
-                onClick={() => { if (canUseAfterFS && onToggleAfterFS) { onToggleAfterFS(true); onNumTopFeaturesChange && onNumTopFeaturesChange(n); setNumTopFeatures(n); } }}
+                onClick={() => { if (canUseAfterFS && onToggleAfterFS) { onToggleAfterFS(true); onSelectedTopFeaturesChange && onSelectedTopFeaturesChange(n); } }}
                 disabled={!canUseAfterFS}
-                style={{ padding: '6px 12px', background: afterFeatureSelection && (computedNumTopFeatures ?? numTopFeatures) === n ? '#eef3fd' : '#fff', color: afterFeatureSelection && (computedNumTopFeatures ?? numTopFeatures) === n ? '#2f4fb5' : '#2b365a', border: 'none', fontWeight: 700, cursor: canUseAfterFS ? 'pointer' : 'not-allowed', opacity: canUseAfterFS ? 1 : 0.6, position: 'static', marginTop: 0 }}
-              >
+                style={{ padding: '6px 12px', background: afterFeatureSelection && selectedTopFeaturesCount === n ? '#eef3fd' : '#fff', color: afterFeatureSelection && selectedTopFeaturesCount === n ? '#2f4fb5' : '#2b365a', border: 'none', fontWeight: 700, cursor: canUseAfterFS ? 'pointer' : 'not-allowed', opacity: canUseAfterFS ? 1 : 0.6, position: 'static', marginTop: 0 }}
+                >
                 Selected Top-{n}
               </button>
             ))}
           </div>
           <span style={{ marginLeft: 6, padding: '4px 10px', borderRadius: 999, background: '#f1f5ff', border: '1px solid #d7e2ff', color: '#2f4fb5', fontSize: 12, fontWeight: 700 }}>
-            {afterFeatureSelection ? `Will run on: Selected Top-${computedNumTopFeatures ?? numTopFeatures} Features` : 'Will run on: All Features'}
+            {afterFeatureSelection ? `Will run on: Selected Top-${selectedTopFeaturesCount} Features` : 'Will run on: All Features'}
           </span>
       </div>
       <div className="analysis-content-wrapper">
@@ -670,11 +683,11 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
                 <div className="param-row">
                   <div className="param-label">
                     num_top_features
-                    <span className="param-tooltip">Number of top features to select and display in the results.</span>
+                    <span className="param-tooltip">Number of top ranked features to display in outputs.</span>
                   </div>
                   <div className="param-input">
                     <select value={numTopFeatures} onChange={(e) => { setNumTopFeatures(Number(e.target.value)); handleParamChange(); }}>
-                      {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(num => (<option key={num} value={num}>{num}</option>))}
+                      {allowedNumTopFeatureOptions.map(num => (<option key={num} value={num}>{num}</option>))}
                     </select>
                   </div>
                 </div>

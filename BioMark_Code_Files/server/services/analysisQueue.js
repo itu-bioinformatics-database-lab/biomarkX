@@ -45,6 +45,8 @@ analysisQueue.process(async (job) => {
     mergedFileId,
     sourceFiles,
     useDefaultParams,
+    afterFeatureSelection,
+    selectedTopFeaturesCount,
     customParams,
   } = job.data;
 
@@ -69,9 +71,15 @@ analysisQueue.process(async (job) => {
       ...(analysisMethods.statisticalTest || []),
       ...(analysisMethods.modelExplanation || [])
     ];
-    const safeAfterFeatureSelection = customParams?.afterFeatureSelection === undefined 
-      ? false 
-      : customParams.afterFeatureSelection;
+    const safeAfterFeatureSelection = afterFeatureSelection === undefined
+      ? (customParams?.afterFeatureSelection === undefined ? false : customParams.afterFeatureSelection)
+      : afterFeatureSelection;
+    const safeSelectedTopFeaturesCount = Number.isFinite(Number(selectedTopFeaturesCount))
+      ? Number(selectedTopFeaturesCount)
+      : 20;
+    const resolvedNumTopFeatures = safeAfterFeatureSelection
+      ? Math.min(Number(customParams?.numTopFeatures || 20), safeSelectedTopFeaturesCount)
+      : Number(customParams?.numTopFeatures || 20);
     
     const pythonArgs = [
       '-Xfrozen_modules=off',
@@ -91,6 +99,7 @@ analysisQueue.process(async (job) => {
       Array.isArray(nonFeatureColumns) ? nonFeatureColumns : [],
       Array.isArray(safeIsDiffAnalysis) ? safeIsDiffAnalysis.join(',') : '',
       String(safeAfterFeatureSelection),
+      String(safeSelectedTopFeaturesCount),
       Array.isArray(analysisMethods.survivalAnalysis) && analysisMethods.survivalAnalysis.length > 0 
         ? analysisMethods.survivalAnalysis.join(',') : ''
     ];
@@ -106,7 +115,7 @@ analysisQueue.process(async (job) => {
         lime_model_finetune: !!customParams.limeModelFinetune,
         scoring: customParams.scoring || "f1",
         feature_importance_finetune: !!customParams.featureImportanceFinetune,
-        num_top_features: customParams.numTopFeatures || 20,
+        num_top_features: resolvedNumTopFeatures,
         plotter: customParams.plotter || "seaborn",
         dim: customParams.dim || "3D",
         param_finetune: !!customParams.paramFinetune,
@@ -126,6 +135,7 @@ analysisQueue.process(async (job) => {
         cox_tie_method: customParams.coxTieMethod || "efron",
         is_diff_analysis: Array.isArray(safeIsDiffAnalysis) ? safeIsDiffAnalysis.join(',') : '',
         after_feature_selection: String(safeAfterFeatureSelection),
+        selected_top_features_count: safeSelectedTopFeaturesCount,
         resampling_method: customParams.resamplingMethod || null,
         resampling_params: customParams.resamplingParams || {}
       }));

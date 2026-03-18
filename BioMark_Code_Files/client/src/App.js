@@ -170,6 +170,20 @@ const normalizeAndSortClasses = (classArray = []) => {
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
 };
 
+const normalizeMethodToken = (value = '') => {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+};
+
+const normalizeModelToken = (value = '') => {
+  return String(value || '')
+    .trim()
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+};
+
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -279,6 +293,7 @@ function App() {
   const [_isDiffAnalysisClasses, setIsDiffAnalysisClasses] = useState([]); // Stores classes for differential analysis
   const [afterFeatureSelection, setAfterFeatureSelection] = useState(false);
   const [canUseAfterFS, setCanUseAfterFS] = useState(false); // availability of top-N features
+  const [selectedTopFeaturesCount, setSelectedTopFeaturesCount] = useState(20);
   const [selectedClasses, setselectedClasses] = useState([]);
   const [anotherAnalysis, setAnotherAnalysis] = useState([0]); // Stores analysis blocks
   const [analysisInformation, setAnalysisInformation] = useState([]); // Stores analysis information
@@ -524,11 +539,14 @@ function App() {
 
       if (pipelineType === 'mogonet') {
         const mogonetCfg = pipeline.mogonetPreprocess || {};
+        const legacyOmics = String(mogonetCfg.omicsType || '').toLowerCase();
         config = {
           pipelineType: 'mogonet',
           selectedProtectedColumns: Array.isArray(metadata.selectedProtectedColumns) ? metadata.selectedProtectedColumns : [],
           mogonet: {
-            omicsType: mogonetCfg.omicsType || 'mRNA',
+            applyLogTransform: typeof mogonetCfg.applyLogTransform === 'boolean'
+              ? mogonetCfg.applyLogTransform
+              : ['proteomics', 'metabolomics'].includes(legacyOmics),
             fdrAlpha: mogonetCfg.fdrAlpha ?? 0.05,
             varThreshMrna: mogonetCfg.varThreshMrna ?? 0.1,
             varThreshMeth: mogonetCfg.varThreshMeth ?? 0.001,
@@ -603,7 +621,7 @@ function App() {
     if (pipelineType === 'mogonet') {
       const mogonetCfg = executedNormalizationConfig.mogonet || {};
       details.push('Pipeline: MOGONET-Style');
-      details.push(`Omics Type: ${mogonetCfg.omicsType || 'mRNA'}`);
+      details.push(`Log Transform: ${mogonetCfg.applyLogTransform ? 'Enabled' : 'Disabled'}`);
       details.push(`FDR Alpha: ${mogonetCfg.fdrAlpha ?? 0.05}`);
       details.push(`PC1 Max Ratio: ${mogonetCfg.pc1Max ?? 0.5}`);
       details.push(`Keep Range: ${(mogonetCfg.minKeep ?? 200)}-${(mogonetCfg.maxKeep ?? 300)}`);
@@ -831,19 +849,22 @@ function App() {
               if (hasFeatureRanking) setCanRunPathwayAnalysis(true);
             });
             
+            // Use the first analysis metadata for restoring persisted session-level settings.
+            const firstMetadata = analyses[0]?.metadata || {};
+
             // Set feature selection flags based on all analyses
             if (canProduceFS) setCanUseAfterFS(true);
             if (hasAfterFS) { 
               setAfterFeatureSelection(true); 
               setCanUseAfterFS(true); 
+              const restoredTopCount = Number(firstMetadata?.selectedTopFeaturesCount || firstMetadata?.numTopFeatures || 20);
+              setSelectedTopFeaturesCount(Number.isFinite(restoredTopCount) ? restoredTopCount : 20);
             }
             
             // Set the current analysis ID (use the first/parent analysis)
             setCurrentAnalysisId(analyses[0].analysisId);
             
             // Restore Step 3 & 4 information from metadata (but don't show steps yet)
-            // Use the first analysis metadata for the file info
-            const firstMetadata = analyses[0]?.metadata || {};
             const restoredNormalization = deriveNormalizationStateFromMetadata(firstMetadata);
             setNormalizationGatePassed(true);
             setNormalizationMode(restoredNormalization.mode);
@@ -1503,6 +1524,7 @@ function App() {
     // Starting/Guiding a new analysis should reset stage to All Features
     setAfterFeatureSelection(false);
     setCanUseAfterFS(false);
+    setSelectedTopFeaturesCount(20);
     setShowFormatPopup(true);
   };
 
@@ -1519,6 +1541,7 @@ function App() {
     // Reset stage to All Features when a fresh file is chosen
     setAfterFeatureSelection(false);
     setCanUseAfterFS(false);
+    setSelectedTopFeaturesCount(20);
     
     // Reset FileInput value
     if (fileInputRef.current) {
@@ -1537,6 +1560,7 @@ function App() {
     // Reset feature selection stage for a fresh analysis session
     setAfterFeatureSelection(false);
     setCanUseAfterFS(false);
+    setSelectedTopFeaturesCount(20);
     setInfo('Loading demo dataset...');
     setFile(new File([""], "GSE120584_serum_norm_demo.csv", { type: "text/csv" }));
     setSelectedFilePreviews(["GSE120584_serum_norm_demo.csv"]);
@@ -2377,7 +2401,7 @@ function App() {
         ? {
             mogonetPreprocess: {
               requested: true,
-              omicsType: normalizationConfig?.mogonet?.omicsType || 'mRNA',
+              applyLogTransform: Boolean(normalizationConfig?.mogonet?.applyLogTransform),
               fdrAlpha: normalizationConfig?.mogonet?.fdrAlpha,
               varThreshMrna: normalizationConfig?.mogonet?.varThreshMrna,
               varThreshMeth: normalizationConfig?.mogonet?.varThreshMeth,
@@ -2821,6 +2845,7 @@ function App() {
       nonFeatureColumns: nonFeatureColumns,
       isDiffAnalysis: [...selectedAnalyzes.statisticalTest, ...selectedAnalyzes.modelExplanation],
       afterFeatureSelection: afterFeatureSelection,
+      selectedTopFeaturesCount: selectedTopFeaturesCount,
       useDefaultParams: useDefaultParams,
       featureType: featureType,
       referenceClass: referenceClass,
@@ -3084,6 +3109,7 @@ function App() {
     if (hasAfterFSFolder) { 
       setAfterFeatureSelection(true); 
       setCanUseAfterFS(true); 
+      setSelectedTopFeaturesCount(payload?.selectedTopFeaturesCount || 20);
     }
     
     // Add to previous analyses
@@ -3110,6 +3136,179 @@ function App() {
     }, 100);
   };
   
+  const getAnalysisRankedCsvCandidates = useCallback((analysis) => {
+    const urls = [];
+    if (!analysis || !analysis.parameters?.filePath) return urls;
+
+    const normalizedPath = String(analysis.parameters.filePath).replace(/\\/g, '/');
+    const fileName = normalizedPath.split('/').pop()?.split('.')[0];
+    const selectedClassesForAnalysis = Array.isArray(analysis.parameters?.selectedClasses)
+      ? analysis.parameters.selectedClasses
+      : [];
+
+    if (!fileName || selectedClassesForAnalysis.length < 2) {
+      return urls;
+    }
+
+    const classPair = normalizeAndSortClasses(selectedClassesForAnalysis).join('_vs_');
+    if (!classPair) return urls;
+
+    // Canonical combined ranking path (exists when aggregate ranking is available).
+    urls.push(buildUrl(`/results/${fileName}/feature_ranking/${classPair}/ranked_features_df.csv`));
+
+    const statisticalMethods = Array.isArray(analysis.parameters?.statisticalTest)
+      ? analysis.parameters.statisticalTest
+      : [];
+    statisticalMethods.forEach((method) => {
+      const token = normalizeMethodToken(method);
+      if (!token) return;
+      urls.push(buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=statistical_tests_analysis=${token}/ranked_features_df.csv`));
+    });
+
+    const hasCox = Array.isArray(analysis.parameters?.survivalAnalysis)
+      && analysis.parameters.survivalAnalysis.some((m) => normalizeMethodToken(m) === 'cox_regression');
+    if (hasCox) {
+      urls.push(buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=survival_analysis,analysis=cox_regression/ranked_features_df.csv`));
+    }
+
+    const explanationMethods = Array.isArray(analysis.parameters?.modelExplanation)
+      ? analysis.parameters.modelExplanation
+      : [];
+    const classificationModels = Array.isArray(analysis.parameters?.classificationAnalysis)
+      ? analysis.parameters.classificationAnalysis
+      : [];
+    const modelTokens = classificationModels
+      .map(normalizeModelToken)
+      .filter(Boolean);
+
+    const explanationTokenMap = {
+      shap: 'shap',
+      lime: 'lime',
+      permutation_feature_importance: 'feature_importance',
+    };
+
+    explanationMethods.forEach((method) => {
+      const normalized = normalizeMethodToken(method);
+      const analysisToken = explanationTokenMap[normalized];
+      if (!analysisToken || modelTokens.length === 0) return;
+      modelTokens.forEach((modelToken) => {
+        urls.push(buildUrl(`/results/${fileName}/feature_ranking/${classPair}/model=${modelToken}_analysis=${analysisToken}/ranked_features_df.csv`));
+      });
+    });
+
+    return urls;
+  }, []);
+
+  const getAllRankedCsvCandidates = useCallback(() => {
+    const sources = [];
+    const seen = new Set();
+    const pushSource = (url, classPair = null) => {
+      if (!url || seen.has(url)) return;
+      seen.add(url);
+      sources.push({ url, classPair });
+    };
+
+    if (summarizeAnalyses.length > 0) {
+      const latest = summarizeAnalyses[summarizeAnalyses.length - 1];
+      if (latest?.csvPath) {
+        pushSource(buildUrl(`/${latest.csvPath}`), latest.classPair || null);
+      }
+    }
+
+    for (let idx = previousAnalyses.length - 1; idx >= 0; idx -= 1) {
+      const analysis = previousAnalyses[idx];
+      const classPair = Array.isArray(analysis?.parameters?.selectedClasses)
+        ? normalizeAndSortClasses(analysis.parameters.selectedClasses).join('_vs_')
+        : null;
+      getAnalysisRankedCsvCandidates(analysis).forEach((url) => pushSource(url, classPair));
+
+      // Backward compatibility: keep discovering links embedded in existing image download helpers.
+      (analysis?.results || []).forEach((imagePath) => {
+        const downloadLinks = buildDownloadLinks(imagePath);
+        downloadLinks
+          .filter((link) => link?.href && /ranked_features_df\.csv/i.test(link.href))
+          .forEach((link) => pushSource(link.href, parseClassPairFromUrl(link.href) || classPair));
+      });
+    }
+
+    return sources;
+  }, [summarizeAnalyses, previousAnalyses, getAnalysisRankedCsvCandidates]);
+
+  const rankingSourceCandidates = useMemo(() => getAllRankedCsvCandidates(), [getAllRankedCsvCandidates]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkRankingSourceCandidates() {
+      try {
+        const unchecked = rankingSourceCandidates
+          .map((source) => source?.url)
+          .filter((url) => url && !Object.prototype.hasOwnProperty.call(linkExists, url));
+
+        if (unchecked.length === 0) return;
+
+        const results = {};
+        await Promise.all(
+          unchecked.map(async (url) => {
+            try {
+              const res = await apiFetch(url, { method: 'HEAD' });
+              results[url] = res.ok === true;
+            } catch (e) {
+              results[url] = false;
+            }
+          })
+        );
+
+        if (!cancelled) {
+          setLinkExists((prev) => ({ ...prev, ...results }));
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    if (rankingSourceCandidates.length > 0) {
+      checkRankingSourceCandidates();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rankingSourceCandidates, linkExists]);
+
+  const availableRankingSourceCandidates = useMemo(
+    () => rankingSourceCandidates.filter((source) => source?.url && linkExists[source.url] === true),
+    [rankingSourceCandidates, linkExists]
+  );
+
+  const rankerMethodCount = useMemo(() => {
+    const counted = new Set();
+    analysisInformation.forEach((info) => {
+      if (!info || typeof info !== 'object') return;
+
+      (Array.isArray(info.statisticalTest) ? info.statisticalTest : []).forEach((method) => {
+        const token = normalizeMethodToken(method);
+        if (token) counted.add(`stat:${token}`);
+      });
+
+      (Array.isArray(info.modelExplanation) ? info.modelExplanation : []).forEach((method) => {
+        const token = normalizeMethodToken(method);
+        if (token) counted.add(`exp:${token}`);
+      });
+
+      (Array.isArray(info.survivalAnalysis) ? info.survivalAnalysis : []).forEach((method) => {
+        const token = normalizeMethodToken(method);
+        if (token === 'cox_regression') counted.add('survival:cox_regression');
+      });
+    });
+    return counted.size;
+  }, [analysisInformation]);
+
+  const hasAnyRankingSource = availableRankingSourceCandidates.length > 0;
+  const combineRequired = rankerMethodCount >= 2;
+  const showCombineControls = combineRequired;
+  const showDirectPostAnalysisMethods = !combineRequired && hasAnyRankingSource;
+
   const handleValidationGeneCapChange = (event) => {
     const rawValue = Number(event?.target?.value);
     const nextValue = Number.isFinite(rawValue) ? rawValue : DEFAULT_VALIDATION_GENE_LIMIT;
@@ -3128,8 +3327,7 @@ function App() {
       return;
     }
 
-    const candidates = [];
-    const seenUrls = new Set();
+    const candidates = [...availableRankingSourceCandidates];
 
     const fetchEnrichmentResultTable = async (relativePath) => {
       if (!relativePath) {
@@ -3163,44 +3361,8 @@ function App() {
       }
     };
 
-    if (summarizeAnalyses.length > 0) {
-      const latest = summarizeAnalyses[summarizeAnalyses.length - 1];
-      if (latest?.csvPath) {
-        const url = buildUrl(`/${latest.csvPath}`);
-        if (!seenUrls.has(url)) {
-          seenUrls.add(url);
-          candidates.push({
-            url,
-            classPair: latest.classPair || null,
-            selectedClasses: parseClassesFromClassPair(latest.classPair),
-          });
-        }
-      }
-    }
-
-    for (let idx = previousAnalyses.length - 1; idx >= 0; idx -= 1) {
-      const analysis = previousAnalyses[idx];
-      (analysis?.results || []).forEach((imagePath) => {
-        const downloadLinks = buildDownloadLinks(imagePath);
-        downloadLinks
-          .filter((link) => link?.href && /ranked_features_df\.csv/i.test(link.href))
-          .forEach((link) => {
-            if (!seenUrls.has(link.href)) {
-              seenUrls.add(link.href);
-              candidates.push({
-                url: link.href,
-                classPair: parseClassPairFromUrl(link.href),
-                selectedClasses: Array.isArray(analysis?.parameters?.selectedClasses)
-                  ? analysis.parameters.selectedClasses
-                  : [],
-              });
-            }
-          });
-      });
-    }
-
     if (candidates.length === 0) {
-      setError(config.emptyStateMessage || `No biomarker list found for ${config.analysisDisplayName || 'pathway analysis'}. Please combine biomarker rankings first.`);
+      setError(config.emptyStateMessage || `No biomarker list found for ${config.analysisDisplayName || 'pathway analysis'}. Please run an analysis that generates feature rankings.`);
       return;
     }
 
@@ -3354,39 +3516,12 @@ function App() {
     }
   };
 
-  const resolveValidationSource = useCallback(() => {
-    if (summarizeAnalyses.length > 0) {
-      const latest = summarizeAnalyses[summarizeAnalyses.length - 1];
-      if (latest?.csvPath) {
-        return {
-          url: buildUrl(`/${latest.csvPath}`),
-          classPair: latest.classPair || null
-        };
-      }
-    }
-    for (let idx = previousAnalyses.length - 1; idx >= 0; idx -= 1) {
-      const analysis = previousAnalyses[idx];
-      for (const imagePath of analysis?.results || []) {
-        const downloadLinks = buildDownloadLinks(imagePath);
-        const rankedLink = downloadLinks.find((link) => /ranked_features_df\.csv/i.test(link?.href || ''));
-        if (rankedLink) {
-          return {
-            url: rankedLink.href,
-            classPair: parseClassPairFromUrl(rankedLink.href)
-          };
-        }
-      }
-    }
-    return null;
-  }, [summarizeAnalyses, previousAnalyses]);
-
   const handleBiomarkerValidation = async () => {
     if (validationLoading) {
       return;
     }
-    const source = resolveValidationSource();
-    if (!source) {
-      setValidationError('Please combine the biomarker rankings before running validation.');
+    if (rankingSourceCandidates.length === 0) {
+      setValidationError('No ranked biomarker list is available. Please run an analysis that produces feature rankings.');
       return;
     }
     setValidationLoading(true);
@@ -3396,11 +3531,36 @@ function App() {
       : DEFAULT_VALIDATION_GENE_LIMIT;
 
     try {
-      const response = await apiFetch(source.url);
-      if (!response.ok) {
+      let csvText = '';
+      let selectedSource = null;
+      let lastFetchError = null;
+
+      for (const candidate of rankingSourceCandidates) {
+        try {
+          const response = await apiFetch(candidate.url);
+          if (!response.ok) {
+            throw new Error(`Failed to download biomarker list (HTTP ${response.status})`);
+          }
+          const text = await response.text();
+          const parsedGenes = extractGenesFromCsv(text, selectedGeneLimit);
+          if (parsedGenes.length === 0) {
+            continue;
+          }
+          csvText = text;
+          selectedSource = candidate;
+          break;
+        } catch (err) {
+          lastFetchError = err;
+        }
+      }
+
+      if (!selectedSource || !csvText) {
+        if (lastFetchError) {
+          console.error('Failed to fetch ranked biomarker list:', lastFetchError);
+        }
         throw new Error('Failed to download the biomarker list for validation.');
       }
-      const csvText = await response.text();
+
       const genes = extractGenesFromCsv(csvText, selectedGeneLimit);
       if (!genes.length) {
         throw new Error('No gene symbols were found in the biomarker list.');
@@ -3412,7 +3572,7 @@ function App() {
       
       const validationData = {
         ...apiResponse.data,
-        classPair: source.classPair || null,
+        classPair: selectedSource.classPair || null,
         geneList: genes
       };
       
@@ -3442,7 +3602,13 @@ function App() {
     }
   };
 
-  const canValidateBiomarkers = useMemo(() => Boolean(resolveValidationSource()), [resolveValidationSource]);
+  const canValidateBiomarkers = useMemo(() => {
+    if (combineRequired) {
+      const latestSummary = summarizeAnalyses.length > 0 ? summarizeAnalyses[summarizeAnalyses.length - 1] : null;
+      return Boolean(latestSummary?.csvPath);
+    }
+    return hasAnyRankingSource;
+  }, [combineRequired, summarizeAnalyses, hasAnyRankingSource]);
 
   // Final Adımı 1: Yeni analiz yapma butonu
   const handlePerformAnotherAnalysis = () => {
@@ -3716,6 +3882,7 @@ function App() {
     setScoring("f1");
     setFeatureImportanceFinetune(false);
     setNumTopFeatures(20);
+    setSelectedTopFeaturesCount(20);
     setPlotter("seaborn");
     setDim("3D");
     setParamFinetune(false);
@@ -3833,7 +4000,8 @@ function App() {
             imagePath: imagePath,
             timestamp: timestamp,
             version: imageVersion + 1,
-            featureCount: selectedFeatureCount,
+            featureCount: response.data.actualFeatureCount || selectedFeatureCount,
+            requestedFeatureCount: response.data.requestedFeatureCount || selectedFeatureCount,
             aggregationLabel: aggregationLabel,
             csvPath: response.data.csvPath || null
           };
@@ -4605,8 +4773,8 @@ function App() {
                     afterFeatureSelection={afterFeatureSelection}
                     onToggleAfterFS={setAfterFeatureSelection}
                     canUseAfterFS={canUseAfterFS}
-                    computedNumTopFeatures={numTopFeatures}
-                    onNumTopFeaturesChange={setNumTopFeatures}
+                    selectedTopFeaturesCount={selectedTopFeaturesCount}
+                    onSelectedTopFeaturesChange={setSelectedTopFeaturesCount}
                     numSelectedClasses={selectedClasses.length}
                     availableColumns={analysisAllColumns.length > 0 ? analysisAllColumns : allColumns}
                     selectedIllnessColumn={selectedIllnessColumn}
@@ -5046,7 +5214,7 @@ function App() {
                       // Typically, the first graph is with all features and the second with selected features
                       if (currentGraphIndex > 0) {
                         // Second or subsequent graph - with selected features
-                        const topFeaturesCount = analysisInformation[index]?.numTopFeatures || 20;
+                        const topFeaturesCount = analysisInformation[index]?.selectedTopFeaturesCount || analysisInformation[index]?.numTopFeatures || 20;
                         imageName = `${imageName} (Selected Top-${topFeaturesCount} Features)`;
                       } else {
                         // First graph - with all features
@@ -5054,7 +5222,7 @@ function App() {
                       }
                     } else if (isAfterFeatureSelection) {
                       // Continue with classic method - based on file path
-                      const topFeaturesCount = analysisInformation[index]?.numTopFeatures || 20;
+                      const topFeaturesCount = analysisInformation[index]?.selectedTopFeaturesCount || analysisInformation[index]?.numTopFeatures || 20;
                       let cleanedName = imageName
                         .replace('afterFeatureSelection', '')
                         .replace('AfterFeatureSelection', '')
@@ -5140,85 +5308,93 @@ function App() {
                   <button className="button start-over" onClick={handleStartOver}>
                     Start Over with a New Dataset
                   </button>
-                  {/* Newly added OR delimiter */}
-                  <div className="or-container">
-                    <h1 className="or-text">OR</h1>
-                  </div>
-                  <div className="feature-count-selector">
-                    <label htmlFor="featureCount">Number of most influential Biomarkers to display: </label>
-                    <select 
-                      id="featureCount" 
-                      value={selectedFeatureCount} 
-                      onChange={(e) => setSelectedFeatureCount(Number(e.target.value))}
-                      className="feature-count-dropdown"
-                    >
-                      {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(count => (
-                        <option key={count} value={count}>{count}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {(showCombineControls || showDirectPostAnalysisMethods || (combineRequired && canRunPathwayAnalysis)) && (
+                    <>
+                      {/* Biomarker count selector used by combine/pathway/validation flows */}
+                      <div className="or-container">
+                        <h1 className="or-text">OR</h1>
+                      </div>
+                      <div className="feature-count-selector">
+                        <label htmlFor="featureCount">Number of most influential Biomarkers to display: </label>
+                        <select 
+                          id="featureCount" 
+                          value={selectedFeatureCount} 
+                          onChange={(e) => setSelectedFeatureCount(Number(e.target.value))}
+                          className="feature-count-dropdown"
+                        >
+                          {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(count => (
+                            <option key={count} value={count}>{count}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
                   {/* Area added for error messages */}
                   {error && previousAnalyses.length > 0 && !processing && (
                     <div className="error-message" style={{textAlign: 'center', marginBottom: '10px'}}>{error}</div>
                   )}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                    <div className="combine-aggregation-controls" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
-                      <label style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                        Aggregation method
-                        <HelpTooltip placement="right" text={<AggregationHelpContent />}>info</HelpTooltip>
-                      </label>
-                      <select value={aggregationMethod} onChange={(e) => setAggregationMethod(e.target.value)}>
-                        <optgroup label="Rank-based methods">
-                          <option value="sum">Mean Rank</option>
-                          <option value="weighted_borda">Weighted Borda Count (Weighted Mean Rank)</option>
-                          <option value="median_rank">Median Rank</option>
-                          <option value="mra">Median Rank Algorithm (MRA)</option>
-                          <option value="min_rank">Minimum (Best) Rank</option>
-                          <option value="rank_product">Geometric Mean Rank</option>
-                          <option value="stuart">Stuart Rank Aggregation</option>
-                          <option value="rra">Robust Rank Aggregation (RRA)</option>
-                          <option value="rrf">Reciprocal Rank Fusion (RRF)</option>
-                        </optgroup>
-                        <optgroup label="Weight-based methods">
-                          <option value="mean_weight">Mean Weight</option>
-                          <option value="median_weight">Median Weight</option>
-                          <option value="max_weight">Max Weight</option>
-                          <option value="geometric_mean_weight">Geometric Mean Weight</option>
-                          <option value="ta">Threshold Algorithm (TA)</option>
-                        </optgroup>
-                      </select>
-                      {aggregationMethod === 'weighted_borda' && (
-                        <>
-                          <label style={{ fontWeight: 600 }}>weights (JSON)</label>
-                          <input type="text" value={aggregationWeights} onChange={(e) => setAggregationWeights(e.target.value)} placeholder='{"shap":1.5,"anova":1.0,"t_test":1.0,"wilcoxon_rank_sum":1.0,"kruskal_wallis":1.0,"lime":1.2}' style={{ minWidth: 350, fontSize: 16 }} />
-                        </>
-                      )}
-                      {aggregationMethod === 'rrf' && (
-                        <>
-                          <label style={{ fontWeight: 600 }}>rrf_k</label>
-                          <select value={rrfK} onChange={(e) => setRrfK(Number(e.target.value))}>
-                            {[20,40,60,80,100,120].map(v => (<option key={v} value={v}>{v}</option>))}
-                          </select>
-                        </>
+                  {showCombineControls && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                      <div className="combine-aggregation-controls" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
+                        <label style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          Aggregation method
+                          <HelpTooltip placement="right" text={<AggregationHelpContent />}>info</HelpTooltip>
+                        </label>
+                        <select value={aggregationMethod} onChange={(e) => setAggregationMethod(e.target.value)}>
+                          <optgroup label="Rank-based methods">
+                            <option value="sum">Mean Rank</option>
+                            <option value="weighted_borda">Weighted Borda Count (Weighted Mean Rank)</option>
+                            <option value="median_rank">Median Rank</option>
+                            <option value="mra">Median Rank Algorithm (MRA)</option>
+                            <option value="min_rank">Minimum (Best) Rank</option>
+                            <option value="rank_product">Geometric Mean Rank</option>
+                            <option value="stuart">Stuart Rank Aggregation</option>
+                            <option value="rra">Robust Rank Aggregation (RRA)</option>
+                            <option value="rrf">Reciprocal Rank Fusion (RRF)</option>
+                          </optgroup>
+                          <optgroup label="Weight-based methods">
+                            <option value="mean_weight">Mean Weight</option>
+                            <option value="median_weight">Median Weight</option>
+                            <option value="max_weight">Max Weight</option>
+                            <option value="geometric_mean_weight">Geometric Mean Weight</option>
+                            <option value="ta">Threshold Algorithm (TA)</option>
+                          </optgroup>
+                        </select>
+                        {aggregationMethod === 'weighted_borda' && (
+                          <>
+                            <label style={{ fontWeight: 600 }}>weights (JSON)</label>
+                            <input type="text" value={aggregationWeights} onChange={(e) => setAggregationWeights(e.target.value)} placeholder='{"shap":1.5,"anova":1.0,"t_test":1.0,"wilcoxon_rank_sum":1.0,"kruskal_wallis":1.0,"lime":1.2}' style={{ minWidth: 350, fontSize: 16 }} />
+                          </>
+                        )}
+                        {aggregationMethod === 'rrf' && (
+                          <>
+                            <label style={{ fontWeight: 600 }}>rrf_k</label>
+                            <select value={rrfK} onChange={(e) => setRrfK(Number(e.target.value))}>
+                              {[20,40,60,80,100,120].map(v => (<option key={v} value={v}>{v}</option>))}
+                            </select>
+                          </>
+                        )}
+                      </div>
+                      <button 
+                        className="button summarize-statistical-methods" 
+                        onClick={() => { setCombineError(''); handleSummarizeStatisticalMethods(); }}
+                        disabled={processing}
+                      >
+                        {processing ? 'Processing...' : 'Combine the above biomarker list in to one list'}
+                      </button>
+                      {combineError && (
+                        <div className="error-message" style={{ textAlign: 'center', marginTop: 8 }}>{combineError}</div>
                       )}
                     </div>
-                    <button 
-                      className="button summarize-statistical-methods" 
-                      onClick={() => { setCombineError(''); handleSummarizeStatisticalMethods(); }}
-                      disabled={processing}
-                    >
-                      {processing ? 'Processing...' : 'Combine the above biomarker list in to one list'}
-                    </button>
-                    {combineError && (
-                      <div className="error-message" style={{ textAlign: 'center', marginTop: 8 }}>{combineError}</div>
-                    )}
-                  </div>
+                  )}
 
-                  {canRunPathwayAnalysis && remainingEnrichmentOptions.length > 0 && (
+                  {(combineRequired ? canRunPathwayAnalysis : showDirectPostAnalysisMethods) && remainingEnrichmentOptions.length > 0 && (
                     <div className="kegg-trigger-container">
-                      <div className="or-container">
-                        <h1 className="or-text">OR</h1>
-                      </div>
+                      {showCombineControls && (
+                        <div className="or-container">
+                          <h1 className="or-text">OR</h1>
+                        </div>
+                      )}
                       <div className="enrichment-button-grid">
                         {remainingEnrichmentOptions.map((key) => {
                           const option = ENRICHMENT_OPTIONS[key];
@@ -5331,7 +5507,7 @@ function App() {
                               onClick={() => handleClassPairSelection(classPair)}
                               disabled={processing}
                             >
-                              {classPair.split('_').join(' vs ')}
+                              {classPair.replaceAll('_', ' ')}
                             </button>
                           ))}
                         </div>
@@ -5345,7 +5521,7 @@ function App() {
                     {summarizeAnalyses.map((summary, idx) => (
                       <div key={`${summary.timestamp}-${idx}`} className="summary-analysis-block">
                         <h3 className="class-pair-title">
-                            Summary for: {summary.classPair.split('_').join(' vs ')} (Top-{summary.featureCount} Features)
+                            Summary for: {summary.classPair.replaceAll('_', ' ')} (Top-{summary.featureCount} Features)
                         </h3>
                         <div className="summary-image-container">
                           <ImagePopup 
@@ -5394,7 +5570,7 @@ function App() {
                         
                         if (isAfterFeatureSelection) {
                           // Use numTopFeatures from analysisParams (i.e., the payload of that analysis)
-                          const topFeaturesCount = analysisParams?.numTopFeatures || 20;
+                          const topFeaturesCount = analysisParams?.selectedTopFeaturesCount || analysisParams?.numTopFeatures || 20;
                           imageName = `${imageName} (Selected Top-${topFeaturesCount} Features)`;
                         } else if (imagePath.includes('initial')) {
                           imageName = `${imageName} (All Features)`;
@@ -5432,7 +5608,7 @@ function App() {
                     selectedClassPair={summarizeAnalyses.length > 0 ? summarizeAnalyses[summarizeAnalyses.length - 1].classPair : null}
                     summaryImagePath={summarizeAnalyses.length > 0 ? summarizeAnalyses[summarizeAnalyses.length - 1].imagePath : null}
                     summarizeAnalyses={summarizeAnalyses.map(analysis => ({
-                      classPair: analysis.classPair ? analysis.classPair.split('_').join(' vs ') : 'All Classes',
+                      classPair: analysis.classPair ? analysis.classPair.replaceAll('_', ' ') : 'All Classes',
                       imagePath: buildUrl(`/${analysis.imagePath}?t=${analysis.timestamp}&v=${analysis.version}`)
                     }))}
                     datasetFileName={datasetNamesForReport}
@@ -5442,6 +5618,7 @@ function App() {
                     biomarkerValidationError={validationError}
                     biomarkerValidationLoading={validationLoading}
                     canValidateBiomarkers={canValidateBiomarkers}
+                    showValidationSeparator={rankerMethodCount >= 1}
                     validationGeneCap={validationGeneCap}
                     validationGeneOptions={VALIDATION_GENE_OPTIONS}
                     onValidationGeneCapChange={handleValidationGeneCapChange}

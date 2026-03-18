@@ -321,6 +321,94 @@ select, option {
   align-self: center;  /* vertically center relative to tables */
 }
 
+/* Post-analysis action layout (single + multiple analysis flows) */
+.post-analysis-options {
+  width: min(1120px, 100%);
+  margin: 16px auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.post-analysis-options .button {
+  width: min(620px, 100%);
+  margin: 0;
+}
+
+.post-analysis-options .or-container {
+  margin: 4px 0;
+}
+
+.post-analysis-options .or-text {
+  margin: 0;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.post-analysis-options .feature-count-selector {
+  width: min(860px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.post-analysis-options .feature-count-selector label {
+  margin-right: 0;
+}
+
+.post-analysis-options .combine-aggregation-controls {
+  width: min(900px, 100%);
+  padding: 0;
+}
+
+.post-analysis-options .kegg-trigger-container,
+.post-analysis-options .validation-panel,
+.post-analysis-options .kegg-analysis-results {
+  width: min(1120px, 100%);
+  margin-top: 2px;
+}
+
+.post-analysis-options .validation-action-bar {
+  width: min(520px, 100%);
+  margin: 0;
+  gap: 8px;
+}
+
+.post-analysis-options .validation-or-separator {
+  margin: 0;
+  font-size: 24px;
+}
+
+.post-analysis-options .generate-report-button {
+  margin-top: 12px;
+}
+
+@media (max-width: 768px) {
+  .post-analysis-options {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .post-analysis-options .button,
+  .post-analysis-options .kegg-trigger-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .post-analysis-options .feature-count-selector {
+    justify-content: flex-start;
+  }
+
+  .post-analysis-options .feature-count-selector label {
+    width: 100%;
+  }
+}
+
 /* KEGG pathway analysis results */
 .kegg-trigger-container {
   display: flex;
@@ -330,12 +418,13 @@ select, option {
 }
 
 .enrichment-button-grid {
+  margin-bottom: 25px;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
   width: 100%;
-  max-width: 780px;
+  max-width: 980px;
 }
 
 .kegg-trigger-button {
@@ -384,8 +473,8 @@ select, option {
 }
 
 .kegg-analysis-card {
-  width: 80%;
-  align-self: center;
+  width: 100%;
+  align-self: stretch;
   border: 1px solid #d7e2ff;
   border-radius: 8px;
   padding: 16px;
@@ -430,7 +519,7 @@ select, option {
 
 .kegg-table {
   width: 100%;
-  min-width: 600px;
+  min-width: 900px;
   border-collapse: collapse;
   background: #ffffff;
 }

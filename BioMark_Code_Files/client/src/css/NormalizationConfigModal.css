@@ -163,15 +163,35 @@
 	gap: 10px;
 }
 
+.norm-param-row-control {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	min-height: 36px;
+}
+
+.norm-param-row-control--checkbox {
+	justify-content: flex-start;
+}
+
+.norm-param-row-control--checkbox input[type="checkbox"] {
+	width: 16px;
+	height: 16px;
+	accent-color: #2f4fb5;
+	cursor: pointer;
+}
+
 .norm-param-row > label {
-	min-width: 160px;
+	width: 185px;
+	flex: 0 0 185px;
 	font-size: 13px;
 	font-weight: 600;
 	color: #495057;
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	flex-shrink: 0;
+	overflow: visible;
 }
 
 .norm-param-row input[type="number"],
@@ -396,7 +416,8 @@ body.norm-modal-open {
 	}
 
 	.norm-param-row > label {
-		min-width: unset;
+		width: unset;
+		flex: none;
 	}
 
 	.norm-param-row input,

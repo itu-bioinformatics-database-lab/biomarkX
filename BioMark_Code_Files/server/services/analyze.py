@@ -32,6 +32,7 @@ lime_model_finetune = False    # Model fine-tuning for LIME explainability analy
 scoring = "f1"                 # Model evaluation metric, diff analysis
 feature_importance_finetune = False  # Model fine-tuning for feature importance analysis
 num_top_features = 20          # Number of top features to use in feature selection, diff analysis
+selected_top_features_count = 20  # Number of top features used to filter data for AfterFeatureSelection runs
 
 # Clustering Analysis Parameters
 plotter = "seaborn"            # Visualization library selection, diff analysis
@@ -258,7 +259,7 @@ def feature_selection(outdir, class_pair: str):
     Returns
     -------
     list | None
-        List of top ``num_top_features`` features for the given class pair or ``None``
+        List of top ``selected_top_features_count`` features for the given class pair or ``None``
         if the class pair does not exist in the file.
     """
 
@@ -293,7 +294,7 @@ def feature_selection(outdir, class_pair: str):
     filtered_importances = {selected_key: feature_importances[selected_key]}
 
     top_n = feature_rank(top_features=filtered_importances,
-                         num_top_features=num_top_features,
+                         num_top_features=selected_top_features_count,
                          feature_type=feature_type,
                          outdir=outdir)
 
@@ -376,6 +377,7 @@ if __name__ == "__main__":
     parser.add_argument('nonFeatureColumns', help='Non-feature columns')
     parser.add_argument('isDiffAnalysis', help='Whether to perform differential analysis')
     parser.add_argument('afterFeatureSelection', help='Whether to perform analysis after feature selection')
+    parser.add_argument('selectedTopFeaturesCount', help='Number of top features to use for AfterFeatureSelection filtering')
     parser.add_argument('survivalAnalyzes', help='Survival analysis methods')
     parser.add_argument('--params', help='Parameter settings (in JSON format)', default='{}')
 
@@ -402,6 +404,10 @@ if __name__ == "__main__":
     nonFeatureColumns = [item.strip() for item in args.nonFeatureColumns.split(",") if item.strip()] if args.nonFeatureColumns else []
     selected_diff_analyses = process_arg(args.isDiffAnalysis)
     afterFeatureSelection = args.afterFeatureSelection.lower() == 'true'
+    try:
+        selected_top_features_count = max(1, int(args.selectedTopFeaturesCount))
+    except Exception:
+        selected_top_features_count = 20
 
     # Ensure explanation methods are not run twice if they are also in the statistical list
     if explanation_methods:
@@ -449,6 +455,8 @@ if __name__ == "__main__":
                 globals()["feature_importance_finetune"] = params_json["feature_importance_finetune"]
             if "num_top_features" in params_json:
                 globals()["num_top_features"] = params_json["num_top_features"]
+            if "selected_top_features_count" in params_json:
+                globals()["selected_top_features_count"] = max(1, int(params_json["selected_top_features_count"]))
             
             # Update Clustering Analysis Parameters
             if "plotter" in params_json:

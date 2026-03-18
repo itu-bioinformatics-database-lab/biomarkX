@@ -7,14 +7,6 @@ const PIPELINE_OPTIONS = [
   { value: 'mogonet', label: 'MOGONET-Style Pipeline' },
 ];
 
-const MOGONET_OMICS_TYPES = [
-  { value: 'mRNA', label: 'mRNA' },
-  { value: 'meth', label: 'DNA Methylation' },
-  { value: 'miRNA', label: 'miRNA' },
-  { value: 'proteomics', label: 'Proteomics' },
-  { value: 'metabolomics', label: 'Metabolomics' },
-];
-
 const NORMALIZATION_METHODS = [
   { value: 'zscore', label: 'Z-Score' },
   { value: 'minmax', label: 'Min-Max' },
@@ -61,7 +53,7 @@ const DEFAULT_CONFIG = {
     action: 'impute',
   },
   mogonet: {
-    omicsType: 'mRNA',
+    applyLogTransform: false,
     fdrAlpha: 0.05,
     varThreshMrna: 0.1,
     varThreshMeth: 0.001,
@@ -281,11 +273,8 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
     if (isStandardPipeline && config.batchCorrection.enabled && !config.batchCorrection.batchColumn) {
       return true;
     }
-    if (!isStandardPipeline && !config.mogonet.omicsType) {
-      return true;
-    }
     return false;
-  }, [isStandardPipeline, config.batchCorrection.enabled, config.batchCorrection.batchColumn, config.mogonet.omicsType]);
+  }, [isStandardPipeline, config.batchCorrection.enabled, config.batchCorrection.batchColumn]);
 
   const handleNormalize = () => {
     const batchColumn = config.batchCorrection.batchColumn;
@@ -745,17 +734,16 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
               <div className="norm-step-params">
                 <div className="norm-param-row">
                   <label>
-                    Omics Type
-                    <HelpTooltip useFixedPosition text="Choose the omics mode to apply type-specific variance thresholds and optional HM27 restriction for methylation.">info</HelpTooltip>
+                    Apply Log Transform
+                    <HelpTooltip useFixedPosition text="Apply a log10 transform with training-derived pseudocount before feature selection.">info</HelpTooltip>
                   </label>
-                  <select
-                    value={config.mogonet.omicsType}
-                    onChange={(e) => update('mogonet', 'omicsType', e.target.value)}
-                  >
-                    {MOGONET_OMICS_TYPES.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
+                  <div className="norm-param-row-control norm-param-row-control--checkbox">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(config.mogonet.applyLogTransform)}
+                      onChange={(e) => update('mogonet', 'applyLogTransform', e.target.checked)}
+                    />
+                  </div>
                 </div>
 
                 <div className="norm-param-row">
@@ -890,7 +878,7 @@ const NormalizationConfigModal = ({ onClose, onNormalize, columns = [], illnessC
             <span className="norm-footer-hint">
               {isStandardPipeline
                 ? 'Select a Batch Column to enable normalization'
-                : 'Select Omics Type to enable preprocessing'}
+                : 'Review MOGONET options before preprocessing'}
             </span>
           )}
           <div className="norm-footer-buttons">

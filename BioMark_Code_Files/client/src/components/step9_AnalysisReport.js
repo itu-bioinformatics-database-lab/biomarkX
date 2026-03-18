@@ -48,6 +48,7 @@ const AnalysisReport = ({
   biomarkerValidationError,
   biomarkerValidationLoading = false,
   canValidateBiomarkers = true,
+  showValidationSeparator = false,
   validationGeneCap,
   validationGeneOptions = [],
   onValidationGeneCapChange
@@ -96,10 +97,13 @@ const AnalysisReport = ({
 
       if (pipelineType === 'mogonet') {
         const mogonetCfg = pipeline.mogonetPreprocess || {};
+        const legacyOmics = String(mogonetCfg.omicsType || '').toLowerCase();
         config = {
           pipelineType: 'mogonet',
           mogonet: {
-            omicsType: mogonetCfg.omicsType || 'mRNA',
+            applyLogTransform: typeof mogonetCfg.applyLogTransform === 'boolean'
+              ? mogonetCfg.applyLogTransform
+              : ['proteomics', 'metabolomics'].includes(legacyOmics),
             fdrAlpha: mogonetCfg.fdrAlpha ?? 0.05,
             varThreshMrna: mogonetCfg.varThreshMrna ?? 0.1,
             varThreshMeth: mogonetCfg.varThreshMeth ?? 0.001,
@@ -161,7 +165,7 @@ const AnalysisReport = ({
       const mogonetCfg = config.mogonet || {};
       return [
         'Normalization: Applied (MOGONET-Style)',
-        `Omics Type=${mogonetCfg.omicsType || 'mRNA'}, FDR Alpha=${mogonetCfg.fdrAlpha ?? 0.05}`,
+        `Log Transform=${mogonetCfg.applyLogTransform ? 'on' : 'off'}, FDR Alpha=${mogonetCfg.fdrAlpha ?? 0.05}`,
         `Keep Range=${mogonetCfg.minKeep ?? 200}-${mogonetCfg.maxKeep ?? 300}, PC1 Max=${mogonetCfg.pc1Max ?? 0.5}`,
       ];
     }
@@ -239,7 +243,7 @@ const AnalysisReport = ({
   const enrichmentSectionNumber = hasEnrichmentAnalyses ? nextSectionNumber++ : null;
   const analysisResultsSectionNumber = nextSectionNumber;
 
-  const friendlyClassPair = (value) => (value ? value.split('_').join(' vs ') : 'All Classes');
+  const friendlyClassPair = (value) => (value ? value.replaceAll('_', ' ') : 'All Classes');
   const formatScore = (score) => {
     if (typeof score !== 'number' || Number.isNaN(score)) {
       return null;
@@ -366,7 +370,7 @@ const AnalysisReport = ({
       classPairLabel: validationResult.classPair ? friendlyClassPair(validationResult.classPair) : null,
       timestamp: validationResult.timestamp ? new Date(validationResult.timestamp).toLocaleString() : null,
       geneCount: validationResult.geneCount,
-      biomarkerCount: validationResult.biomarkerCount,
+      biomarkerCount: validationResult.biomarkerCount || (Array.isArray(validationResult.geneList) ? validationResult.geneList.length : 0),
       mirnaCount: validationResult.mirnaCount,
       maxGenes: validationResult.maxGenes,
       topDiseases,
@@ -1411,7 +1415,7 @@ const AnalysisReport = ({
             pdf.text(`Validated on: ${validation.timestamp}`, marginLeft, yPosition);
             yPosition += 6;
           }
-          pdf.text(`Genes checked: ${validation.geneCount || '-'}`, marginLeft, yPosition);
+          pdf.text(`Biomarkers checked: ${validation.biomarkerCount || validation.maxGenes || '-'}`, marginLeft, yPosition);
           yPosition += 6;
           pdf.text(`Limit: ${validation.maxGenes || '-'}`, marginLeft, yPosition);
           yPosition += 10;
@@ -1472,32 +1476,39 @@ const AnalysisReport = ({
   return (
     <div className="validation-panel">
       {showValidationControls && (
-        <div className="validation-action-bar">
-          <label className="validation-select-label">
-            Max genes per validation
-            <select
-              value={validationGeneCap ?? ''}
-              onChange={onValidationGeneCapChange}
-              disabled={biomarkerValidationLoading}
-            >
-              {validationGeneOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          </label>
-          <button
-            className="biomarker-validation-button"
-            onClick={onValidateBiomarkers}
-            disabled={biomarkerValidationLoading}
-          >
-            {biomarkerValidationLoading ? 'Validating Biomarkers...' : 'Validate Biomarkers Externally'}
-          </button>
-          {biomarkerValidationError && (
-            <div className="validation-status-row">
-              <span className="validation-error-text">{biomarkerValidationError}</span>
+        <>
+          {showValidationSeparator && (
+            <div className="validation-or-separator" aria-hidden="true">
+              <h1 className="or-text">OR</h1>
             </div>
           )}
-        </div>
+          <div className="validation-action-bar">
+            <label className="validation-select-label">
+              Max genes per validation
+              <select
+                value={validationGeneCap ?? ''}
+                onChange={onValidationGeneCapChange}
+                disabled={biomarkerValidationLoading}
+              >
+                {validationGeneOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="biomarker-validation-button"
+              onClick={onValidateBiomarkers}
+              disabled={biomarkerValidationLoading}
+            >
+              {biomarkerValidationLoading ? 'Validating Biomarkers...' : 'Validate Biomarkers Externally'}
+            </button>
+            {biomarkerValidationError && (
+              <div className="validation-status-row">
+                <span className="validation-error-text">{biomarkerValidationError}</span>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {showValidationSection && processedValidations.map((validation, valIndex) => {
@@ -1525,8 +1536,8 @@ const AnalysisReport = ({
                 )}
               </div>
               <div className="validation-results-meta">
-                {validation.maxGenes && (
-                  <span>Biomarker Count: {validation.maxGenes}</span>
+                {(validation.biomarkerCount || validation.maxGenes) && (
+                  <span>Biomarker Count: {validation.biomarkerCount || validation.maxGenes}</span>
                 )}
                 {hasRowsInView && (
                   <button className="validation-download-button" onClick={() => handleDownloadValidationCsv(valIndex)}>
@@ -1677,6 +1688,10 @@ const AnalysisReport = ({
           </div>
         );
       })}
+
+      <div className="or-container">
+        <h1 className="or-text">OR</h1>
+      </div>
 
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
         <button 

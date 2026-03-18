@@ -179,6 +179,7 @@ df["Mean Rank"] = np.rint(safe_mean.astype(float)).astype(int)
 
 # Select Top-N strictly by the CSV order (i.e., chosen aggregation’s ranking)
 df_top = df.head(feature_count).copy()
+effective_feature_count = len(df_top)
 
 # Find the appropriate feature column name (feature type)
 feature_column = df_top.columns[0]  # First column is feature type (microRNA, gene, etc)
@@ -203,7 +204,7 @@ if rrf_match:
 # Visualization settings - adjust for larger size
 column_count = (df_top.shape[1] - 1)  # excluding feature column in index later
 min_width = max(12, column_count * 1.5)
-height = min(15, max(6, feature_count/3 + 5))
+height = min(15, max(6, effective_feature_count/3 + 5))
 plt.figure(figsize=(min_width, height))
 
 # Prepare data for heatmap (numeric values, integer formatting)
@@ -248,12 +249,12 @@ if class_pair:
     else:
         class_pair_display = class_pair.replace('_', ' vs ')
     title_text = (
-        f"Top {feature_count} Biomarkers by Chosen Aggregation\n"
+        f"Top {effective_feature_count} Biomarkers by Chosen Aggregation\n"
         f"for Class Pair: {class_pair_display}"
         + (f" (Aggregation: {human_label})" if human_label else "")
     )
 else:
-    title_text = f"Top {feature_count} Biomarkers by Chosen Aggregation" + (f" (Aggregation: {human_label})" if human_label else "")
+    title_text = f"Top {effective_feature_count} Biomarkers by Chosen Aggregation" + (f" (Aggregation: {human_label})" if human_label else "")
 
 # Set font size
 fontsize = 20 if column_count >= 5 else 18

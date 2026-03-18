@@ -466,6 +466,7 @@ app.post('/analyze', async (req, res) => {
         nonFeatureColumns, 
         isDiffAnalysis, 
         afterFeatureSelection,
+        selectedTopFeaturesCount,
         // Parameter information
         useDefaultParams,
         featureType,
@@ -594,6 +595,7 @@ app.post('/analyze', async (req, res) => {
             nonFeatureColumns: nonFeatureColumns || [],
             isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
             afterFeatureSelection: afterFeatureSelection || false,
+            selectedTopFeaturesCount: selectedTopFeaturesCount || 20,
             useDefaultParams: useDefaultParams !== undefined ? useDefaultParams : true,
             featureType: featureType || 'numerical',
             referenceClass: referenceClass || null,
@@ -683,6 +685,8 @@ app.post('/analyze', async (req, res) => {
             sourceFiles: isMergedFile ? (req.body.sourceFiles || []) : null,
             // Include custom parameters if provided
             useDefaultParams,
+            afterFeatureSelection: afterFeatureSelection === undefined ? false : afterFeatureSelection,
+            selectedTopFeaturesCount: selectedTopFeaturesCount || 20,
             customParams: !useDefaultParams ? {
                 featureType,
                 referenceClass,
@@ -711,6 +715,7 @@ app.post('/analyze', async (req, res) => {
                 coxTieMethod,
                 isDiffAnalysis: isDiffAnalysis || [...(statisticalTest || []), ...(modelExplanation || [])],
                 afterFeatureSelection: afterFeatureSelection === undefined ? false : afterFeatureSelection,
+                selectedTopFeaturesCount: selectedTopFeaturesCount || 20,
                 resamplingMethod: resamplingMethod || null,
                 resamplingParams: resamplingParams || {}
             } : null
@@ -824,7 +829,8 @@ app.get('/api/analysis/:id/status', async (req, res) => {
 // step8 - Endpoint to summarize statistical methods
 app.post('/summarize_statistical_methods', async (req, res) => {
     console.log("At summarize statistical methods endpoint.")
-    const featureCount = req.body.featureCount || 10; // Default is 10
+    const parsedFeatureCount = Number(req.body.featureCount);
+    const requestedFeatureCount = Number.isFinite(parsedFeatureCount) && parsedFeatureCount > 0 ? Math.trunc(parsedFeatureCount) : 10;
     const filePath = req.body.filePath;
     const selectedClassPair = req.body.selectedClassPair; // User-selected class pair (optional)
     const analysisId = req.body.analysisId; // Analysis ID to associate summary with
@@ -862,11 +868,27 @@ app.post('/summarize_statistical_methods', async (req, res) => {
             
             const pythonCommand = getPythonCommand();
             const scriptPath = path.join(__dirname, 'services', 'summary_of_statiscical_methods.py');
+            const countCsvRows = (csvFilePath) => {
+                try {
+                    if (!csvFilePath || !fs.existsSync(csvFilePath)) return 0;
+                    const content = fs.readFileSync(csvFilePath, 'utf8');
+                    const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+                    return Math.max(0, lines.length - 1);
+                } catch (e) {
+                    return 0;
+                }
+            };
+            const legacyCsvPath = path.join('results', fileName, 'ranked_features_df.csv');
+            const availableFeatureCount = countCsvRows(legacyCsvPath);
+            const effectiveFeatureCount = availableFeatureCount > 0
+                ? Math.min(requestedFeatureCount, availableFeatureCount)
+                : requestedFeatureCount;
+
             const python = spawn(pythonCommand, [
                 '-Xfrozen_modules=off', 
                 scriptPath,
                 filePath,
-                String(featureCount) // Convert numeric value to string
+                String(effectiveFeatureCount) // Convert numeric value to string
             ], { cwd: __dirname });
             
             let outputData = '';
@@ -889,9 +911,6 @@ app.post('/summarize_statistical_methods', async (req, res) => {
                 // Clean up line endings
                 const cleanedOutput = outputData.trim();
                 console.log(`Python process output: ${cleanedOutput}`);
-                
-                // Best effort legacy CSV path
-                const legacyCsvPath = path.join('results', fileName, 'ranked_features_df.csv');
                 
                 // Save biomarker summary to database if analysisId provided
                 if (analysisId) {
@@ -917,7 +936,8 @@ app.post('/summarize_statistical_methods', async (req, res) => {
                                 classPair: 'Summary',
                                 imagePath: cleanedOutput,
                                 csvPath: legacyCsvPath,
-                                featureCount: featureCount,
+                                featureCount: effectiveFeatureCount,
+                                requestedFeatureCount: requestedFeatureCount,
                                 timestamp: new Date().toISOString()
                             });
                             
@@ -936,7 +956,9 @@ app.post('/summarize_statistical_methods', async (req, res) => {
                 res.json({ 
                     success: true, 
                     imagePath: cleanedOutput,
-                    csvPath: legacyCsvPath
+                    csvPath: legacyCsvPath,
+                    actualFeatureCount: effectiveFeatureCount,
+                    requestedFeatureCount: requestedFeatureCount
                 });
             });
             
@@ -1053,7 +1075,7 @@ app.post('/summarize_statistical_methods', async (req, res) => {
                     if (sourceCount < 2) {
                         return res.status(400).json({
                             success: false,
-                            message: 'There is only one analysis for this class pair. To combine, please run more analyses.'
+                            message: 'There is only one analysis for this class pair. To combine, please run more analyses with this class pair.'
                         });
                     }
                 } catch (e) {
@@ -1101,11 +1123,23 @@ app.post('/summarize_statistical_methods', async (req, res) => {
         const scriptPath = path.join(__dirname, 'services', 'summary_of_statiscical_methods.py');
         const rerankScript = path.join(__dirname, 'services', 'recompute_ranking.py');
 
-        const runSummary = (labelForDirAndTitle = '') => spawn(pythonCommand, [
+        const countCsvRows = (csvFilePath) => {
+            try {
+                const resolved = path.isAbsolute(csvFilePath) ? csvFilePath : path.join(__dirname, csvFilePath);
+                if (!resolved || !fs.existsSync(resolved)) return 0;
+                const content = fs.readFileSync(resolved, 'utf8');
+                const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+                return Math.max(0, lines.length - 1);
+            } catch (e) {
+                return 0;
+            }
+        };
+
+        const runSummary = (effectiveFeatureCount, labelForDirAndTitle = '') => spawn(pythonCommand, [
             '-Xfrozen_modules=off',
             scriptPath,
             filePath,
-            String(featureCount),
+            String(effectiveFeatureCount),
             classToUse,
             csvPath,
             labelForDirAndTitle
@@ -1138,7 +1172,12 @@ app.post('/summarize_statistical_methods', async (req, res) => {
         const maybeRerank = runRerank();
         let outputData = '';
         const finalize = () => {
-            const py = runSummary(aggLabel);
+            const availableFeatureCount = countCsvRows(csvPath);
+            const effectiveFeatureCount = availableFeatureCount > 0
+                ? Math.min(requestedFeatureCount, availableFeatureCount)
+                : requestedFeatureCount;
+
+            const py = runSummary(effectiveFeatureCount, aggLabel);
             let sumErr = '';
             py.stdout.on('data', (data) => { outputData += data.toString(); console.log(`Python stdout: ${data}`); });
             py.stderr.on('data', (data) => { console.error(`stderr: ${data}`); sumErr += data.toString(); });
@@ -1179,7 +1218,8 @@ app.post('/summarize_statistical_methods', async (req, res) => {
                                 classPair: classToUse,
                                 imagePath: cleanedOutput,
                                 csvPath: csvPath,
-                                featureCount: featureCount,
+                                featureCount: effectiveFeatureCount,
+                                requestedFeatureCount: requestedFeatureCount,
                                 aggregationLabel: aggLabel || '',
                                 timestamp: new Date().toISOString()
                             });
@@ -1208,7 +1248,15 @@ app.post('/summarize_statistical_methods', async (req, res) => {
                     }
                 }
                 
-                res.json({ success: true, imagePath: cleanedOutput, selectedClassPair: classToUse, aggregationLabel: aggLabel, csvPath });
+                res.json({
+                    success: true,
+                    imagePath: cleanedOutput,
+                    selectedClassPair: classToUse,
+                    aggregationLabel: aggLabel,
+                    csvPath,
+                    actualFeatureCount: effectiveFeatureCount,
+                    requestedFeatureCount: requestedFeatureCount
+                });
             });
         };
 
