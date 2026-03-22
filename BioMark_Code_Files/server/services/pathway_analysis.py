@@ -13,7 +13,7 @@ import pandas as pd
 from gseapy import enrichr
 
 DEFAULT_GENE_SET = "KEGG_2021_Human"
-DEFAULT_ORGANISM = "Human"
+DEFAULT_ORGANISM = "human"
 SIGNIFICANCE_THRESHOLD = 0.05
 
 

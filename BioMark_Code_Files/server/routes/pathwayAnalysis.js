@@ -134,6 +134,10 @@ router.post('/pathway-analysis', async (req, res) => {
     stderr += data.toString();
   });
 
+  python.on('error', (spawnErr) => {
+    console.error('Failed to start pathway analysis Python process:', spawnErr);
+  });
+
   python.on('close', async (code) => {
     try {
       if (tempDir) {
@@ -144,11 +148,42 @@ router.post('/pathway-analysis', async (req, res) => {
     }
 
     if (code !== 0) {
-      console.error('Pathway analysis Python script failed:', stderr || `exit code ${code}`);
+      const trimmedStdout = stdout.trim();
+      const trimmedStderr = stderr.trim();
+
+      let parsedFailure = null;
+      if (trimmedStdout) {
+        try {
+          parsedFailure = JSON.parse(trimmedStdout);
+        } catch (parseStdoutErr) {
+          console.warn('Pathway analysis failed and returned non-JSON stdout:', parseStdoutErr);
+        }
+      }
+
+      if (!parsedFailure && trimmedStderr) {
+        try {
+          parsedFailure = JSON.parse(trimmedStderr);
+        } catch (parseStderrErr) {
+          console.warn('Pathway analysis failed and returned non-JSON stderr:', parseStderrErr);
+        }
+      }
+
+      const resolvedMessage = parsedFailure?.message || 'Pathway analysis failed.';
+      const resolvedError = parsedFailure?.error || trimmedStderr || trimmedStdout || `Process exited with code ${code}`;
+
+      console.error('Pathway analysis Python script failed', {
+        exitCode: code,
+        message: resolvedMessage,
+        error: resolvedError,
+        stdout: trimmedStdout || null,
+        stderr: trimmedStderr || null,
+      });
+
       return res.status(500).json({
         success: false,
-        message: 'Pathway analysis failed.',
-        error: stderr || `Process exited with code ${code}`,
+        message: resolvedMessage,
+        error: resolvedError,
+        data: parsedFailure?.data ?? null,
       });
     }
 
