@@ -3168,7 +3168,7 @@ function App() {
     const hasCox = Array.isArray(analysis.parameters?.survivalAnalysis)
       && analysis.parameters.survivalAnalysis.some((m) => normalizeMethodToken(m) === 'cox_regression');
     if (hasCox) {
-      urls.push(buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=survival_analysis,analysis=cox_regression/ranked_features_df.csv`));
+      urls.push(buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=survival_analysis_analysis=cox_regression/ranked_features_df.csv`));
     }
 
     const explanationMethods = Array.isArray(analysis.parameters?.modelExplanation)

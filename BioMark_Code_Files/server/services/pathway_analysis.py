@@ -12,10 +12,71 @@ warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 import pandas as pd
 from gseapy import enrichr
 
+
 DEFAULT_GENE_SET = "KEGG_2021_Human"
 DEFAULT_ORGANISM = "human"
 SIGNIFICANCE_THRESHOLD = 0.05
 
+
+def load_mirna_targets(service_dir: str = None) -> dict:
+    """
+    Load miRNA target mappings from CSV file.
+    Returns a dict mapping miRNA IDs to their first target gene.
+    """
+    if service_dir is None:
+        service_dir = os.path.dirname(__file__)
+    
+    mirna_file = os.path.join(service_dir, "miRNA_targets.csv")
+    mirna_map = {}
+    
+    try:
+        if os.path.exists(mirna_file):
+            df = pd.read_csv(mirna_file)
+            # Group by miRNA and take the first target gene for each miRNA
+            for mirna, group in df.groupby("miRNA"):
+                first_target = group["Target Gene"].iloc[0]
+                mirna_map[mirna] = first_target
+    except Exception as e:
+        # If loading fails, continue without miRNA mapping
+        pass
+    
+    return mirna_map
+
+def map_mirnas_to_genes(features: List[str], service_dir: str = None) -> List[str]:
+    """
+    Check if features contain miRNAs and map them to target genes.
+    Returns list of genes with miRNAs replaced by their target genes.
+    """
+    mirna_map = load_mirna_targets(service_dir)
+    
+    if not mirna_map:
+        return features
+    
+    mapped_features = []
+    for feature in features:
+        if isinstance(feature, str):
+            # Check if feature contains 'miR' (case-insensitive)
+            if 'mir' in feature.lower():
+                # Try exact match first
+                if feature in mirna_map:
+                    mapped_features.append(mirna_map[feature])
+                else:
+                    # Try to find a match that contains this feature
+                    found = False
+                    for mirna_id, target_gene in mirna_map.items():
+                        if feature.lower() in mirna_id.lower():
+                            mapped_features.append(target_gene)
+                            found = True
+                            break
+                    if not found:
+                        # If no match found, keep original feature
+                        mapped_features.append(feature)
+            else:
+                mapped_features.append(feature)
+        else:
+            mapped_features.append(feature)
+    
+    return mapped_features
 
 def sanitize_label_for_path(label: str) -> str:
     if not label:
@@ -46,8 +107,12 @@ def perform_enrichment_analysis(
     analysis_display_name: str = "KEGG pathway analysis",
     organism: str = DEFAULT_ORGANISM,
 ):
+    # Map miRNAs to genes if present
+    service_dir = os.path.dirname(__file__)
+    mapped_analysis_results = map_mirnas_to_genes(analysis_results, service_dir)
+    
     try:
-        sanitized = [gene.strip() for gene in analysis_results if isinstance(gene, str) and gene.strip()]
+        sanitized = [gene.strip() for gene in mapped_analysis_results if isinstance(gene, str) and gene.strip()]
         if not sanitized:
             summary = "No significant genes found in the analysis results."
             return {
