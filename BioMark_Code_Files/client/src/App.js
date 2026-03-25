@@ -351,6 +351,8 @@ function App() {
   const [scoring, setScoring] = useState("f1");
   const [featureImportanceFinetune, setFeatureImportanceFinetune] = useState(false);
   const [numTopFeatures, setNumTopFeatures] = useState(20);
+  const [volcanoPValueThreshold, setVolcanoPValueThreshold] = useState(0.05);
+  const [volcanoLog2FcThreshold, setVolcanoLog2FcThreshold] = useState(1.0);
   // Aggregation for Combine step
   const [aggregationMethod, setAggregationMethod] = useState('sum');
   const [aggregationWeights, setAggregationWeights] = useState('');
@@ -1179,14 +1181,14 @@ function App() {
 
       // Optional phase between classPair and method (e.g., 'initial', 'AfterFeatureSelection')
       const afterPair = parts.slice(idxRes + 3);
-      const methodKeys = new Set(['t_test', 'anova', 'wilcoxon_rank_sum', 'kruskal_wallis', 'shap', 'lime', 'feature_importance', 'models', 'summaryStatisticalMethods']);
+      const methodKeys = new Set(['t_test', 'anova', 'wilcoxon_rank_sum', 'kruskal_wallis', 'volcano', 'shap', 'lime', 'feature_importance', 'models', 'summaryStatisticalMethods']);
       const foundIdx = afterPair.findIndex(seg => methodKeys.has(seg));
       const phase = foundIdx > 0 ? afterPair.slice(0, foundIdx).join('/') : (foundIdx === 0 ? '' : afterPair.slice(0, 1).join('/'));
       const sub1 = foundIdx >= 0 ? afterPair[foundIdx] : afterPair[0];
 
       const basePrefix = `/results/${fileName}/${classPair}` + (phase ? `/${phase}` : '');
 
-      // Statistical: t_test / anova / wilcoxon_rank_sum / kruskal_wallis
+      // Statistical: t_test / anova / wilcoxon_rank_sum / kruskal_wallis / volcano
       if (sub1 === 't_test') {
         links.push({ href: buildUrl(`${basePrefix}/t_test/t_test_results.csv`), label: 'Download Model Details as CSV' });
         // Aggregated (combined) ranking for the class pair
@@ -1217,6 +1219,14 @@ function App() {
         links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/ranked_features_df.csv`), label: 'Download Biomarker List (Combined)' });
         // Method-specific ranked list for kruskal_wallis only
         links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=statistical_tests_analysis=kruskal_wallis/ranked_features_df.csv`), label: 'Download Biomarker List as CSV' });
+        return links;
+      }
+      if (sub1 === 'volcano') {
+        links.push({ href: buildUrl(`${basePrefix}/volcano/volcano_results.csv`), label: 'Download Model Details as CSV' });
+        // Aggregated (combined) ranking for the class pair
+        links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/ranked_features_df.csv`), label: 'Download Biomarker List (Combined)' });
+        // Method-specific ranked list for volcano only
+        links.push({ href: buildUrl(`/results/${fileName}/feature_ranking/${classPair}/method=statistical_tests_analysis=volcano/ranked_features_df.csv`), label: 'Download Biomarker List as CSV' });
         return links;
       }
 
@@ -2682,6 +2692,8 @@ function App() {
         setScoring(parameters.scoring ?? "f1");
         setFeatureImportanceFinetune(parameters.featureImportanceFinetune ?? false);
         setNumTopFeatures(parameters.numTopFeatures ?? 20);
+        setVolcanoPValueThreshold(parameters.volcanoPValueThreshold ?? 0.05);
+        setVolcanoLog2FcThreshold(parameters.volcanoLog2FcThreshold ?? 1.0);
         setPlotter(parameters.plotter ?? "seaborn");
         setDim(parameters.dim ?? "3D");
         setParamFinetune(parameters.paramFinetune ?? false);
@@ -2855,6 +2867,8 @@ function App() {
       scoring: scoring,
       featureImportanceFinetune: featureImportanceFinetune,
       numTopFeatures: numTopFeatures,
+      volcanoPValueThreshold: volcanoPValueThreshold,
+      volcanoLog2FcThreshold: volcanoLog2FcThreshold,
       plotter: plotter,
       dim: dim,
       paramFinetune: paramFinetune,
@@ -3882,6 +3896,8 @@ function App() {
     setScoring("f1");
     setFeatureImportanceFinetune(false);
     setNumTopFeatures(20);
+    setVolcanoPValueThreshold(0.05);
+    setVolcanoLog2FcThreshold(1.0);
     setSelectedTopFeaturesCount(20);
     setPlotter("seaborn");
     setDim("3D");
@@ -5185,6 +5201,13 @@ function App() {
                       .replace(/Performance Results -\s*/i, '')
                       .replace(/Differential Analysis -\s*/i, '')
                       .trim();
+
+                    // Custom readable names for specific plot files
+                    if (/^volcano_plot\.png$/i.test(rawImageName)) {
+                      imageName = 'Volcano Plot';
+                    } else if (rawImageName.toLowerCase().includes('volcano')) {
+                      imageName = 'Volcano Analysis';
+                    }
                     
                     // More comprehensive control - for graphs after feature selection
                     // Check both in the path and in the file name

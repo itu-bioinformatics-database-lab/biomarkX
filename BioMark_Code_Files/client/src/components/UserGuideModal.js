@@ -82,7 +82,7 @@ const UserGuideModal = ({ onClose }) => {
               <li>
                 <strong>Step 5: Choose Analysis and Parameters</strong>
                 <br />
-                Pick one primary analysis: Statistical Test (T‑test/ANOVA), Dimensionality Reduction (PCA/t‑SNE/UMAP), or Classification (Logistic Regression, Random Forest, XGB, etc.). Optionally add a Model Explanation (SHAP/LIME/Permutation Importance) after selecting a classifier.
+                Pick one primary analysis: Statistical Test (T‑test/ANOVA/Wilcoxon/Kruskal‑Wallis/Volcano), Dimensionality Reduction (PCA/t‑SNE/UMAP), or Classification (Logistic Regression, Random Forest, XGB, etc.). Optionally add a Model Explanation (SHAP/LIME/Permutation Importance) after selecting a classifier.
                 <br />
                 Use the "Feature selection stage" toggle to run on "All Features" or on "Selected Top‑N" features derived from earlier runs.
                 <br />

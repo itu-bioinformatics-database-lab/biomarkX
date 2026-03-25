@@ -116,6 +116,8 @@ analysisQueue.process(async (job) => {
         scoring: customParams.scoring || "f1",
         feature_importance_finetune: !!customParams.featureImportanceFinetune,
         num_top_features: resolvedNumTopFeatures,
+        volcano_p_value_threshold: customParams.volcanoPValueThreshold || 0.05,
+        volcano_log2fc_threshold: customParams.volcanoLog2FcThreshold || 1.0,
         plotter: customParams.plotter || "seaborn",
         dim: customParams.dim || "3D",
         param_finetune: !!customParams.paramFinetune,

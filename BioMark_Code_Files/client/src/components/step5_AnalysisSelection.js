@@ -38,6 +38,8 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
   const [scoring, setScoring] = useState("f1");
   const [featureImportanceFinetune, setFeatureImportanceFinetune] = useState(false);
   const [numTopFeatures, setNumTopFeatures] = useState(20);
+  const [volcanoPValueThreshold, setVolcanoPValueThreshold] = useState(0.05);
+  const [volcanoLog2FcThreshold, setVolcanoLog2FcThreshold] = useState(1.0);
   
   // Clustering Analysis Parameters
   const [plotter, setPlotter] = useState("seaborn");
@@ -98,7 +100,7 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
   }, [showParamsDropdown, confirmSelection]);
   
   const analysisOptions = {
-    statisticalTest: ['T-test', 'Anova', 'Wilcoxon-rank-sum', 'Kruskal-Wallis'],
+    statisticalTest: ['T-test', 'Anova', 'Wilcoxon-rank-sum', 'Kruskal-Wallis', 'Volcano'],
     dimensionalityReduction: ['PCA', 'tSNE', 'UMAP'],
     survivalAnalysis: ['Kaplan-Meier', 'Cox Regression'],
     classificationAnalysis: ['Logistic Regression', 'Random Forest', 'XGBClassifier', 'Decision Tree', 'Gradient Boosting', 'CatBoosting Classifier', 'AdaBoost Classifier', 'MLPClassifier', 'SVC'],
@@ -109,6 +111,7 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
   const methodClassLimits = {
     'T-test': { min: 2, max: 2 },
     'Wilcoxon-rank-sum': { min: 2, max: 2 },
+    'Volcano': { min: 2, max: 2 },
     // All others default to { min: 2, max: Infinity }
   };
 
@@ -301,6 +304,8 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
         scoring,
         featureImportanceFinetune,
         numTopFeatures,
+        volcanoPValueThreshold,
+        volcanoLog2FcThreshold,
         plotter,
         dim,
         paramFinetune,
@@ -691,6 +696,32 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
                     </select>
                   </div>
                 </div>
+                {selectedAnalyses.statisticalTest.includes('Volcano') && (
+                  <>
+                    <div className="param-row">
+                      <div className="param-label">
+                        volcano_p_value_threshold
+                        <span className="param-tooltip">P-value cutoff used to mark significant points in the volcano plot.</span>
+                      </div>
+                      <div className="param-input">
+                        <select value={volcanoPValueThreshold} onChange={(e) => { setVolcanoPValueThreshold(Number(e.target.value)); handleParamChange(); }}>
+                          {[0.1, 0.05, 0.01, 0.005, 0.001].map((p) => (<option key={p} value={p}>{p}</option>))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="param-row">
+                      <div className="param-label">
+                        volcano_log2fc_threshold
+                        <span className="param-tooltip">Absolute log2 fold-change cutoff used to mark significant points in the volcano plot.</span>
+                      </div>
+                      <div className="param-input">
+                        <select value={volcanoLog2FcThreshold} onChange={(e) => { setVolcanoLog2FcThreshold(Number(e.target.value)); handleParamChange(); }}>
+                          {[0.5, 1.0, 1.5, 2.0, 3.0].map((fc) => (<option key={fc} value={fc}>{fc}</option>))}
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                )}
                 {/* Aggregation method selector removed per requirement; combination happens in final results stage */}
               </div>
             )}

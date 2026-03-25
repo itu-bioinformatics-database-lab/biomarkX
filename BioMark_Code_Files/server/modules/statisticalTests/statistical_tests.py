@@ -38,7 +38,9 @@ class StatisticalTestAnalysis:
                  sample_id_column: str = "Sample ID",
                  outdir: str = "output",
                  feature_type: str = "microRNA",
-                 top_features_to_plot: int = 20):
+                 top_features_to_plot: int = 20,
+                 volcano_p_value_threshold: float = 0.05,
+                 volcano_log2fc_threshold: float = 1.0):
 
         sns.set_theme(style="darkgrid")
         self.data = data
@@ -79,7 +81,22 @@ class StatisticalTestAnalysis:
         self.outdir = outdir
         self.feature_type = feature_type
         self.top_features_to_plot = top_features_to_plot
-        self.analyses = analyses or ["anova", "t_test"]
+        self.volcano_p_value_threshold = float(volcano_p_value_threshold)
+        self.volcano_log2fc_threshold = float(volcano_log2fc_threshold)
+
+        analyses = analyses or ["anova", "t_test"]
+        analysis_aliases = {
+            "ttest": "t_test",
+            "t_test": "t_test",
+            "anova": "anova",
+            "wilcoxon": "wilcoxon_rank_sum",
+            "wilcoxon_rank_sum": "wilcoxon_rank_sum",
+            "kruskal": "kruskal_wallis",
+            "kruskal_wallis": "kruskal_wallis",
+            "volcano": "volcano",
+            "volcano_plot": "volcano"
+        }
+        self.analyses = [analysis_aliases.get(a, a) for a in analyses]
 
         # Seed and random sample indices (kept for compatibility/logs if needed later)
         np.random.seed(42)
@@ -206,6 +223,114 @@ class StatisticalTestAnalysis:
         print(sorted(self.top_features["t_test"], key=self.top_features["t_test"].get, reverse=True)[:self.top_features_to_plot])
         print("=" * length)
         print(" t-Test Analysis Completed ")
+        print("=" * length)
+
+    def perform_volcano(self):
+        logging.info("Performing Volcano Analysis")
+        length = 110
+        print("=" * length)
+        print(" Starting Volcano Analysis")
+        print("=" * length)
+
+        if len(self.class_names) != 2:
+            logging.warning("Volcano analysis requires exactly two classes; skipping.")
+            print("Volcano analysis requires exactly two classes; skipping.")
+            print("=" * length)
+            return
+
+        np.random.seed(0)
+
+        class_0 = self.X.iloc[self.labels[self.labels == self.class_names[0]].dropna().index, :]
+        class_1 = self.X.iloc[self.labels[self.labels == self.class_names[1]].dropna().index, :]
+
+        pseudo_count = 1e-9
+        p_value_floor = 1e-300
+        fc_threshold = max(0.0, float(self.volcano_log2fc_threshold))
+        p_threshold = min(max(float(self.volcano_p_value_threshold), 1e-12), 1.0)
+
+        volcano_values = {
+            "Features": [],
+            "log2FC": [],
+            "pvalue": [],
+            "neg_log10_pvalue": []
+        }
+
+        for column in self.X.columns:
+            class_0_values = class_0[column]
+            class_1_values = class_1[column]
+            output = ttest_ind(class_0_values, class_1_values)
+
+            mean_0 = float(np.mean(class_0_values))
+            mean_1 = float(np.mean(class_1_values))
+
+            # Robust log2 fold change for non-positive feature scales.
+            min_value = float(min(class_0_values.min(), class_1_values.min()))
+            offset = abs(min_value) + pseudo_count if min_value <= 0 else 0.0
+            denom = mean_0 + offset + pseudo_count
+            numer = mean_1 + offset + pseudo_count
+            log2_fc = np.log2(numer / denom)
+
+            raw_pvalue = output.pvalue
+            if raw_pvalue is None or np.isnan(raw_pvalue) or raw_pvalue <= 0:
+                safe_pvalue = p_value_floor
+            else:
+                safe_pvalue = float(raw_pvalue)
+
+            volcano_values["Features"].append(column)
+            volcano_values["log2FC"].append(log2_fc)
+            volcano_values["pvalue"].append(safe_pvalue)
+            volcano_values["neg_log10_pvalue"].append(-np.log10(safe_pvalue))
+
+        volcano_df = pd.DataFrame(volcano_values)
+        volcano_df["Features"] = volcano_df["Features"].apply(lambda x: self.feature_map_reverse[x])
+        volcano_df["significant"] = (
+            (volcano_df["pvalue"] < p_threshold) &
+            (volcano_df["log2FC"].abs() >= fc_threshold)
+        )
+
+        volcano_df = volcano_df.sort_values(
+            by=["significant", "neg_log10_pvalue"],
+            ascending=[False, False]
+        ).reset_index(drop=True)
+
+        try:
+            volcano_csv_path = os.path.join(self.outdir, "volcano", "volcano_results.csv")
+            os.makedirs(os.path.dirname(volcano_csv_path), exist_ok=True)
+            volcano_df.to_csv(volcano_csv_path, index=False, sep=';', encoding='utf-8-sig')
+        except Exception:
+            pass
+
+        plt.figure(figsize=(10, 8))
+        colors = volcano_df["significant"].map({True: "crimson", False: "gray"})
+        plt.scatter(
+            volcano_df["log2FC"],
+            volcano_df["neg_log10_pvalue"],
+            c=colors,
+            alpha=0.75,
+            s=35,
+            edgecolors='none'
+        )
+
+        plt.axhline(y=-np.log10(p_threshold), color='black', linestyle='--', linewidth=1)
+        plt.axvline(x=fc_threshold, color='black', linestyle='--', linewidth=1)
+        plt.axvline(x=-fc_threshold, color='black', linestyle='--', linewidth=1)
+
+        plt.xlabel('log2 Fold Change', fontsize=14)
+        plt.ylabel('-log10(p-value)', fontsize=14)
+        plt.title(f'Volcano Plot of Differentiating {self.feature_type}s', fontsize=18, pad=12)
+        plt.tight_layout()
+
+        plt.savefig(f'{self.outdir}/volcano/png/volcano_plot.png', bbox_inches='tight')
+        plt.savefig(f'{self.outdir}/volcano/pdf/volcano_plot.pdf', bbox_inches='tight')
+        print(f'{self.outdir}/volcano/png/volcano_plot.png')
+
+        self.top_features["volcano"] = {
+            row["Features"]: float(abs(row["log2FC"]))
+            for _, row in volcano_df.iterrows()
+        }
+
+        print("=" * length)
+        print(" Volcano Analysis Completed ")
         print("=" * length)
 
     def perform_wilcoxon_rank_sum(self):
@@ -356,6 +481,8 @@ class StatisticalTestAnalysis:
             self.perform_anova()
         if "t_test" in self.analyses:
             self.perform_t_test()
+        if "volcano" in self.analyses:
+            self.perform_volcano()
         if "wilcoxon_rank_sum" in self.analyses:
             self.perform_wilcoxon_rank_sum()
         if "kruskal_wallis" in self.analyses:

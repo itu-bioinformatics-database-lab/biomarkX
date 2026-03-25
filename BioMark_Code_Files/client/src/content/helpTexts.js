@@ -20,7 +20,7 @@ export const helpTexts = {
     step5: {
       about: "Choose one primary analysis. Optionally add a model explanation after selecting a classification method.",
       categories: {
-        statisticalTest: "Run T-test/ANOVA/Wilcoxon rank-sum/Kruskal-Wallis to find features that differ between groups. Reports p-values and a ranked Top-N list (with multiple-testing adjustment).",
+        statisticalTest: "Run T-test/ANOVA/Wilcoxon rank-sum/Kruskal-Wallis/Volcano to find features that differ between groups. Reports p-values and a ranked Top-N list (with multiple-testing adjustment).",
         dimensionalityReduction: "Use PCA/t-SNE/UMAP to project data into 2D/3D for inspecting group structure and outliers (labels are only used for coloring, not for fitting).",
         survival: "Use Kaplan-Meier and Cox regression to analyze time-to-event outcomes, compare survival curves between groups, and estimate risk effects. The input dataset must include two specific columns: one for survival time (e.g., days/months) and another for event status (e.g., 1 for event, 0 for censored).",
         classification: "Train ML models (e.g., Logistic Regression, Random Forest, XGB) to predict class labels; outputs CV/Train/Test metrics (Accuracy, Precision, Recall, F1, ROC-AUC) and key settings.",
@@ -33,6 +33,7 @@ export const helpTexts = {
         "Anova": "Per feature, tests mean differences across groups; use adjusted p-values for multiple testing.",
         "Wilcoxon-rank-sum": "Per feature, compares distributions between two classes without assuming normality; reports a p-value.",
         "Kruskal-Wallis": "Per feature, compares distributions across multiple classes without assuming normality; reports a p-value.",
+        "Volcano": "Combines effect size (log2 fold change) and significance (-log10 p-value) in one plot; strongest candidates are far from center and high on y-axis.",
         // Dimensionality Reduction
         "PCA": "Linear projection maximizing variance; shows separation along principal components; sensitive to scaling.",
         "tSNE": "Non-linear embedding preserving local neighborhoods; clusters are illustrative, spacing not absolute; tune perplexity.",
@@ -112,7 +113,7 @@ export const helpTexts = {
       "Accuracy/Precision/Recall/F1: Classification metrics; F1 balances precision and recall.",
       "Cross-validation: Average across folds; variability indicates stability.",
       "SHAP/LIME/Permutation Importance: Model-agnostic methods to explain predictions.",
-      "p-value (T-test/ANOVA/Wilcoxon rank-sum/Kruskal-Wallis): Lower suggests stronger group difference; adjust for multiple testing.",
+      "p-value (T-test/ANOVA/Wilcoxon rank-sum/Kruskal-Wallis/Volcano): Lower suggests stronger group difference; adjust for multiple testing.",
     ],
     interpreting: "For classification, focus on F1/Recall when classes are imbalanced and check consistency across folds. Combine statistical significance with model explanations for robust conclusions.",
   },

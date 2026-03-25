@@ -33,6 +33,8 @@ scoring = "f1"                 # Model evaluation metric, diff analysis
 feature_importance_finetune = False  # Model fine-tuning for feature importance analysis
 num_top_features = 20          # Number of top features to use in feature selection, diff analysis
 selected_top_features_count = 20  # Number of top features used to filter data for AfterFeatureSelection runs
+volcano_p_value_threshold = 0.05  # Volcano significance threshold for p-value
+volcano_log2fc_threshold = 1.0    # Volcano significance threshold for |log2 fold-change|
 
 # Clustering Analysis Parameters
 plotter = "seaborn"            # Visualization library selection, diff analysis
@@ -111,7 +113,9 @@ def run_statistical_analysis(data, selectedIllnessColumn, selectedSampleColumn, 
             sample_id_column=selectedSampleColumn,
             outdir=outdir,
             feature_type=feature_type,
-            top_features_to_plot=num_top_features
+            top_features_to_plot=num_top_features,
+            volcano_p_value_threshold=volcano_p_value_threshold,
+            volcano_log2fc_threshold=volcano_log2fc_threshold
         )
         analyzer.run_all_analyses()
         
@@ -455,6 +459,10 @@ if __name__ == "__main__":
                 globals()["feature_importance_finetune"] = params_json["feature_importance_finetune"]
             if "num_top_features" in params_json:
                 globals()["num_top_features"] = params_json["num_top_features"]
+            if "volcano_p_value_threshold" in params_json:
+                globals()["volcano_p_value_threshold"] = float(params_json["volcano_p_value_threshold"])
+            if "volcano_log2fc_threshold" in params_json:
+                globals()["volcano_log2fc_threshold"] = float(params_json["volcano_log2fc_threshold"])
             if "selected_top_features_count" in params_json:
                 globals()["selected_top_features_count"] = max(1, int(params_json["selected_top_features_count"]))
             
