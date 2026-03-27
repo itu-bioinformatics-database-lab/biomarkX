@@ -372,177 +372,169 @@ function AnalysisSelection({ onAnalysisSelection, onSelectionChange, afterFeatur
       </div>
       <div className="analysis-content-wrapper">
         {/* Removed duplicate floating info; main Step 5 title carries the info in App.js */}
-        <div className='analysis-tables'>
-          {/* First Row: Statistical Test | Dimensionality Reduction | Survival Analysis */}
-          <div className="analysis-row" style={{ justifyContent: 'center' }}>
-            {/* Statistical Test */}
-            <div className="analysis-category">
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Science /> Statistical Test
-                <HelpTooltip text={helpTexts.steps.step5.categories.statisticalTest}>info</HelpTooltip>
-              </h4>
-              <table>
-                <tbody>
-                  {analysisOptions.statisticalTest.map((method) => {
-                    const compatible = isMethodCompatible(method);
-                    return (
-                    <tr
-                      key={method}
-                      className={`${selectedAnalyses.statisticalTest.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
-                      onClick={() => handleSelection(method, 'statisticalTest')}
-                      title={!compatible ? getDisabledTooltip(method) : ''}
-                    >
-                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
-                        <span>{method}{!compatible && <span style={{ fontSize: 11, color: '#999', marginLeft: 6 }}>(2 classes only)</span>}</span>
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
-                        </span>
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Dimensionality Reduction and Visualizations */}
-            <div className="analysis-category">
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Hub /> Dimensionality Reduction and Visualization
-                <HelpTooltip text={helpTexts.steps.step5.categories.dimensionalityReduction}>info</HelpTooltip>
-              </h4>
-              <table>
-                <tbody>
-                  {analysisOptions.dimensionalityReduction.map((method) => {
-                    const compatible = isMethodCompatible(method);
-                    return (
-                    <tr
-                      key={method}
-                      className={`${selectedAnalyses.dimensionalityReduction.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
-                      onClick={() => handleSelection(method, 'dimensionalityReduction')}
-                      title={!compatible ? getDisabledTooltip(method) : ''}
-                    >
-                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
-                        <span>{method}</span>
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
-                        </span>
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Survival Analysis */}
-            <div className="analysis-category">
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><FavoriteBorder /> Survival Analysis
-                <HelpTooltip text={helpTexts.steps.step5.categories.survival}>info</HelpTooltip>
-              </h4>
-              <table>
-                <tbody>
-                  {analysisOptions.survivalAnalysis.map((method) => {
-                    const compatible = isMethodCompatible(method);
-                    return (
-                    <tr
-                      key={method}
-                      className={`${selectedAnalyses.survivalAnalysis.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
-                      onClick={() => handleSelection(method, 'survivalAnalysis')}
-                      title={!compatible ? getDisabledTooltip(method) : ''}
-                    >
-                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
-                        <span>{method}</span>
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
-                        </span>
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+        <div className='analysis-tables' style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 60px minmax(300px, 1fr)', rowGap: '12px', columnGap: '20px', justifyContent: 'center', margin: '0 auto', width: 'fit-content' }}>
+          {/* Top Left: Statistical Test */}
+          <div className="analysis-category" style={{ gridColumn: 1, gridRow: 1, alignSelf: 'start' }}>
+            <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Science /> Statistical Test
+              <HelpTooltip text={helpTexts.steps.step5.categories.statisticalTest}>info</HelpTooltip>
+            </h4>
+            <table>
+              <tbody>
+                {analysisOptions.statisticalTest.map((method) => {
+                  const compatible = isMethodCompatible(method);
+                  return (
+                  <tr
+                    key={method}
+                    className={`${selectedAnalyses.statisticalTest.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
+                    onClick={() => handleSelection(method, 'statisticalTest')}
+                    title={!compatible ? getDisabledTooltip(method) : ''}
+                  >
+                    <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
+                      <span>{method}{!compatible && <span style={{ fontSize: 11, color: '#999', marginLeft: 6 }}>(2 classes only)</span>}</span>
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
+                      </span>
+                    </td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
-          {/* Second Row: Classification Analysis ? Arrow ? Model Explanation */}
-          <div className="analysis-row" style={{ justifyContent: 'center' }}>
-            <div className="classification-container">
-            {/* Classification Analysis */}
-            <div className="analysis-category">
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><AccountTree /> Classification Analysis
-                <HelpTooltip text={helpTexts.steps.step5.categories.classification}>info</HelpTooltip>
-              </h4>
-              <table>
-                <tbody>
-                  {analysisOptions.classificationAnalysis.map((method) => {
-                    const compatible = isMethodCompatible(method);
-                    return (
-                    <tr
-                      key={method}
-                      className={`${selectedAnalyses.classificationAnalysis.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
-                      onClick={() => handleSelection(method, 'classificationAnalysis')}
-                      title={!compatible ? getDisabledTooltip(method) : ''}
-                    >
-                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
-                        <span>{method}</span>
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
-                        </span>
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Arrow Connector */}
-            <div className={`connector${isClassificationSelected ? ' visible' : ''}`}>
-              <ArrowForwardIcon style={{ fontSize: 32 }} />
-            </div>
-
-            {/* Model Explanation - Only available when Classification is selected */}
-            <div className={`analysis-category model-explanation-category${isClassificationSelected ? ' visible' : ''}`}
-                 style={{ opacity: isClassificationSelected ? 1 : 0.45, pointerEvents: isClassificationSelected ? 'auto' : 'none' }}>
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Insights /> Model Explanation
-                <span className="optional-text">(Optional)</span>
-                <HelpTooltip text={helpTexts.steps.step5.categories.explanation}>info</HelpTooltip>
-              </h4>
-              <table>
-                <tbody>
-                  {analysisOptions.modelExplanation.map((method) => {
-                    const compatible = isMethodCompatible(method);
-                    return (
-                    <tr
-                      key={method}
-                      className={`${selectedAnalyses.modelExplanation.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
-                      onClick={() => handleSelection(method, 'modelExplanation')}
-                      title={!compatible ? getDisabledTooltip(method) : ''}
-                    >
-                      <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
-                        <span>{method}</span>
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
-                        </span>
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            </div>
+          {/* Top Right: Dimensionality Reduction and Visualizations */}
+          <div className="analysis-category" style={{ gridColumn: 3, gridRow: 1, alignSelf: 'start' }}>
+            <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Hub /> Dimensionality Reduction and Visualization
+              <HelpTooltip text={helpTexts.steps.step5.categories.dimensionalityReduction}>info</HelpTooltip>
+            </h4>
+            <table>
+              <tbody>
+                {analysisOptions.dimensionalityReduction.map((method) => {
+                  const compatible = isMethodCompatible(method);
+                  return (
+                  <tr
+                    key={method}
+                    className={`${selectedAnalyses.dimensionalityReduction.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
+                    onClick={() => handleSelection(method, 'dimensionalityReduction')}
+                    title={!compatible ? getDisabledTooltip(method) : ''}
+                  >
+                    <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
+                      <span>{method}</span>
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
+                      </span>
+                    </td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </div>
 
-        {/* Confirm button retained in original place */}
-        <div className='analysis-button' style={{ visibility: confirmSelection ? 'hidden' : 'visible' }}>
-          <button
-              onClick={handleConfirmSelection}
-              disabled={!isAnyPrimaryAnalysisSelected}
-            >
-              Confirm Selection
-            </button>
+          {/* Bottom Right - Top: Survival Analysis */}
+          <div className="analysis-category" style={{ gridColumn: 3, gridRow: 2, alignSelf: 'start' }}>
+            <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><FavoriteBorder /> Survival Analysis
+              <HelpTooltip text={helpTexts.steps.step5.categories.survival}>info</HelpTooltip>
+            </h4>
+            <table>
+              <tbody>
+                {analysisOptions.survivalAnalysis.map((method) => {
+                  const compatible = isMethodCompatible(method);
+                  return (
+                  <tr
+                    key={method}
+                    className={`${selectedAnalyses.survivalAnalysis.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
+                    onClick={() => handleSelection(method, 'survivalAnalysis')}
+                    title={!compatible ? getDisabledTooltip(method) : ''}
+                  >
+                    <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
+                      <span>{method}</span>
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
+                      </span>
+                    </td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Bottom Left: Classification Analysis */}
+          <div className="analysis-category" style={{ gridColumn: 1, gridRow: '2 / 4', alignSelf: 'start' }}>
+            <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><AccountTree /> Classification Analysis
+              <HelpTooltip text={helpTexts.steps.step5.categories.classification}>info</HelpTooltip>
+            </h4>
+            <table>
+              <tbody>
+                {analysisOptions.classificationAnalysis.map((method) => {
+                  const compatible = isMethodCompatible(method);
+                  return (
+                  <tr
+                    key={method}
+                    className={`${selectedAnalyses.classificationAnalysis.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
+                    onClick={() => handleSelection(method, 'classificationAnalysis')}
+                    title={!compatible ? getDisabledTooltip(method) : ''}
+                  >
+                    <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
+                      <span>{method}</span>
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
+                      </span>
+                    </td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Bottom Middle: Arrow Connector */}
+          <div className={`connector${isClassificationSelected ? ' visible' : ''}`} style={{ gridColumn: 2, gridRow: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'center' }}>
+            <ArrowForwardIcon style={{ fontSize: 32 }} />
+          </div>
+
+          {/* Bottom Right - Bottom: Model Explanation */}
+          <div className={`analysis-category model-explanation-category${isClassificationSelected ? ' visible' : ''}`}
+               style={{ gridColumn: 3, gridRow: 3, alignSelf: 'center', opacity: isClassificationSelected ? 1 : 0.45, pointerEvents: isClassificationSelected ? 'auto' : 'none' }}>
+            <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Insights /> Model Explanation
+              <span className="optional-text">(Optional)</span>
+              <HelpTooltip text={helpTexts.steps.step5.categories.explanation}>info</HelpTooltip>
+            </h4>
+            <table>
+              <tbody>
+                {analysisOptions.modelExplanation.map((method) => {
+                  const compatible = isMethodCompatible(method);
+                  return (
+                  <tr
+                    key={method}
+                    className={`${selectedAnalyses.modelExplanation.includes(method) ? 'selected' : ''} ${!compatible ? 'disabled-method' : ''}`}
+                    onClick={() => handleSelection(method, 'modelExplanation')}
+                    title={!compatible ? getDisabledTooltip(method) : ''}
+                  >
+                    <td style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', opacity: compatible ? 1 : 0.45 }}>
+                      <span>{method}</span>
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <HelpTooltip placement="right" text={helpTexts.steps.step5.methodInfo[method] || ''}>i</HelpTooltip>
+                      </span>
+                    </td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Confirm Button perfectly centered within the grid */}
+          <div className='analysis-button' style={{ gridColumn: '1 / -1', gridRow: '4', display: 'flex', justifyContent: 'center', visibility: confirmSelection ? 'hidden' : 'visible', marginTop: '8px' }}>
+            <button
+                onClick={handleConfirmSelection}
+                disabled={!isAnyPrimaryAnalysisSelected}
+              >
+                Confirm Selection
+              </button>
+          </div>
         </div>
       </div>
         

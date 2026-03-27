@@ -72,9 +72,6 @@
   border: none;
   border-radius: 5px;
   cursor: pointer;
-  position: relative;
-  left: 40px;
-  bottom: 30px;
 }
 
 .analysis-selection button:hover {

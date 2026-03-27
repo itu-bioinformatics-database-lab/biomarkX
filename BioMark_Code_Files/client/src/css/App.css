@@ -284,14 +284,12 @@ select, option {
 /* Styling for the Model Explanation category card */
 .model-explanation-category {
   opacity: 0;
-  transform: translateX(-20px);
   pointer-events: none; /* Prevents interaction when hidden */
-  transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out;
+  transition: opacity 0.4s ease-in-out;
 }
 
 .model-explanation-category.visible {
   opacity: 1;
-  transform: translateX(0);
   pointer-events: auto; /* Allows interaction when visible */
 }
 
@@ -304,21 +302,20 @@ select, option {
 
 /* New wrapper for tables and confirm button */
 .analysis-content-wrapper {
-  display: grid;
-  grid-template-columns: auto auto;
+  display: flex;
+  flex-direction: column;
   justify-content: center;           /* center the grid within page */
-  align-items: start;
-  column-gap: 12px;                  /* small space between tables and button */
+  align-items: center;
+  gap: 30px;                  /* space between tables and button */
   width: 100%;
 }
 
 .analysis-tables {
-  flex-grow: 1; /* Allows the tables to take up available space */
+  width: 100%;
 }
 
 .analysis-button {
-  justify-self: start; /* place button at the start of its grid column */
-  align-self: center;  /* vertically center relative to tables */
+  margin: 0 auto;
 }
 
 /* Post-analysis action layout (single + multiple analysis flows) */
