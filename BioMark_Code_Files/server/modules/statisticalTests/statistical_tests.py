@@ -311,9 +311,92 @@ class StatisticalTestAnalysis:
             edgecolors='none'
         )
 
+        # Label extreme significant molecules on both left and right sides.
+        labels_total = 10
+        labels_per_side = labels_total // 2
+
+        labels_df = pd.DataFrame(columns=volcano_df.columns)
+        left_all_df = volcano_df[volcano_df["log2FC"] < 0].sort_values(
+            by=["log2FC", "neg_log10_pvalue", "Features"],
+            ascending=[True, False, True]
+        )
+        right_all_df = volcano_df[volcano_df["log2FC"] > 0].sort_values(
+            by=["log2FC", "neg_log10_pvalue", "Features"],
+            ascending=[False, False, True]
+        )
+
+        left_significant = left_all_df[left_all_df["significant"]].head(labels_per_side)
+        right_significant = right_all_df[right_all_df["significant"]].head(labels_per_side)
+
+        left_fill = left_all_df[~left_all_df["Features"].isin(left_significant["Features"])].head(
+            max(0, labels_per_side - len(left_significant))
+        )
+        right_fill = right_all_df[~right_all_df["Features"].isin(right_significant["Features"])].head(
+            max(0, labels_per_side - len(right_significant))
+        )
+
+        labels_df = pd.concat(
+            [left_significant, left_fill, right_significant, right_fill],
+            ignore_index=True
+        ).drop_duplicates(subset=["Features"]).head(labels_total)
+
+        if len(labels_df) < labels_total:
+            remaining_needed = labels_total - len(labels_df)
+            remaining_candidates = volcano_df[
+                ~volcano_df["Features"].isin(labels_df["Features"])
+            ].copy()
+            remaining_candidates["abs_log2FC"] = remaining_candidates["log2FC"].abs()
+            fallback_labels = remaining_candidates.sort_values(
+                by=["abs_log2FC", "neg_log10_pvalue", "Features"],
+                ascending=[False, False, True]
+            ).head(remaining_needed)
+            labels_df = pd.concat([labels_df, fallback_labels], ignore_index=True)
+            labels_df = labels_df.drop_duplicates(subset=["Features"]).head(labels_total)
+
         plt.axhline(y=-np.log10(p_threshold), color='black', linestyle='--', linewidth=1)
         plt.axvline(x=fc_threshold, color='black', linestyle='--', linewidth=1)
         plt.axvline(x=-fc_threshold, color='black', linestyle='--', linewidth=1)
+
+        x_min, x_max = plt.xlim()
+        x_range = max(1e-9, x_max - x_min)
+        edge_margin = 0.06 * x_range
+        left_y_offsets = [4, 12, -4, 20, -12]
+        right_y_offsets = [4, 12, -4, 20, -12]
+        left_label_index = 0
+        right_label_index = 0
+
+        for _, row in labels_df.iterrows():
+            x_val = float(row["log2FC"])
+            y_val = float(row["neg_log10_pvalue"])
+            if x_val <= x_min + edge_margin:
+                x_offset = 8
+                horizontal_align = "left"
+            elif x_val >= x_max - edge_margin:
+                x_offset = -8
+                horizontal_align = "right"
+            else:
+                x_offset = 8 if x_val >= 0 else -8
+                horizontal_align = "left" if x_val >= 0 else "right"
+
+            if x_val < 0:
+                y_offset = left_y_offsets[left_label_index % len(left_y_offsets)]
+                left_label_index += 1
+            else:
+                y_offset = right_y_offsets[right_label_index % len(right_y_offsets)]
+                right_label_index += 1
+
+            plt.annotate(
+                str(row["Features"]),
+                xy=(x_val, y_val),
+                xytext=(x_offset, y_offset),
+                textcoords='offset points',
+                fontsize=8,
+                ha=horizontal_align,
+                va='bottom',
+                color='black',
+                alpha=0.9,
+                bbox=dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.6)
+            )
 
         plt.xlabel('log2 Fold Change', fontsize=14)
         plt.ylabel('-log10(p-value)', fontsize=14)
