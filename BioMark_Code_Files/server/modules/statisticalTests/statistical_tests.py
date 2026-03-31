@@ -311,11 +311,9 @@ class StatisticalTestAnalysis:
             edgecolors='none'
         )
 
-        # Label extreme significant molecules on both left and right sides.
-        labels_total = 10
-        labels_per_side = labels_total // 2
+        # Dynamic label selection based on fold-change borders.
+        fallback_per_side = 5
 
-        labels_df = pd.DataFrame(columns=volcano_df.columns)
         left_all_df = volcano_df[volcano_df["log2FC"] < 0].sort_values(
             by=["log2FC", "neg_log10_pvalue", "Features"],
             ascending=[True, False, True]
@@ -325,33 +323,31 @@ class StatisticalTestAnalysis:
             ascending=[False, False, True]
         )
 
-        left_significant = left_all_df[left_all_df["significant"]].head(labels_per_side)
-        right_significant = right_all_df[right_all_df["significant"]].head(labels_per_side)
+        left_outside_df = left_all_df[left_all_df["log2FC"] < -fc_threshold]
+        right_outside_df = right_all_df[right_all_df["log2FC"] > fc_threshold]
 
-        left_fill = left_all_df[~left_all_df["Features"].isin(left_significant["Features"])].head(
-            max(0, labels_per_side - len(left_significant))
-        )
-        right_fill = right_all_df[~right_all_df["Features"].isin(right_significant["Features"])].head(
-            max(0, labels_per_side - len(right_significant))
-        )
+        labels_left_df = pd.DataFrame(columns=volcano_df.columns)
+        labels_right_df = pd.DataFrame(columns=volcano_df.columns)
+
+        if not left_outside_df.empty and not right_outside_df.empty:
+            labels_left_df = left_outside_df
+            labels_right_df = right_outside_df
+        elif not right_outside_df.empty:
+            mirror_count = len(right_outside_df)
+            labels_right_df = right_outside_df
+            labels_left_df = left_all_df.head(mirror_count)
+        elif not left_outside_df.empty:
+            mirror_count = len(left_outside_df)
+            labels_left_df = left_outside_df
+            labels_right_df = right_all_df.head(mirror_count)
+        else:
+            labels_left_df = left_all_df.head(fallback_per_side)
+            labels_right_df = right_all_df.head(fallback_per_side)
 
         labels_df = pd.concat(
-            [left_significant, left_fill, right_significant, right_fill],
+            [labels_left_df, labels_right_df],
             ignore_index=True
-        ).drop_duplicates(subset=["Features"]).head(labels_total)
-
-        if len(labels_df) < labels_total:
-            remaining_needed = labels_total - len(labels_df)
-            remaining_candidates = volcano_df[
-                ~volcano_df["Features"].isin(labels_df["Features"])
-            ].copy()
-            remaining_candidates["abs_log2FC"] = remaining_candidates["log2FC"].abs()
-            fallback_labels = remaining_candidates.sort_values(
-                by=["abs_log2FC", "neg_log10_pvalue", "Features"],
-                ascending=[False, False, True]
-            ).head(remaining_needed)
-            labels_df = pd.concat([labels_df, fallback_labels], ignore_index=True)
-            labels_df = labels_df.drop_duplicates(subset=["Features"]).head(labels_total)
+        ).drop_duplicates(subset=["Features"])
 
         plt.axhline(y=-np.log10(p_threshold), color='black', linestyle='--', linewidth=1)
         plt.axvline(x=fc_threshold, color='black', linestyle='--', linewidth=1)
