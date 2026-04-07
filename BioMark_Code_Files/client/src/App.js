@@ -15,6 +15,7 @@ import AggregationHelpContent from './components/common/AggregationHelpContent';
 import { helpTexts } from './content/helpTexts';
 import LongRunNotificationModal from './components/common/LongRunNotificationModal';
 import { buildKeggColumns, KEGG_PREVIEW_LIMIT } from './utils/keggTable';
+import { parseEnrichmentCsvTable } from './utils/enrichmentTableParser';
 import { LOGIN_PATH } from './constants/routes';
 import NormalizationConfigModal from './components/NormalizationConfigModal';
 import ResamplingConfigModal from './components/ResamplingConfigModal';
@@ -3353,22 +3354,8 @@ function App() {
         if (!response.ok) {
           return null;
         }
-        const rawText = (await response.text()).replace(/^\uFEFF/, '').trim();
-        if (!rawText) {
-          return null;
-        }
-        const lines = rawText.split(/\r?\n/).filter((line) => line.trim().length > 0);
-        if (lines.length === 0) {
-          return null;
-        }
-        const delimiter = [';', '\t', ','].find((del) => lines[0].includes(del)) || ',';
-        const cleanCell = (value) => value.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
-        const headers = lines[0].split(delimiter).map(cleanCell);
-        const rows = lines.slice(1).map((line) => line.split(delimiter).map(cleanCell));
-        if (headers.length === 0 || rows.length === 0) {
-          return { headers, rows: [] };
-        }
-        return { headers, rows, delimiter };
+        const rawText = await response.text();
+        return parseEnrichmentCsvTable(rawText);
       } catch (err) {
         console.warn('Failed to load enrichment table:', err);
         return null;

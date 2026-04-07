@@ -27,9 +27,14 @@
 }
 
 .detail-header h1 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
   font-size: 32px;
   color: #333;
   margin: 15px 0;
+  min-width: 0;
 }
 
 .detail-action-buttons {
@@ -346,10 +351,12 @@
   align-items: center;
   gap: 12px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .analysis-title-input {
-  flex: 1;
+  flex: 0 0 420px;
   padding: 12px 16px;
   border: 2px solid #667eea;
   border-radius: 8px;
@@ -357,7 +364,12 @@
   font-weight: 600;
   color: #333;
   outline: none;
-  width: 100%;
+  width: 420px;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
 }
 
 .analysis-title-input:focus {
@@ -398,6 +410,12 @@
 }
 
 .analysis-title-text {
+  display: inline-block;
+  max-width: min(100%, 900px);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
   cursor: pointer;
   transition: color 0.2s;
 }
@@ -412,10 +430,31 @@
   cursor: pointer;
   font-size: 18px;
   padding: 4px 8px;
-  margin-left: 8px;
   opacity: 0.4;
   transition: opacity 0.2s;
   vertical-align: middle;
+}
+
+.detail-header h1 .title-rename-btn {
+  flex: 0 0 auto;
+}
+
+.detail-header h1 .analysis-title-text {
+  flex: 0 1 auto;
+}
+
+.detail-header h1 .analysis-title-text:hover {
+  animation: analysis-title-scroll 8s linear infinite alternate;
+}
+
+@keyframes analysis-title-scroll {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(calc(-1 * max(0px, 100% - 100%)));
+  }
 }
 
 .title-rename-btn:hover {

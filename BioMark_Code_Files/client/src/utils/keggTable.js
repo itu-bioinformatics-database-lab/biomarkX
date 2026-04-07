@@ -49,6 +49,21 @@ const formatNumericPrecision = (value) => {
   return parsed.toFixed(8);
 };
 
+const formatScientificNotation = (value, digits = 3) => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const normalized = String(value).replace(/,/g, '').trim();
+  if (normalized === '') {
+    return '';
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    return normalized;
+  }
+  return parsed.toExponential(digits);
+};
+
 const COLUMN_CANDIDATES = {
   Pathway: ['term', 'pathway', 'pathway name', 'name', 'kegg pathway'],
   Overlap: ['overlap', 'overlap ratio', 'overlap count', 'hit ratio'],
@@ -59,6 +74,7 @@ const COLUMN_CANDIDATES = {
 };
 
 const NUMERIC_COLUMNS = new Set(['Overlap', 'Adjusted p-value', 'Raw p-value', 'Odds ratio']);
+const SCIENTIFIC_COLUMNS = new Set(['Adjusted p-value', 'Raw p-value']);
 
 export const buildKeggColumns = (table) => {
   const headers = Array.isArray(table?.headers) ? table.headers : [];
@@ -84,6 +100,9 @@ export const buildKeggColumns = (table) => {
         const baseValue = formatter ? formatter(sanitized, row) : sanitized;
         if (!NUMERIC_COLUMNS.has(label)) {
           return baseValue;
+        }
+        if (SCIENTIFIC_COLUMNS.has(label)) {
+          return formatScientificNotation(baseValue);
         }
         return formatNumericPrecision(baseValue);
       }

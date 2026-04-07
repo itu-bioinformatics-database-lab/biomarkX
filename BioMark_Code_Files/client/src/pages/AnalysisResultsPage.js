@@ -1,10 +1,69 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import UserMenu from '../components/UserMenu';
 import AnalysisReport from '../components/step9_AnalysisReport';
 import '../css/AnalysisResultsPage.css';
 import { LOGIN_PATH } from '../constants/routes';
+
+function AnalysisNameLink({ analysisId, displayName, onRename }) {
+  const containerRef = useRef(null);
+  const linkRef = useRef(null);
+  const textRef = useRef(null);
+  const [scrollMetrics, setScrollMetrics] = useState({
+    isOverflowing: false,
+    scrollDistance: 0,
+    duration: 0,
+  });
+
+  useEffect(() => {
+    const updateOverflow = () => {
+      const container = containerRef.current;
+      const link = linkRef.current;
+      const text = textRef.current;
+      if (!container || !link || !text) return;
+
+      const scrollDistance = Math.max(0, text.scrollWidth - link.clientWidth);
+      const duration = scrollDistance > 0 ? Math.max(6, scrollDistance / 24) : 0;
+
+      setScrollMetrics({
+        isOverflowing: scrollDistance > 0,
+        scrollDistance,
+        duration,
+      });
+    };
+
+    updateOverflow();
+    window.addEventListener('resize', updateOverflow);
+    return () => window.removeEventListener('resize', updateOverflow);
+  }, [displayName]);
+
+  return (
+    <span
+      ref={containerRef}
+      className={`analysis-name-link ${scrollMetrics.isOverflowing ? 'is-overflowing' : ''}`}
+      style={{
+        '--analysis-scroll-distance': `${scrollMetrics.scrollDistance}px`,
+        '--analysis-scroll-duration': `${scrollMetrics.duration}s`,
+      }}
+      title={displayName}
+    >
+      <Link ref={linkRef} to={`/analysis/${analysisId}`} className="analysis-name-text">
+        <span ref={textRef} className="analysis-name-text-inner">
+          {displayName}
+        </span>
+      </Link>
+      <button
+        className="rename-btn"
+        onClick={onRename}
+        title="Rename analysis"
+        type="button"
+      >
+        &#9998;
+      </button>
+    </span>
+  );
+}
 
 export default function AnalysisResultsPage() {
   const navigate = useNavigate();
@@ -634,14 +693,14 @@ export default function AnalysisResultsPage() {
                               }}
                               title="Rename list"
                             >
-                              ✞
+                              &#9998;
                             </button>
                             <button 
                               className="folder-action-btn delete"
                               onClick={(e) => { e.stopPropagation(); setShowDeleteFolderConfirm(folder.id); }}
                               title="Delete list"
                             >
-                              ×
+                              &#10006;
                             </button>
                           </div>
                         )}
@@ -747,7 +806,6 @@ export default function AnalysisResultsPage() {
                               autoFocus
                               placeholder="Enter analysis name..."
                               className="analysis-name-input"
-                              style={{ minWidth: '200px', width: `${Math.max(200, editAnalysisNameValue.length * 10 + 30)}px` }}
                             />
                             <button 
                               className="name-save-btn"
@@ -766,25 +824,11 @@ export default function AnalysisResultsPage() {
                           </div>
                         ) : (
                           <h3>
-                            <span 
-                              className="analysis-name-text"
-                              onClick={() => startEditingAnalysisName(analysis)}
-                              title="Click to rename"
-                            >
-                              {getDisplayName(analysis)}
-                            </span>
-                            <button 
-                              className="rename-btn"
-                              onClick={() => startEditingAnalysisName(analysis)}
-                              title="Rename analysis"
-                            >
-                              &#9998;
-                            </button>
-                            {analysis.isGroup && (
-                              <span className="analysis-count-badge">
-                                {analysis.analysisCount} analyses
-                              </span>
-                            )}
+                            <AnalysisNameLink
+                              analysisId={analysis.id}
+                              displayName={getDisplayName(analysis)}
+                              onRename={() => startEditingAnalysisName(analysis)}
+                            />
                           </h3>
                         )}
                         <div className="analysis-meta">
@@ -799,6 +843,11 @@ export default function AnalysisResultsPage() {
                         </div>
                       </div>
                       <div className="analysis-card-actions">
+                        {analysis.isGroup && (
+                          <span className="analysis-count-badge">
+                            {analysis.analysisCount} analyses
+                          </span>
+                        )}
                         <button 
                           className={`favorite-btn ${analysis.is_favorite ? 'active' : ''}`}
                           onClick={() => toggleFavorite(analysis.id, analysis.is_favorite)}

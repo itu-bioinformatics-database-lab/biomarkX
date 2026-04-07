@@ -4,6 +4,7 @@ import { api, buildUrl, apiFetch } from '../api';
 import { buildBackendUrl } from '../CHANGE_AFTER_DEPLOYMENT';
 import UserMenu from '../components/UserMenu';
 import AnalysisReport from '../components/step9_AnalysisReport';
+import { parseEnrichmentCsvTable } from '../utils/enrichmentTableParser';
 import '../css/AnalysisDetailPage.css';
 import { LOGIN_PATH } from '../constants/routes';
 
@@ -28,22 +29,8 @@ export default function AnalysisDetailPage() {
       const url = buildUrl(`/${relativePath}`);
       const response = await fetch(url);
       if (!response.ok) return null;
-      
-      const rawText = (await response.text()).replace(/^\uFEFF/, '').trim();
-      if (!rawText) return null;
-      
-      const lines = rawText.split(/\r?\n/).filter((line) => line.trim().length > 0);
-      if (lines.length === 0) return null;
-      
-      const delimiter = [';', '\t', ','].find((del) => lines[0].includes(del)) || ',';
-      const cleanCell = (value) => value.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
-      const headers = lines[0].split(delimiter).map(cleanCell);
-      const rows = lines.slice(1).map((line) => line.split(delimiter).map(cleanCell));
-      
-      if (headers.length === 0 || rows.length === 0) {
-        return { headers, rows: [] };
-      }
-      return { headers, rows, delimiter };
+      const rawText = await response.text();
+      return parseEnrichmentCsvTable(rawText);
     } catch (err) {
       console.warn('Failed to load enrichment table:', err);
       return null;
@@ -409,14 +396,13 @@ export default function AnalysisDetailPage() {
                 autoFocus
                 placeholder="Enter analysis name..."
                 className="analysis-title-input"
-                style={{ minWidth: '300px', width: `${Math.max(300, editNameValue.length * 18 + 40)}px` }}
               />
               <button className="title-save-btn" onClick={saveDisplayName} title="Save">&#10004;</button>
               <button className="title-cancel-btn" onClick={cancelEditingName} title="Cancel">&#10008;</button>
             </div>
           ) : (
             <h1>
-              <span className="analysis-title-text" onClick={startEditingName} title="Click to rename">
+              <span className="analysis-title-text" onClick={startEditingName} title={getDisplayName()}>
                 {getDisplayName()}
               </span>
               {!isGuestUser() && (
