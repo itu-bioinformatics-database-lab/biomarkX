@@ -287,6 +287,7 @@ class StatisticalTestAnalysis:
             (volcano_df["pvalue"] < p_threshold) &
             (volcano_df["log2FC"].abs() >= fc_threshold)
         )
+        volcano_df["outside_border"] = volcano_df["log2FC"].abs() >= fc_threshold
 
         volcano_df = volcano_df.sort_values(
             by=["significant", "neg_log10_pvalue"],
@@ -301,7 +302,7 @@ class StatisticalTestAnalysis:
             pass
 
         plt.figure(figsize=(10, 8))
-        colors = volcano_df["significant"].map({True: "crimson", False: "gray"})
+        colors = volcano_df["outside_border"].map({True: "crimson", False: "gray"})
         plt.scatter(
             volcano_df["log2FC"],
             volcano_df["neg_log10_pvalue"],
@@ -311,7 +312,7 @@ class StatisticalTestAnalysis:
             edgecolors='none'
         )
 
-        # Dynamic label selection based on fold-change borders.
+        # Dynamic label selection based on points outside fold-change borders.
         fallback_per_side = 5
 
         left_all_df = volcano_df[volcano_df["log2FC"] < 0].sort_values(
@@ -323,8 +324,8 @@ class StatisticalTestAnalysis:
             ascending=[False, False, True]
         )
 
-        left_outside_df = left_all_df[left_all_df["log2FC"] < -fc_threshold]
-        right_outside_df = right_all_df[right_all_df["log2FC"] > fc_threshold]
+        left_outside_df = left_all_df[left_all_df["log2FC"] <= -fc_threshold]
+        right_outside_df = right_all_df[right_all_df["log2FC"] >= fc_threshold]
 
         labels_left_df = pd.DataFrame(columns=volcano_df.columns)
         labels_right_df = pd.DataFrame(columns=volcano_df.columns)
@@ -349,9 +350,19 @@ class StatisticalTestAnalysis:
             ignore_index=True
         ).drop_duplicates(subset=["Features"])
 
+        if labels_df.empty:
+            labels_df = pd.concat(
+                [left_all_df.head(fallback_per_side), right_all_df.head(fallback_per_side)],
+                ignore_index=True
+            ).drop_duplicates(subset=["Features"])
+
         plt.axhline(y=-np.log10(p_threshold), color='black', linestyle='--', linewidth=1)
         plt.axvline(x=fc_threshold, color='black', linestyle='--', linewidth=1)
         plt.axvline(x=-fc_threshold, color='black', linestyle='--', linewidth=1)
+
+        y_max_data = float(volcano_df["neg_log10_pvalue"].max()) if not volcano_df.empty else 1.0
+        y_padding = max(0.2, y_max_data * 0.08)
+        plt.ylim(0.0, y_max_data + y_padding)
 
         x_min, x_max = plt.xlim()
         x_range = max(1e-9, x_max - x_min)
