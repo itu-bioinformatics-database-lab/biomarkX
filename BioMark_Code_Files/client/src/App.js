@@ -13,7 +13,6 @@ import UserMenu from './components/UserMenu';
 import HelpTooltip from './components/common/HelpTooltip';
 import AggregationHelpContent from './components/common/AggregationHelpContent';
 import { helpTexts } from './content/helpTexts';
-import LongRunNotificationModal from './components/common/LongRunNotificationModal';
 import { buildKeggColumns, KEGG_PREVIEW_LIMIT } from './utils/keggTable';
 import { parseEnrichmentCsvTable } from './utils/enrichmentTableParser';
 import { LOGIN_PATH } from './constants/routes';
@@ -393,11 +392,6 @@ function App() {
   const [showUserGuide, setShowUserGuide] = useState(false); // Controls user guide modal
   const [plotGuideOpenByIndex, setPlotGuideOpenByIndex] = useState({}); // Results: per-analysis plot guide toggle
 
-  // Long-run notification modal and email state
-  const [showLongRunModal, setShowLongRunModal] = useState(false);
-  const [clientJobId, setClientJobId] = useState(null);
-  const [defaultNotifyEmail, setDefaultNotifyEmail] = useState('');
-
   // State for upload duration (file upload time)
   const [uploadDuration, setUploadDuration] = useState(null);
   const [loadingClasses, setLoadingClasses] = useState(false); // loading while fetching class list
@@ -772,14 +766,6 @@ function App() {
    return [];
   }, [analysisAllColumns, analysisUploadContext?.columns]);
 
-  // Load last used email from localStorage
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('notifyEmail');
-      if (saved) setDefaultNotifyEmail(saved);
-    } catch (e) {}
-  }, []);
-  
   // Handle continuation from Analysis Detail page
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -1118,58 +1104,6 @@ function App() {
     });
   };
 
-  const parseFileSizeMB = (sizeStr) => {
-    if (!sizeStr) return 0;
-    const m = String(sizeStr).match(/([0-9]+\.?[0-9]*)\s*MB/i);
-    return m ? parseFloat(m[1]) : 0;
-  };
-
-  function computeLongRunRisk({
-    fileSizeMB = 0,
-    classificationModels = [],
-    paramFinetune = false,
-    finetuneFraction = 1.0
-  }) {
-    let score = 0;
-  
-    // File size
-    if (fileSizeMB > 50) score += 4;
-    else if (fileSizeMB > 30) score += 2;
-    else if (fileSizeMB > 10) score += 1;
-  
-    // Heavy classification models
-    const heavyModels = [
-      'XGBClassifier',
-      'CatBoosting Classifier',
-      'MLPClassifier',
-      'SVC',
-      'Random Forest',
-      'Gradient Boosting',
-      'AdaBoost'
-    ];
-    const usesHeavyModel = (classificationModels || []).some(m => heavyModels.includes(m));
-    if (usesHeavyModel) score += 3;
-  
-    // Finetune parameters
-    if (paramFinetune) score += 3;
-    if (finetuneFraction >= 0.9) score += 2;
-    else if (finetuneFraction > 0.5) score += 1;
-  
-    return score;
-  }
-
-  const isLikelyLongRun = () => {
-    const sizeLabel = mergeMetadata?.size || uploadedInfo?.size;
-    const fileSizeMB = parseFileSizeMB(sizeLabel);
-    const score = computeLongRunRisk({
-      fileSizeMB,
-      classificationModels: selectedAnalyzes.classificationAnalysis || [],
-      paramFinetune,
-      finetuneFraction
-    });
-    return score >= 7;
-  };
-
   // Build CSV download links for a given image path
   const buildDownloadLinks = (imagePath) => {
     try {
@@ -1385,19 +1319,6 @@ function App() {
     return null;
   };
 
-  const handleNotifyConfirm = async (email) => {
-    try {
-      if (clientJobId) {
-        await api.post('/api/analysis/notify', { jobId: clientJobId, email });
-      }
-      try { localStorage.setItem('notifyEmail', email); } catch (e) {}
-    } catch (e) {
-      console.error('Failed to register notification:', e);
-    } finally {
-      setShowLongRunModal(false);
-    }
-  };
-  
   // Helper Function: General function to fetch all columns (will use this function)
   const fetchAllColumnsGeneric = useCallback(async (filePath, options = {}) => { // filePath should be passed as a parameter
     const { suppressError = false } = options;
@@ -2799,16 +2720,8 @@ function App() {
   // 7.Adım: Analizi başlatma tetikleyicisi (Run Analysis butonu için)
   const handleStartAnalysis = async () => {
     if (analyzing) return;
-    const longRun = isLikelyLongRun();
     const newJobId = generateClientJobId();
-    setClientJobId(newJobId);
-    if (longRun) {
-      setShowLongRunModal(true);
-      // Run analysis immediately; user may still opt-in to email in modal
-      await handleRunAnalysisWithJob(newJobId);
-    } else {
-      await handleRunAnalysisWithJob(newJobId);
-    }
+    await handleRunAnalysisWithJob(newJobId);
   };
 
   const handleRunAnalysisWithJob = async (jobId) => {
@@ -4155,7 +4068,7 @@ function App() {
   return (
     <div>
       <header className="app-header">
-        <div className="app-version" aria-label="Application version">v2.3.0</div>
+        <div className="app-version" aria-label="Application version">v2.3.1</div>
         <img src={process.env.PUBLIC_URL + "/logo192.png"} alt="Logo" />
         <span>BIOMARK-X: Biomarker Analysis Tool</span>
         
@@ -5690,15 +5603,6 @@ function App() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Long-run notification modal */}
-      {showLongRunModal && (
-        <LongRunNotificationModal
-          defaultEmail={defaultNotifyEmail}
-          onConfirm={handleNotifyConfirm}
-          onCancel={() => setShowLongRunModal(false)}
-        />
       )}
 
     </div>

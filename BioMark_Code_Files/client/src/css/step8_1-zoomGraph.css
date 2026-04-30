@@ -1,22 +1,43 @@
-.print-optimized-image{
+.print-optimized-image {
     width: 90%;
     object-fit: contain;
 }
 
-.shap-summary-plot {
-    width: 100%;
+.shap-summary-plot,
+.shap-heatmap-plot,
+.shap-waterfall-plot,
+.mean-shap-plot,
+.forceplot-for {
+    min-width: 20vw;
+    max-width: 1200px;
+    height: auto;
     object-fit: contain;
+    display: block;
 }
 
-.shap-heatmap-plot {
-    width: 130%;
-    object-fit: contain;
-
+.shap-waterfall-plot {
+    width: 60vw;
+    margin-left: 25vw;
 }
 
 .forceplot-for {
-    width: 180%;
-    object-fit: contain;
+    width: 50vw;
+    margin-left: 25vw;
+}
+
+.shap-summary-plot {
+    width: 30vw;
+    margin-left: 5vw;
+}
+
+.shap-heatmap-plot {
+    width: 40vw;
+    margin-left: 10vw;
+}
+
+.mean-shap-plot {
+    width: 30vw;
+    margin-left: 5vw;
 }
 
 /* Modal Styles - Enhanced */

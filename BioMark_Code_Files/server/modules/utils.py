@@ -98,7 +98,9 @@ def evaluate_models(X_train,
                     outdir = None,
                     scoring: str = "f1",
                     X_train_raw = None,
-                    preprocessor = None
+                    y_train_raw = None,
+                    preprocessor = None,
+                    resampler = None
                    ):
     """
     Train and evaluate multiple models using cross-validation and test sets.
@@ -150,7 +152,8 @@ def evaluate_models(X_train,
                 # Build CV data (stratified subsample if requested)
                 if use_pipeline_cv:
                     X_source = X_train_raw
-                    y_source = pd.Series(y_train).values
+                    # Use y_train_raw if available so array lengths match X_train_raw
+                    y_source = pd.Series(y_train_raw if y_train_raw is not None else y_train).values
                     if finetune_fraction < 1.0:
                         from sklearn.model_selection import StratifiedShuffleSplit
                         splitter = StratifiedShuffleSplit(n_splits=1, train_size=finetune_fraction, random_state=42)
@@ -188,12 +191,21 @@ def evaluate_models(X_train,
                 # If we can, run GridSearch over a Pipeline to refit preprocessing per fold
                 if use_pipeline_cv:
                     try:
-                        from sklearn.pipeline import Pipeline
                         from sklearn.base import clone
-                        pipe = Pipeline([
-                            ('preprocess', clone(preprocessor)),
-                            ('model', model)
-                        ])
+                        if resampler is not None:
+                            from imblearn.pipeline import Pipeline as ImbPipeline
+                            pipe = ImbPipeline([
+                                ('preprocess', clone(preprocessor)),
+                                ('resample', clone(resampler)),
+                                ('model', model)
+                            ])
+                        else:
+                            from sklearn.pipeline import Pipeline
+                            pipe = Pipeline([
+                                ('preprocess', clone(preprocessor)),
+                                ('model', model)
+                            ])
+                            
                         # Prefix grid keys with model__
                         if isinstance(para, list):
                             para_prefixed = [{f"model__{k}": v for k, v in d.items()} for d in para]
@@ -210,6 +222,7 @@ def evaluate_models(X_train,
                         raw_best = gs.best_params_
                         model_best_params = { (k.split('model__',1)[1] if k.startswith('model__') else k): v for k, v in raw_best.items() }
                     except Exception as e:
+                        logging.error(f"Pipeline-based GS failed: {str(e)}. Falling back to legacy GS.")
                         # Fallback to legacy behavior if pipeline-based GS fails
                         gs = GridSearchCV(model,
                                           para,

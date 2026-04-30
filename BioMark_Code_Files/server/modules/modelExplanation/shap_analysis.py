@@ -228,6 +228,8 @@ class SHAP_Analysis:
             axes[i].set_title(f"{class_name} Sample", fontsize=15)
 
         # --- Finalize and save the combined plot ---
+        # Ensure the figure size isn't overwritten by SHAP components
+        fig.set_size_inches(12 * n_classes, 10)
         plt.tight_layout(pad=2.0)
         title_classes = " and ".join(class_names)
         plt.suptitle(f"Waterfall Plots for {title_classes} Samples", fontsize=20, y=1.02)
@@ -334,6 +336,7 @@ class SHAP_Analysis:
                 axes[i].set_title(f"SHAP Summary for {class_name}", fontsize=15)
             
             # --- Finalize and save the combined plot ---
+            fig.set_size_inches(12 * n_classes, 10)
             plt.tight_layout(pad=1.0)
             plot_path_png = f'{self.outdir}/png/shap_summary_plot_subplots.png'
             plot_path_pdf = f'{self.outdir}/pdf/shap_summary_plot_subplots.pdf'
@@ -375,6 +378,7 @@ class SHAP_Analysis:
                 axes[i].set_title(f"SHAP Heatmap for {class_name}", fontsize=20)
             
             # --- Finalize and save ---
+            fig.set_size_inches(20, 15 * n_classes)
             plt.tight_layout(pad=3.0)
             plot_path_png = f'{self.outdir}/png/shap_heatmap_subplots.png'
             plot_path_pdf = f'{self.outdir}/pdf/shap_heatmap_subplots.pdf'
@@ -415,6 +419,7 @@ class SHAP_Analysis:
                 axes[i].set_title(f"Mean SHAP for {class_name}", fontsize=15)
 
             # --- Finalize and save ---
+            fig.set_size_inches(12 * n_classes, 10)
             plt.tight_layout(pad=1.0)
             plot_path_png = f'{self.outdir}/png/mean_shap_plot_subplots.png'
             plot_path_pdf = f'{self.outdir}/pdf/mean_shap_plot_subplots.pdf'

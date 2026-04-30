@@ -269,6 +269,7 @@ class Classification:
             )
             # keep raw splits for CV inside Pipeline (to avoid leakage)
             self.X_train_raw = X_train.copy()
+            self.y_train_raw = self.y_train.copy()
             self.X_test_raw = X_test.copy()
     
             # initialize transformer
@@ -397,6 +398,7 @@ class Classification:
 
             original_shape = X_arr.shape
             X_res, y_res = resampler.fit_resample(X_arr, y_arr)
+            self.resampler = resampler
             logging.info(
                 f"Resampling complete: {original_shape[0]} → {X_res.shape[0]} training samples."
             )
@@ -547,7 +549,9 @@ class Classification:
                                               outdir = self.outdir,
                                               scoring = self.scoring,
                                               X_train_raw = getattr(self, 'X_train_raw', None),
-                                              preprocessor = getattr(self, 'preprocessor', None)
+                                              y_train_raw = getattr(self, 'y_train_raw', None),
+                                              preprocessor = getattr(self, 'preprocessor', None),
+                                              resampler = getattr(self, 'resampler', None)
                                               )
             
             # --- Built-in Feature Importance for XGBoost and RandomForest ---

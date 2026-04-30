@@ -83,16 +83,6 @@ const initializeDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_analyses_upload_id ON analyses(upload_id);
       CREATE INDEX IF NOT EXISTS idx_analyses_parent_analysis_id ON analyses(parent_analysis_id);
 
-      CREATE TABLE IF NOT EXISTS notification_subscriptions (
-        id TEXT PRIMARY KEY,
-        job_id TEXT NOT NULL,
-        email TEXT NOT NULL,
-        status TEXT DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        sent_at TIMESTAMP,
-        error_message TEXT
-      );
-
       -- Create folders table for organizing analyses
       CREATE TABLE IF NOT EXISTS folders (
         id TEXT PRIMARY KEY,

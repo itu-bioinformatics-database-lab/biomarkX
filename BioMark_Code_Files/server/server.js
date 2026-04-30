@@ -1327,32 +1327,6 @@ if (server.headersTimeout !== undefined) {
     server.headersTimeout = 0;
 }
 
-// --- Notifications ---
-// Lightweight email format check
-function isValidEmail(email) {
-    return typeof email === 'string' && /.+@.+\..+/.test(email);
-}
-
-// Save a notification subscription before or during analysis
-app.post('/api/analysis/notify', async (req, res) => {
-    try {
-        const { jobId, email } = req.body || {};
-        if (!jobId || !email) {
-            return res.status(400).json({ success: false, message: 'jobId and email are required' });
-        }
-        if (!isValidEmail(email)) {
-            return res.status(400).json({ success: false, message: 'Invalid email address' });
-        }
-        const id = uuidv4();
-        await db.query('INSERT INTO notification_subscriptions (id, job_id, email, status) VALUES ($1, $2, $3, $4)',
-          [id, jobId, email, 'pending']);
-        return res.json({ success: true, id });
-    } catch (e) {
-        console.error('Failed to save notification subscription:', e);
-        return res.status(500).json({ success: false, message: 'Internal server error' });
-    }
-});
-
 // Public endpoint for results viewer to fetch analysis state
 app.get('/api/analyses/:analysisId', async (req, res) => {
     try {

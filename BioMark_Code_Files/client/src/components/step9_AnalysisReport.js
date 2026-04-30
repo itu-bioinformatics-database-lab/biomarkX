@@ -1433,7 +1433,7 @@ const AnalysisReport = ({
       pdf.setTextColor(150, 150, 150);
       pdf.setFont('helvetica', 'italic');
       const currentDate = new Date().toLocaleString();
-      const version = "2.3.0";
+      const version = "2.3.1";
       
       // Leave enough space for footer
       yPosition += 5;
@@ -1465,7 +1465,7 @@ const AnalysisReport = ({
   };
 
   // Version info
-  const version = "2.3.0";
+  const version = "2.3.1";
 
   const showValidationControls = Boolean(
     typeof onValidateBiomarkers === 'function'

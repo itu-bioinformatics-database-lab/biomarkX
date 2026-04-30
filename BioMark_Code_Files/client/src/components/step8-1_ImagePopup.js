@@ -96,11 +96,17 @@ const ImagePopup = ({ imagePath, imageName }) => {
     if (!imageName) {
       return 'print-optimized-image'; // Default style if imageName is undefined
     }
-    if (imageName.toLowerCase().includes('shap summary plot')) {
+    const nameLower = imageName.toLowerCase();
+    
+    if (nameLower.includes('shap summary')) {
       return 'shap-summary-plot';
-    } else if (imageName.toLowerCase().includes('shap heatmap plot')) {
+    } else if (nameLower.includes('shap heatmap')) {
       return 'shap-heatmap-plot';
-    } else if (imageName.toLowerCase().includes('forceplot for')) {
+    } else if (nameLower.includes('waterfall')) {
+      return 'shap-waterfall-plot';
+    } else if (nameLower.includes('mean shap')) {
+      return 'mean-shap-plot';
+    } else if (nameLower.includes('forceplot for')) {
       return 'forceplot-for';
     }
     return 'print-optimized-image';
