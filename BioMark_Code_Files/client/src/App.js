@@ -5513,11 +5513,11 @@ function App() {
                         date: analysis.date, // Analysis's own date
                         time: analysis.time, // Analysis's own time
                         types: { // Analysis's own types
-                          statisticalTest: analysisParams.statisticalTest || [],
-                          dimensionalityReduction: analysisParams.dimensionalityReduction || [],
-                          classificationAnalysis: analysisParams.classificationAnalysis || [],
-                          modelExplanation: analysisParams.modelExplanation || [],
-                          survivalAnalysis: analysisParams.survivalAnalysis || []
+                          statisticalTest: analysisParams.statisticalTest || analysisParams.differential || [],
+                          dimensionalityReduction: analysisParams.dimensionalityReduction || analysisParams.clustering || [],
+                          classificationAnalysis: analysisParams.classificationAnalysis || analysisParams.classification || [],
+                          survivalAnalysis: analysisParams.survivalAnalysis || analysisParams.survival || [],
+                          modelExplanation: analysisParams.modelExplanation || []
                         },
                         parameters: analysisParams // All other parameters that might be needed in the report
                       };

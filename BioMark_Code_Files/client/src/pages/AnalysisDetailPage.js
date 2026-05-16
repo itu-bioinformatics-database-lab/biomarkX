@@ -8,6 +8,18 @@ import { parseEnrichmentCsvTable } from '../utils/enrichmentTableParser';
 import '../css/AnalysisDetailPage.css';
 import { LOGIN_PATH } from '../constants/routes';
 
+const normalizeAnalysisTypes = (metadata = {}) => {
+  const analysisMethods = metadata.analysisMethods || {};
+  const selectedAnalyses = metadata.selectedAnalyses || {};
+  return {
+    statisticalTest: analysisMethods.statisticalTest || analysisMethods.differential || selectedAnalyses.statisticalTest || selectedAnalyses.differential || [],
+    dimensionalityReduction: analysisMethods.dimensionalityReduction || analysisMethods.clustering || selectedAnalyses.dimensionalityReduction || selectedAnalyses.clustering || [],
+    survivalAnalysis: analysisMethods.survivalAnalysis || analysisMethods.survival || selectedAnalyses.survivalAnalysis || selectedAnalyses.survival || [],
+    classificationAnalysis: analysisMethods.classificationAnalysis || analysisMethods.classification || selectedAnalyses.classificationAnalysis || selectedAnalyses.classification || [],
+    modelExplanation: analysisMethods.modelExplanation || selectedAnalyses.modelExplanation || []
+  };
+};
+
 export default function AnalysisDetailPage() {
   const { analysisId } = useParams();
   const navigate = useNavigate();
@@ -156,12 +168,7 @@ export default function AnalysisDetailPage() {
           classPair: 'Combined',
           date: formatDate(analysisData.created_at),
           time: analysisData.metadata?.executionTime || 'N/A',
-          types: {
-            differential: analysisData.metadata?.analysisMethods?.differential || [],
-            clustering: analysisData.metadata?.analysisMethods?.clustering || [],
-            classification: analysisData.metadata?.analysisMethods?.classification || [],
-            survival: analysisData.metadata?.analysisMethods?.survival || []
-          },
+          types: normalizeAnalysisTypes(analysisData.metadata),
           parameters: analysisData.metadata
         }]);
         
@@ -754,12 +761,7 @@ export default function AnalysisDetailPage() {
               classPair: metadata.selectedClasses ? metadata.selectedClasses.join(' vs ') : 'N/A',
               date: formatDate(singleAnalysis.created_at),
               time: metadata.executionTime || 'N/A',
-              types: {
-                differential: metadata.analysisMethods?.differential || [],
-                clustering: metadata.analysisMethods?.clustering || [],
-                classification: metadata.analysisMethods?.classification || [],
-                survival: metadata.analysisMethods?.survival || []
-              },
+              types: normalizeAnalysisTypes(metadata),
               parameters: metadata
             };
           });
