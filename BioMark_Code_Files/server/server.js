@@ -19,6 +19,9 @@ const analysisQueue = require('./services/analysisQueue');
 
 const { spawn } = require('child_process');
 
+const cron = require('node-cron');
+const { runCleanup } = require('./services/cleanup');
+
 const app = express();
 
 // Derive a safe CORS origin (scheme+host+port) from PUBLIC_BASE_URL which may include a path prefix
@@ -37,6 +40,29 @@ app.use(cors({
 }));
 app.use(sessionMiddleware);
 app.use(express.json()); // Middleware to parse JSON request bodies
+
+// Initialize cleanup scheduler
+// Run cleanup daily at 3 AM and when the server starts to ensure old uploads are removed
+(async () => {
+    console.log('[Scheduler] Running initial cleanup on server start...');
+    try {
+        const result = await runCleanup();
+        console.log('[Scheduler] Initial cleanup completed:', result);
+    } catch (err) {
+        console.error('[Scheduler] Initial cleanup failed:', err);
+    }
+})();
+
+cron.schedule('0 3 * * *', async () => {
+    console.log('[Cron] Running scheduled cleanup task...');
+    try {
+        const result = await runCleanup();
+        console.log('[Cron] Cleanup completed:', result);
+    } catch (err) {
+        console.error('[Cron] Cleanup failed:', err);
+    }
+});
+console.log('[Scheduler] File cleanup scheduler initialized (runs daily at 3 AM)');
 
 // Authentication routes
 app.use('/auth', authRoutes);
@@ -1308,6 +1334,19 @@ app.get('/analysis-report', (req, res) => {
         return res.sendFile(reportPath);
     }
     return res.status(404).send('Sample analysis report not found on server.');
+});
+
+// Manual cleanup endpoint (for testing/admin)
+// curl -X POST http://localhost:5003/admin/cleanup-now
+app.post('/admin/cleanup-now', async (req, res) => {
+    console.log('[Admin] Manual cleanup requested');
+    try {
+        const result = await runCleanup();
+        res.json({ success: true, result });
+    } catch (err) {
+        console.error('[Admin] Cleanup failed:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // Disable the default Node.js request timeout so that long-running analyses

@@ -5,8 +5,48 @@ const { verifyToken } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
+const { CLEANUP_AGE_DAYS } = require('../services/cleanup');
 
 const router = express.Router();
+
+const resolveServerPath = (filePath) => {
+  if (!filePath) return null;
+  return path.isAbsolute(filePath) ? filePath : path.join(__dirname, '..', filePath);
+};
+
+const buildCleanupWarning = (analysisRow) => {
+  const checks = [];
+
+  const uploadFilePath = resolveServerPath(analysisRow.server_path);
+  if (uploadFilePath) {
+    checks.push({ label: 'uploaded file', exists: fs.existsSync(uploadFilePath) });
+  }
+
+  const resultPaths = typeof analysisRow.result_path === 'string'
+    ? analysisRow.result_path.split(',').map((p) => p.trim()).filter(Boolean)
+    : [];
+
+  for (const resultPath of resultPaths) {
+    const absoluteResultPath = resolveServerPath(resultPath);
+    if (absoluteResultPath) {
+      checks.push({ label: resultPath, exists: fs.existsSync(absoluteResultPath) });
+    }
+  }
+
+  if (checks.length === 0 || !checks.some((item) => !item.exists)) {
+    return null;
+  }
+
+  const missingLabels = checks.filter((item) => !item.exists).map((item) => item.label);
+
+  return {
+    type: 'FILES_DELETED',
+    title: 'Files Deleted by Cleanup',
+    message: 'Files of this analysis are deleted because the retention period has passed for this analysis.',
+    suggestion: 'Please upload the same dataset again to start another analysis.',
+    missingFiles: missingLabels
+  };
+};
 
 // Get user statistics
 router.get('/stats', verifyToken, async (req, res) => {
@@ -206,6 +246,12 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
           a.result_path,
           a.status,
           a.created_at,
+          COALESCE(u.uploaded_at, mu.uploaded_at) as uploaded_at,
+          COALESCE(u.server_path, mu.server_path) as server_path,
+          CASE
+            WHEN COALESCE(u.uploaded_at, mu.uploaded_at) < NOW() - INTERVAL '${CLEANUP_AGE_DAYS} days' THEN TRUE
+            ELSE FALSE
+          END AS cleanup_eligible,
           a.analysis_metadata,
           a.parent_analysis_id,
           a.display_name,
@@ -227,6 +273,12 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
             a.result_path,
             a.status,
             a.created_at,
+            COALESCE(u.uploaded_at, mu.uploaded_at) as uploaded_at,
+            COALESCE(u.server_path, mu.server_path) as server_path,
+            CASE
+              WHEN COALESCE(u.uploaded_at, mu.uploaded_at) < NOW() - INTERVAL '${CLEANUP_AGE_DAYS} days' THEN TRUE
+              ELSE FALSE
+            END AS cleanup_eligible,
             a.analysis_metadata,
             a.parent_analysis_id,
             a.display_name,
@@ -249,6 +301,12 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
           a.result_path,
           a.status,
           a.created_at,
+          COALESCE(u.uploaded_at, mu.uploaded_at) as uploaded_at,
+          COALESCE(u.server_path, mu.server_path) as server_path,
+          CASE
+            WHEN COALESCE(u.uploaded_at, mu.uploaded_at) < NOW() - INTERVAL '${CLEANUP_AGE_DAYS} days' THEN TRUE
+            ELSE FALSE
+          END AS cleanup_eligible,
           a.analysis_metadata,
           a.parent_analysis_id,
           COALESCE(u.original_name, mu.original_name) as filename
@@ -269,6 +327,12 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
             a.result_path,
             a.status,
             a.created_at,
+            COALESCE(u.uploaded_at, mu.uploaded_at) as uploaded_at,
+            COALESCE(u.server_path, mu.server_path) as server_path,
+            CASE
+              WHEN COALESCE(u.uploaded_at, mu.uploaded_at) < NOW() - INTERVAL '${CLEANUP_AGE_DAYS} days' THEN TRUE
+              ELSE FALSE
+            END AS cleanup_eligible,
             a.analysis_metadata,
             a.parent_analysis_id,
             COALESCE(u.original_name, mu.original_name) as filename
@@ -338,9 +402,23 @@ router.get('/analyses/:id', authMiddleware, async (req, res) => {
         analysis.filename = 'Analysis_Results';
       }
     }
+
+    analysis.cleanupWarning = buildCleanupWarning(analysis);
+    analysis.cleanupEligible = Boolean(analysis.cleanup_eligible);
+    delete analysis.cleanup_eligible;
+    delete analysis.server_path;
     
     // Add child analyses info
     if (childAnalyses.length > 0) {
+      childAnalyses = childAnalyses.map(child => ({
+        ...child,
+        cleanupWarning: buildCleanupWarning(child),
+        cleanupEligible: Boolean(child.cleanup_eligible)
+      }));
+      childAnalyses.forEach(child => {
+        delete child.cleanup_eligible;
+        delete child.server_path;
+      });
       analysis.isGroup = true;
       analysis.childAnalyses = childAnalyses;
       analysis.analysisCount = childAnalyses.length + 1;

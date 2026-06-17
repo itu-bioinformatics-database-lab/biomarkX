@@ -433,6 +433,7 @@ export default function AnalysisDetailPage() {
             const classPair = metadata.selectedClasses && metadata.selectedClasses.length > 0 
               ? metadata.selectedClasses.join(' vs ') 
               : 'N/A';
+            const cleanupWarning = singleAnalysis.cleanupWarning || null;
             
             return (
               <div key={singleAnalysis.id} className="analysis-information-card">
@@ -442,6 +443,14 @@ export default function AnalysisDetailPage() {
                     <span className="analysis-subtitle"> for {classPair}</span>
                   )}
                 </h2>
+
+                {cleanupWarning && (
+                  <div className="analysis-cleanup-warning" role="alert">
+                    <strong>Cleanup notice:</strong> {cleanupWarning.message}
+                    <br />
+                    {cleanupWarning.suggestion}
+                  </div>
+                )}
                 
                 <div className="info-grid">
                   <div className="info-item">
