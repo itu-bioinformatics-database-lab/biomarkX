@@ -9,7 +9,7 @@ const db = require('../db/database');
 // If Redis is not available, it will fall back to in-memory (but won't persist)
 const analysisQueue = new Queue('biomarker-analysis', {
   redis: {
-    host: process.env.REDIS_HOST || 'localhost',
+    host: process.env.REDIS_HOST || 'host.docker.internal',
     port: process.env.REDIS_PORT || 6379,
   },
   defaultJobOptions: {

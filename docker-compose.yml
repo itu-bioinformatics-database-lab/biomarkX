@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./BioMark_Code_Files/server
+      dockerfile: Dockerfile
+    ports:
+      - "5003:5003"
+    environment:
+      - NODE_ENV=development
+
+  frontend:
+    build: 
+      context: ./BioMark_Code_Files/client
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:5003
+    depends_on:
+      - backend
