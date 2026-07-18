@@ -1,8 +1,8 @@
-# BioMarkX: A Web-Based Biomarker Analysis Tool
+# BioMark-X: A Web-Based Biomarker Analysis Tool
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-BioMarkX is a user-friendly, web-based platform designed to streamline biomarker discovery and analysis from high-dimensional omics data. It aims to empower researchers, especially those without extensive computational expertise, to perform complex analyses such as differential analysis, clustering, and classification with just a few clicks.
+BioMark-X is a user-friendly, web-based platform designed to streamline biomarker discovery and analysis from high-dimensional omics data. It aims to empower researchers, especially those without extensive computational expertise, to perform complex analyses such as differential analysis, clustering, and classification with just a few clicks.
 
 ---
 
@@ -68,7 +68,7 @@ http://localhost:3000/biomark
 
 ## ✍️ Citation
 
-If you use BioMarkX in your research, please cite our work.
+If you use BioMark-X in your research, please cite our work.
 
 ...
 ## 📝 License
