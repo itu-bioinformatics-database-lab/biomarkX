@@ -32,7 +32,7 @@ const UserGuideModal = ({ onClose }) => {
               &#10145;&#65039; Access the source code on GitHub:
               {' '}
               <a
-                href="https://github.com/itu-bioinformatics-database-lab/biomark"
+                href="https://github.com/itu-bioinformatics-database-lab/biomarkX"
                 target="_blank"
                 rel="noopener noreferrer"
               >
